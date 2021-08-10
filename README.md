@@ -1,4 +1,4 @@
-imec
+HSI Evaluator
 
-Known issues:
-python_api is incompatible to matplotlib > 3.3 (runs with version 3.2.1)
+Run the HSIEvaluator.py from within the gui directory.
+Also needs SpectraProcessing Module.
