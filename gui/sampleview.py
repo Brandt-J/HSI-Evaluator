@@ -146,6 +146,7 @@ class SampleView(QtWidgets.QMainWindow):
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     Renamed: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Closed: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
 
     def __init__(self):
         super(SampleView, self).__init__()
@@ -245,6 +246,7 @@ class SampleView(QtWidgets.QMainWindow):
         if className in self._classes2Indices.keys():
             del self._classes2Indices[className]
             self._logger.info(f"Sample {self._name}: Deleted Selecion of class {className}")
+            self.ClassDeleted.emit(className)
         else:
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
@@ -252,6 +254,7 @@ class SampleView(QtWidgets.QMainWindow):
     def _renameSample(self) -> None:
         newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
         if ok and newName != '':
+            self._logger.info(f"Renaming {self._name} into {newName}")
             self._name = newName
             self._nameLabel.setText(newName)
             self.Renamed.emit()

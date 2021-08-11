@@ -47,8 +47,8 @@ class MainWindow(QtWidgets.QMainWindow):
         graphView: 'GraphView' = sampleView.getGraphView()
         graphView.SelectionChanged.connect(self._specView.updateSpectra)
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
-        self._clsCreator.ClassDeleted.connect(graphView.removeColorOfClass)
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
+        sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
 
     def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
         return self._clsCreator.getColorOfClassName(className)
