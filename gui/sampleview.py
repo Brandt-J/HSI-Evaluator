@@ -2,7 +2,7 @@ import numba
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pickle
 import os
-from typing import List, Tuple, TYPE_CHECKING, Dict, Set
+from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
 import numpy as np
 
 from logger import getLogger
@@ -11,7 +11,7 @@ from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
 
 if TYPE_CHECKING:
-    from gui.ImecEvaluator import MainWindow
+    from gui.HSIEvaluator import MainWindow
     from logging import Logger
 
 
@@ -68,6 +68,27 @@ class MultiSampleView(QtWidgets.QScrollArea):
         for view in self._sampleviews:
             spectra[view.getName()] = view.getLabelledSpectra()
         return spectra
+
+    def getBackgroundOfActiveSample(self) -> np.ndarray:
+        """
+        Returns the averaged background spectrum of the active sample.
+        """
+        background: Union[None, np.ndarray] = None
+        for sample in self._sampleviews:
+            if sample.isActive():
+                background = sample.getAveragedBackground()
+                break
+        assert background is not None
+        return background
+
+    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
+        """
+        Returns the averaged backgounds of all samples.
+        """
+        backgrounds: Dict[str, np.ndarray] = {}
+        for view in self._sampleviews:
+            backgrounds[view.getName()] = view.getAveragedBackground()
+        return backgrounds
 
     @QtCore.pyqtSlot(str)
     def _viewClosed(self, samplename: str) -> None:
@@ -174,6 +195,28 @@ class SampleView(QtWidgets.QMainWindow):
 
     def getWavenumbers(self) -> np.ndarray:
         return self._specObj.getWavenumbers()
+
+    def getAveragedBackground(self) -> np.ndarray:
+        """
+        Returns the averaged background spectrum of the sample. If no background was selected, a np.zeros array is returned.
+        :return: np.ndarray of background spectrum
+        """
+        cube: np.ndarray = self._specObj.getNotPreprocessedCube()
+        background: np.ndarray = np.zeros(cube.shape[0])
+        backgroundFound: bool = False
+        for cls_name in self._classes2Indices:
+            if cls_name.lower() == 'background':
+                indices = self._classes2Indices[cls_name]
+                background = np.mean(getSpectraFromIndices(np.array(list(indices)), cube), axis=0)
+                backgroundFound = True
+                break
+
+        if not backgroundFound:
+            self._logger.warning(
+                f'Sample: {self._name}: No Background found, although it was requested.. '
+                f'Present Classes are: {list(self._classes2Indices.keys())}. Returning a np.zeros Background')
+
+        return background
 
     def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """

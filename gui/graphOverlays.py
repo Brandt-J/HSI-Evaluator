@@ -6,7 +6,7 @@ from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List
 
 if TYPE_CHECKING:
-    from ImecEvaluator import MainWindow
+    from HSIEvaluator import MainWindow
 
 
 class GraphView(QtWidgets.QGraphicsView):

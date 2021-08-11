@@ -12,7 +12,7 @@ from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, Tria
 from preprocessors import Background
 
 if TYPE_CHECKING:
-    from gui.ImecEvaluator import MainWindow
+    from gui.HSIEvaluator import MainWindow
     from preprocessors import Preprocessor
     from logging import Logger
 
@@ -97,7 +97,8 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
             if self._showAllCheckBox.isChecked():
                 self._plotSpectraFromAllSamples()
             else:
-                self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView())
+                background: np.ndarray = self._mainWindow.getBackgroundOfActiveSample()
+                self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView(), background)
 
         if self._cursorSpec is not None:
             cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
@@ -113,19 +114,25 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         """
 
         i: int = 0
-        allSpecs = self._mainWindow.getLabelledSpectraFromAllViews()
+        allSpecs: Dict[str, Dict[str, np.ndarray]] = self._mainWindow.getLabelledSpectraFromAllViews()
+        allBackgrounds: Dict[str, np.ndarray] = self._mainWindow.getBackgroundsOfAllSamples()
+
         for sampleName, specDict in allSpecs.items():
-            self._plotSpectraDict(specDict, sampleName=sampleName, linestyle=self.linestyles[i])
+            background: np.ndarray = allBackgrounds[sampleName]
+            self._plotSpectraDict(specDict, background, sampleName=sampleName, linestyle=self.linestyles[i])
+
             if i == len(self.linestyles)-2:
                 i = 0
             else:
                 i += 1
 
-    def _plotSpectraDict(self, specs: Dict[str, np.ndarray], sampleName: Union[None, str] = None,
+    def _plotSpectraDict(self, specs: Dict[str, np.ndarray], backgroundSpec: np.ndarray,
+                         sampleName: Union[None, str] = None,
                          linestyle: [Union[str, tuple]] = "solid") -> None:
         """
         Plots the given spectra dictionary from the currently active sample.
         :param specs: The spectr dictionaty (key: classname, value: spectra (NxM) array of N spectra with M wavenumbers
+        :param backgroundSpec: Averaged background spectrum of the corresponding sample.
         :param sampleName: optional samplename to include in legend
         :param linestyle: optional linestyle for the sample spectra
         :return:
@@ -135,7 +142,7 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         for i, (cls_name, cls_specs) in enumerate(specs.items()):
             color = [i / 255 for i in self._mainWindow.getColorOfClass(cls_name)]
             cls_specs = self._limitSpecNumber(cls_specs)
-            cls_specs = self._prepareSpecsForPlot(cls_specs, preprocessors)
+            cls_specs = self._prepareSpecsForPlot(cls_specs, preprocessors, backgroundSpec)
 
             self._specAx.plot(self._mainWindow.getWavenumbers(), cls_specs - i*self._stackSpinner.value(),
                               linestyle=linestyle, color=color)
@@ -209,12 +216,14 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         self._figure.tight_layout()
         self._canvas.draw()
 
-    def _prepareSpecsForPlot(self, specArr: np.ndarray, preprocessors: List['Preprocessor']) -> np.ndarray:
+    def _prepareSpecsForPlot(self, specArr: np.ndarray, preprocessors: List['Preprocessor'],
+                             backgroundSpec: np.ndarray) -> np.ndarray:
         """
         Prepares the spec (NxM) array of N spec with M wavenums for plotting.
         Performs averating (if desired) and transpose.
         :param specArr: (NxM) array of N spec with M wavenums
         :param preprocessors: The preprocessors to use
+        :param backgroundSpec: Averaged spectrum of background
         :return: spec array in (MxN) shape, as required for plt batch plotting
         """
         newArr: np.ndarray = specArr.copy()
@@ -227,10 +236,8 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
 
         for processor in preprocessors:
             if type(processor) == Background:
-                self._logger.warning("Background subtraction requested, but currently not implemented. Will be skipped!")
-                continue  # TODO: REIMPLEMENT!
-                # processor: Background = cast(Background, processor)
-                # processor.setBackground(self._specObj.getMeanBackgroundSpec())
+                processor: Background = cast(Background, processor)
+                processor.setBackground(backgroundSpec)
             newArr = processor.applyToSpectra(newArr)
 
         return newArr.transpose()

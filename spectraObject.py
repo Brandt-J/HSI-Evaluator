@@ -1,27 +1,31 @@
 import numpy as np
-from typing import List, Dict, Tuple, TYPE_CHECKING, cast
+from typing import List, Dict, Tuple, TYPE_CHECKING, cast, Union
 import random
 import time
+
+from logger import getLogger
 from preprocessors import Background
 
 if TYPE_CHECKING:
     from PyQt5 import QtCore
+    from logging import Logger
     from preprocessors import Preprocessor
 
 
 class SpectraObject:
     def __init__(self):
-        self._wavenumbers: np.ndarray = None
-        self._cube: np.ndarray = None
-        self._preprocessedCube: np.ndarray = None
-        # self._preprocessingQueue: List['Preprocessor'] = []
+        self._wavenumbers: Union[None, np.ndarray] = None
+        self._cube: Union[None, np.ndarray] = None
+        self._preprocessedCube: Union[None, np.ndarray] = None
         self._classes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}  # classname, (y-coordinages, x-coordinates)
+        self._logger: 'Logger' = getLogger("SpectraObject")
 
     def setCube(self, cube: np.ndarray) -> None:
         self._cube = cube
         if self._wavenumbers is None:
             self._setDefaultWavenumbers(cube)
 
+    # TODO: REFACTOR TO DIRECTLY ACCEPT THE PROCESSING QUEUE
     # def applyPreprocessing(self, imgLimits: 'QtCore.QRectF') -> None:
     #     """
     #     Applies the specified preprocessing, if any queue was previously set using "setPreprocessors"
@@ -119,17 +123,11 @@ class SpectraObject:
         y = np.clip(y, 0, self._cube.shape[2]-1)
         return self._cube[:, x, y]
 
-    # def getPreprocessors(self) -> List['Preprocessor']:
-    #     return self._preprocessingQueue
-
     def getNumberOfClasses(self) -> int:
         return len(self._classes)
 
     def getNumberOfFeatures(self) -> int:
         return self._cube.shape[0]
-
-    # def setPreprocessors(self, preprocessors: List['Preprocessor']) -> None:
-    #     self._preprocessingQueue = preprocessors
 
     def setWavenumbers(self, wavenumbers: np.ndarray) -> None:
         self._wavenumbers = wavenumbers
@@ -164,24 +162,3 @@ class SpectraObject:
         for i in range(specArr.shape[0]):
             specArr[i, :] = cube[:, indices[i][0], indices[i][1]]
         return specArr
-
-    def getMeanBackgroundSpec(self) -> np.ndarray:
-        """
-        Gets the averaged spectrum of the background.
-        :return:
-        """
-        background: np.ndarray = np.zeros(self._cube.shape[0])
-        backgroundFound: bool = False
-        for cls_name, cls_indices in self._classes.items():
-            if cls_name.lower() == 'background':
-                curIndices: List[Tuple[int, int]] = list(zip(cls_indices[0], cls_indices[1]))
-                if len(curIndices) > 0:
-                    specs: np.ndarray = self._getSpecArray(curIndices, preprocessed=False)
-                    background = np.mean(specs, axis=0)
-                    backgroundFound = True
-                break
-
-        if not backgroundFound:
-            print('No Background found, although it was requested.. Present Classes are:', self._classes.keys())
-
-        return background

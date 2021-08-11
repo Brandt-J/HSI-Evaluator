@@ -10,7 +10,7 @@ from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 
 if TYPE_CHECKING:
-    from gui.ImecEvaluator import MainWindow
+    from gui.HSIEvaluator import MainWindow
     from SpectraProcessing.classification import BaseClassifier
     from gui.graphOverlays import GraphView
     from spectraObject import SpectraObject

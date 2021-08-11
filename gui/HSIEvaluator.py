@@ -38,7 +38,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createLayout()
         self.disableWidgets()
-        # self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
+        self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._specView.updateSpectra)
@@ -69,6 +69,18 @@ class MainWindow(QtWidgets.QMainWindow):
         :return:
         """
         return self._multiSampleView.getLabelledSpectraFromAllViews()
+
+    def getBackgroundOfActiveSample(self) -> np.ndarray:
+        """
+        Returns the averaged background spectrum of the currently active sample.
+        """
+        return self._multiSampleView.getBackgroundOfActiveSample()
+
+    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
+        """
+        Returns the averaged backgounds of all samples.
+        """
+        return self._multiSampleView.getBackgroundsOfAllSamples()
 
     def getPreprocessors(self) -> List['Preprocessor']:
         return self._preprocSelector.getPreprocessors()

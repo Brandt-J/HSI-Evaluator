@@ -11,7 +11,7 @@ def getAppFolder() -> str:
         # if it does not exist then a QApplication is created
         app = QtWidgets.QApplication([])
 
-    app.setApplicationName("IMECEvaluator")
+    app.setApplicationName("HSI Evaluator")
     appFolder: str = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppLocalDataLocation)
     os.makedirs(appFolder, exist_ok=True)
     return appFolder
