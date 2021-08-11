@@ -19,6 +19,8 @@ class MultiSampleView(QtWidgets.QScrollArea):
     """
     Container class for showing multiple sampleviews in a ScrollArea.
     """
+    SampleClosed: QtCore.pyqtSignal = QtCore.pyqtSignal()
+
     def __init__(self, mainWinParent: 'MainWindow'):
         super(MultiSampleView, self).__init__()
 
@@ -35,6 +37,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         newView.setParentToGraphView(self._mainWinParent)
         newView.SizeChanged.connect(self._recreateLayout)
         newView.Activated.connect(self._viewActivated)
+        newView.Closed.connect(self._viewClosed)
         newView.activate()
         self._mainWinParent.setupConnections(newView)
 
@@ -65,6 +68,16 @@ class MultiSampleView(QtWidgets.QScrollArea):
         for view in self._sampleviews:
             spectra[view.getName()] = view.getLabelledSpectra()
         return spectra
+
+    @QtCore.pyqtSlot(str)
+    def _viewClosed(self, samplename: str) -> None:
+        for view in self._sampleviews:
+            if view.getName() == samplename:
+                self._sampleviews.remove(view)
+                self._logger.info(f"Closed Sample {samplename}")
+                self.SampleClosed.emit()
+                self._recreateLayout()
+                break
 
     @QtCore.pyqtSlot(str)
     def _viewActivated(self, samplename: str) -> None:
@@ -110,6 +123,8 @@ def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
 class SampleView(QtWidgets.QMainWindow):
     SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    Renamed: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    Closed: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
 
     def __init__(self):
         super(SampleView, self).__init__()
@@ -132,10 +147,10 @@ class SampleView(QtWidgets.QMainWindow):
         self._maxBrightnessSpinbox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
 
         self._activeBtn: ActivateToggleButton = ActivateToggleButton()
-        self._toolbar = QtWidgets.QToolBar("vertical")
-        self._toolbar.addWidget(self._nameLabel)
-        self._toolbar.addWidget(QtWidgets.QLabel('          '))
-        self._toolbar.addWidget(self._activeBtn)
+        self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+
+        self._toolbar = QtWidgets.QToolBar()
         self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
         self._configureWidgets()
         self._establish_connections()
@@ -146,11 +161,6 @@ class SampleView(QtWidgets.QMainWindow):
     def setUp(self, name: str, cube: np.ndarray) -> None:
         self._name = name
         self._nameLabel.setText(name)
-        newFont: QtGui.QFont = QtGui.QFont()
-        newFont.setBold(True)
-        newFont.setPixelSize(18)
-        self._nameLabel.setFont(newFont)
-
         self._graphView.setCube(cube)
         self._specObj.setCube(cube)
         self._createLayout()
@@ -196,6 +206,13 @@ class SampleView(QtWidgets.QMainWindow):
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
 
+    def _renameSample(self) -> None:
+        newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
+        if ok and newName != '':
+            self._name = newName
+            self._nameLabel.setText(newName)
+            self.Renamed.emit()
+
     def _checkActivation(self) -> None:
         if self._activeBtn.isChecked():
             self.Activated.emit(self._name)
@@ -231,6 +248,25 @@ class SampleView(QtWidgets.QMainWindow):
         self._maxBrightnessSpinbox.valueChanged.connect(self._initiateImageUpdate)
         self._brightnessSlider.valueChanged.connect(self._initiateImageUpdate)
         self._contrastSlider.valueChanged.connect(self._initiateImageUpdate)
+
+        newFont: QtGui.QFont = QtGui.QFont()
+        newFont.setBold(True)
+        newFont.setPixelSize(18)
+        self._nameLabel.setFont(newFont)
+
+        self._editNameBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogResetButton')))
+        self._editNameBtn.released.connect(self._renameSample)
+
+        self._closeBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogDiscardButton')))
+        self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
+
+        self._toolbar.addWidget(self._activeBtn)
+        self._toolbar.addWidget(QtWidgets.QLabel('      '))
+        self._toolbar.addWidget(self._editNameBtn)
+        self._toolbar.addWidget(QtWidgets.QLabel('      '))
+        self._toolbar.addWidget(self._nameLabel)
+        self._toolbar.addWidget(QtWidgets.QLabel('      '))
+        self._toolbar.addWidget(self._closeBtn)
 
     def _establish_connections(self) -> None:
         self._activeBtn.toggled.connect(self._checkActivation)

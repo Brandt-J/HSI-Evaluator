@@ -38,9 +38,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createLayout()
         self.disableWidgets()
+        # self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._specView.updateSpectra)
+        sampleView.Renamed.connect(self._specView.updateSpectra)
 
         graphView: 'GraphView' = sampleView.getGraphView()
         graphView.SelectionChanged.connect(self._specView.updateSpectra)
@@ -151,6 +153,8 @@ class MainWindow(QtWidgets.QMainWindow):
         Sets parameters to the widgets of that window and establishes connections.
         :return:
         """
+        self._multiSampleView.SampleClosed.connect(self._specView.updateSpectra)
+
         self._preprocSelector.ProcessorStackUpdated.connect(self._specView.updateSpectra)
 
         self._clsCreator.ClassDeleted.connect(self._specView.updateSpectra)
@@ -202,7 +206,7 @@ class MainWindow(QtWidgets.QMainWindow):
 def main():
     import sys
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("IMECEvaluator")
+    app.setApplicationName("HSI Evaluator")
     win = MainWindow()
     win.show()
     app.exec_()
