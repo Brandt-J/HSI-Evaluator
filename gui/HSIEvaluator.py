@@ -6,7 +6,7 @@ from typing import *
 from logger import getLogger
 from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
-from gui.spectraPlots import SpectraPreviewWidget
+from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
 from gui.classification import ClassCreator, ClassifierWidget
 
@@ -26,7 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._multiSampleView: MultiSampleView = MultiSampleView(self)
         self._preprocSelector: PreprocessingSelector = PreprocessingSelector()
-        self._specView: SpectraPreviewWidget = SpectraPreviewWidget()
+        self._resultPlots: ResultPlots = ResultPlots()
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassifierWidget = ClassifierWidget(self)
         self._loadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
@@ -38,35 +38,58 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createLayout()
         self.disableWidgets()
+        # self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
-        sampleView.Activated.connect(self._specView.updateSpectra)
+        sampleView.Activated.connect(self._resultPlots.updatePlots)
+        sampleView.Renamed.connect(self._resultPlots.updatePlots)
 
         graphView: 'GraphView' = sampleView.getGraphView()
-        graphView.SelectionChanged.connect(self._specView.updateSpectra)
+        graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
-        self._clsCreator.ClassDeleted.connect(graphView.removeColorOfClass)
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
+        sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
 
     def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
+        """
+        Returns a unique color for the class. Color is returned in 0-255 int values for R, G, B.
+        """
         return self._clsCreator.getColorOfClassName(className)
 
-    def getSpecView(self) -> 'SpectraPreviewWidget':
-        return self._specView
+    def classIsVisible(self, className: str) -> bool:
+        """
+        Returns, if the given class is set to visible or not-visible in the class selector.
+        """
+        return self._clsCreator.getClassVisibility(className)
 
-    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
+    def getresultPlots(self) -> 'ResultPlots':
+        return self._resultPlots
+
+    def getLabelledSpectraFromActiveView(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
         """
         Gets the currently labelled Spectra from the currently active sampleview.
         :return: Dictionary[className, (NxM) specArray of N spectra with M wavenumbers
         """
-        return self._multiSampleView.getLabelledSpectraFromActiveView()
+        return self._multiSampleView.getLabelledSpectraFromActiveView(onlyVisible)
 
-    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self, onlyVisible: bool = False) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
         :return:
         """
-        return self._multiSampleView.getLabelledSpectraFromAllViews()
+        return self._multiSampleView.getLabelledSpectraFromAllViews(onlyVisible)
+
+    def getBackgroundOfActiveSample(self) -> np.ndarray:
+        """
+        Returns the averaged background spectrum of the currently active sample.
+        """
+        return self._multiSampleView.getBackgroundOfActiveSample()
+
+    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
+        """
+        Returns the averaged backgounds of all samples.
+        """
+        return self._multiSampleView.getBackgroundsOfAllSamples()
 
     def getPreprocessors(self) -> List['Preprocessor']:
         return self._preprocSelector.getPreprocessors()
@@ -101,7 +124,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.showMaximized()
 
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
-        return self._specView.getDecsriptorLibrary()
+        return self._resultPlots.getDecsriptorLibrary()
 
     def _export(self) -> None:
         raise NotImplementedError
@@ -151,10 +174,13 @@ class MainWindow(QtWidgets.QMainWindow):
         Sets parameters to the widgets of that window and establishes connections.
         :return:
         """
-        self._preprocSelector.ProcessorStackUpdated.connect(self._specView.updateSpectra)
+        self._multiSampleView.SampleClosed.connect(self._resultPlots.updatePlots)
 
-        self._clsCreator.ClassDeleted.connect(self._specView.updateSpectra)
-        self._clsCreator.ClassActivated.connect(self._specView.switchToDescriptorSet)
+        self._preprocSelector.ProcessorStackUpdated.connect(self._resultPlots.updatePlots)
+
+        self._clsCreator.ClassDeleted.connect(self._resultPlots.updatePlots)
+        self._clsCreator.ClassActivated.connect(self._resultPlots.switchToDescriptorSet)
+        self._clsCreator.ClassVisibilityChanged.connect(self._resultPlots.updatePlots)
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)
@@ -166,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._toolbar.addSeparator()
         self._toolbar.addWidget(self._exportBtn)
 
-        self._specView.setMainWinRef(self)
+        self._resultPlots.setMainWinRef(self)
 
     def _createLayout(self) -> None:
         """
@@ -180,7 +206,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         specLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         specLayout.addWidget(self._preprocSelector)
-        specLayout.addWidget(self._specView)
+        specLayout.addWidget(self._resultPlots)
 
         group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
         layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -192,7 +218,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(specLayout)
 
     def _getUIWidgets(self) -> List[QtWidgets.QWidget]:
-        widgetList = [self._exportBtn, self._specView, self._clfWidget, self._clsCreator]
+        widgetList = [self._exportBtn, self._resultPlots, self._clfWidget, self._clsCreator]
         return widgetList
 
     # def closeEvent(self, a0: QtGui.QCloseEvent) -> None:  # TODO: REIMPLEMENT
@@ -202,7 +228,7 @@ class MainWindow(QtWidgets.QMainWindow):
 def main():
     import sys
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("IMECEvaluator")
+    app.setApplicationName("HSI Evaluator")
     win = MainWindow()
     win.show()
     app.exec_()

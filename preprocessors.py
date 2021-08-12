@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
+import numpy as np
+
 from SpectraProcessing.Preprocessing.processing import *
 
 

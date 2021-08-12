@@ -6,7 +6,7 @@ from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List
 
 if TYPE_CHECKING:
-    from ImecEvaluator import MainWindow
+    from HSIEvaluator import MainWindow
 
 
 class GraphView(QtWidgets.QGraphicsView):
@@ -120,7 +120,7 @@ class GraphView(QtWidgets.QGraphicsView):
         else:
             pos: QtCore.QPointF = self.mapToScene(event.pos())
             x, y = int(round(pos.x())), int(round(pos.y()))
-            self._mainWin.getSpecView().updateCursorSpectrum(x, y)
+            self._mainWin.getresultPlots().updateCursorSpectrum(x, y)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
