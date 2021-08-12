@@ -289,6 +289,8 @@ class SpecPlot(QtWidgets.QWidget):
         #     cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
         #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavenumbers(), cursorSpec, color='gray')[0]
 
+        self._specAx.set_xlabel("Wavenumbers (cm-1)")
+        self._specAx.set_ylabel("Intensity (a.u.)")
         self._specAx.legend(self._legendItems)
         self._plotDescriptors()
         self._canvas.draw()

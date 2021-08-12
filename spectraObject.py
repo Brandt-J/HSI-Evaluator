@@ -144,7 +144,7 @@ class SpectraObject:
         Convenience function to get default wavenumbers if None were set...
         :return:
         """
-        self._wavenumbers = np.arange(cube.shape[0])
+        self._wavenumbers = np.linspace(1115, 1671, cube.shape[0])
 
     def _getSpecArray(self, indices: List[Tuple[int, int]], preprocessed: bool) -> np.ndarray:
         """

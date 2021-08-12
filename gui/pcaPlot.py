@@ -14,7 +14,9 @@ class PCAPlot(FigureCanvas):
         self._ax: plt.Axes = self._figure.add_subplot()
         self._spectraForPCA: Union[None, np.ndarray] = None
         self._colors: List[List[float]] = []  # lists the color of each data point
+        self._allNames: List[str] = []  # lists the label names of each data point
         self._name2colors: Dict[str, List[float]] = {}  # connects legend label to plot color
+        self._name2lines: Dict[str, Union[str, tuple]] = {}  # connects legend label to line style
 
     def resetPlots(self) -> None:
         """
@@ -23,7 +25,9 @@ class PCAPlot(FigureCanvas):
         self._ax.clear()
         self._spectraForPCA = None
         self._colors = []
+        self._allNames = []
         self._name2colors = {}
+        self._name2lines = {}
 
     def addSpectraToPCA(self, spectra: np.ndarray, linestyle: Union[str, tuple], color: List[float], legendName: str) -> None:
         """
@@ -39,7 +43,9 @@ class PCAPlot(FigureCanvas):
             self._spectraForPCA = np.vstack((self._spectraForPCA, spectra))
 
         self._colors += [color] * spectra.shape[0]
+        self._allNames += [legendName] * spectra.shape[0]
         self._name2colors[legendName] = color
+        self._name2lines[legendName] = linestyle
 
     def finishPlotting(self) -> None:
         """
@@ -62,7 +68,7 @@ class PCAPlot(FigureCanvas):
         lines = []
         # draw a point for each label
         for name, color in self._name2colors.items():
-            line,  = self._ax.plot(0, 0, linestyle=None, color=color, label=name)
+            line,  = self._ax.plot(0, 0, linestyle=self._name2lines[name], color=color, label=name)
         self._ax.legend()  # create the legend based on that
 
         for line in lines:
@@ -72,41 +78,31 @@ class PCAPlot(FigureCanvas):
         """
         Draws the confidence ellipses for the data.
         """
-        colorArr: np.ndarray = np.array(self._colors)
-        for color in self._name2colors.values():
-            points: np.ndarray = getXYOfColor(np.array(color), colorArr, princComps)
-            confidence_ellipse(points[:, 0], points[:, 1], self._ax, edgecolor=color)
+        nameArr: np.ndarray = np.array(self._allNames)
+        for name, color in self._name2colors.items():
+            points: np.ndarray = getXYOfName(np.array(name), nameArr, princComps)
+            confidence_ellipse(points, self._ax, edgecolor=color, linestyle=self._name2lines[name])
 
 
-def getXYOfColor(color: np.ndarray, colors: np.ndarray, datapoints: np.ndarray) -> np.ndarray:
-    indices: np.ndarray = np.unique(np.where(colors == color)[0])
+def getXYOfName(name: np.ndarray, allNames: np.ndarray, datapoints: np.ndarray) -> np.ndarray:
+    indices: np.ndarray = np.unique(np.where(allNames == name)[0])
     return datapoints[indices, :]
 
 
-def confidence_ellipse(x: np.ndarray, y: np.ndarray, ax: plt.Axes, edgecolor: List[float], n_std: float = 3.0, **kwargs):
+def confidence_ellipse(princComps: np.ndarray, ax: plt.Axes, edgecolor: List[float],
+                       linestyle: Union[str, tuple], n_std: float = 3.0):
     """
     Create a plot of the covariance confidence ellipse of *x* and *y*.
     Adapted from https://matplotlib.org/stable/gallery/statistics/confidence_ellipse.html#sphx-glr-gallery-statistics-confidence-ellipse-py
     Parameters
     ----------
-    x, y : array-like, shape (n, )
-        Input data.
-
-    ax : matplotlib.axes.Axes
-        The axes object to draw the ellipse into.
-
-    edgecolor: color to use
-
-    n_std : float
-        The number of standard deviations to determine the ellipse's radiuses.
-
-    **kwargs
-        Forwarded to `~matplotlib.patches.Ellipse`
-
+    :param princComps: (Nx2) princ comps of N data points
+    :param ax: matplotlib.axes.Axes The axes object to draw the ellipse into.
+    :param edgecolor: color to use
+    :param n_std : float The number of standard deviations to determine the ellipse's radiuses.
+    :param linestyle: the linestyle to use
     """
-    if x.size != y.size:
-        raise ValueError("x and y must be the same size")
-
+    x, y = princComps[:, 0], princComps[:, 1]
     cov = np.cov(x, y)
     pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
     # Using a special case to obtain the eigenvalues of this
@@ -115,7 +111,7 @@ def confidence_ellipse(x: np.ndarray, y: np.ndarray, ax: plt.Axes, edgecolor: Li
     ell_radius_y = np.sqrt(1 - pearson)
     facecolor = [edgecolor[0], edgecolor[1], edgecolor[2], 0.3]
     ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2, edgecolor=edgecolor,
-                      facecolor=facecolor, **kwargs)
+                      facecolor=facecolor, linestyle=linestyle)
 
     # Calculating the stdandard deviation of x from
     # the squareroot of the variance and multiplying

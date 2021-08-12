@@ -5,7 +5,7 @@ from typing import Dict, Union
 from PyQt5 import QtWidgets
 
 from gui.spectraPlots import ResultPlots
-from gui.pcaPlot import getXYOfColor
+from gui.pcaPlot import getXYOfName
 from gui.HSIEvaluator import MainWindow
 
 
@@ -86,7 +86,7 @@ class TestSpectraPreview(TestCase):
 
         for i in range(numDifferentColors):
             # we just take the colors also as data, that makes testing easy
-            onlyTheColors: np.ndarray = getXYOfColor(colors[i, :], allColors, allColors)
+            onlyTheColors: np.ndarray = getXYOfName(colors[i, :], allColors, allColors)
             self.assertEqual(onlyTheColors.shape[0], numColorsPerColor[i])
             for j in range(onlyTheColors.shape[0]):
                 self.assertTrue(np.array_equal(onlyTheColors[j, :], colors[i, :]))
