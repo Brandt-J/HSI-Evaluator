@@ -6,7 +6,7 @@ from typing import *
 from logger import getLogger
 from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
-from gui.spectraPlots import SpectraPreviewWidget
+from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
 from gui.classification import ClassCreator, ClassifierWidget
 
@@ -26,7 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._multiSampleView: MultiSampleView = MultiSampleView(self)
         self._preprocSelector: PreprocessingSelector = PreprocessingSelector()
-        self._specView: SpectraPreviewWidget = SpectraPreviewWidget()
+        self._resultPlots: ResultPlots = ResultPlots()
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassifierWidget = ClassifierWidget(self)
         self._loadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
@@ -38,14 +38,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createLayout()
         self.disableWidgets()
-        self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
+        # self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
-        sampleView.Activated.connect(self._specView.updateSpectra)
-        sampleView.Renamed.connect(self._specView.updateSpectra)
+        sampleView.Activated.connect(self._resultPlots.updatePlots)
+        sampleView.Renamed.connect(self._resultPlots.updatePlots)
 
         graphView: 'GraphView' = sampleView.getGraphView()
-        graphView.SelectionChanged.connect(self._specView.updateSpectra)
+        graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
         sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
@@ -53,8 +53,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
         return self._clsCreator.getColorOfClassName(className)
 
-    def getSpecView(self) -> 'SpectraPreviewWidget':
-        return self._specView
+    def getresultPlots(self) -> 'ResultPlots':
+        return self._resultPlots
 
     def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
         """
@@ -115,7 +115,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.showMaximized()
 
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
-        return self._specView.getDecsriptorLibrary()
+        return self._resultPlots.getDecsriptorLibrary()
 
     def _export(self) -> None:
         raise NotImplementedError
@@ -165,12 +165,12 @@ class MainWindow(QtWidgets.QMainWindow):
         Sets parameters to the widgets of that window and establishes connections.
         :return:
         """
-        self._multiSampleView.SampleClosed.connect(self._specView.updateSpectra)
+        self._multiSampleView.SampleClosed.connect(self._resultPlots.updatePlots)
 
-        self._preprocSelector.ProcessorStackUpdated.connect(self._specView.updateSpectra)
+        self._preprocSelector.ProcessorStackUpdated.connect(self._resultPlots.updatePlots)
 
-        self._clsCreator.ClassDeleted.connect(self._specView.updateSpectra)
-        self._clsCreator.ClassActivated.connect(self._specView.switchToDescriptorSet)
+        self._clsCreator.ClassDeleted.connect(self._resultPlots.updatePlots)
+        self._clsCreator.ClassActivated.connect(self._resultPlots.switchToDescriptorSet)
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)
@@ -182,7 +182,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._toolbar.addSeparator()
         self._toolbar.addWidget(self._exportBtn)
 
-        self._specView.setMainWinRef(self)
+        self._resultPlots.setMainWinRef(self)
 
     def _createLayout(self) -> None:
         """
@@ -196,7 +196,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         specLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         specLayout.addWidget(self._preprocSelector)
-        specLayout.addWidget(self._specView)
+        specLayout.addWidget(self._resultPlots)
 
         group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
         layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -208,7 +208,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(specLayout)
 
     def _getUIWidgets(self) -> List[QtWidgets.QWidget]:
-        widgetList = [self._exportBtn, self._specView, self._clfWidget, self._clsCreator]
+        widgetList = [self._exportBtn, self._resultPlots, self._clfWidget, self._clsCreator]
         return widgetList
 
     # def closeEvent(self, a0: QtGui.QCloseEvent) -> None:  # TODO: REIMPLEMENT

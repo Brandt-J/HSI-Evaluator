@@ -328,7 +328,7 @@ class SampleView(QtWidgets.QMainWindow):
 
     def _saveViewToFile(self, saveFileName: str = 'test.pkl') -> None:
         resDict: dict = {'classesAndPixels': self.getClassesAndPixels(),
-                         'descLib': self._specView.getDecsriptorLibrary()}
+                         'descLib': self._resultPlots.getDecsriptorLibrary()}
         with open(saveFileName, "wb") as fp:
             pickle.dump(resDict, fp)
         self._logger.info(f'saving sample view to {saveFileName}')
@@ -340,8 +340,8 @@ class SampleView(QtWidgets.QMainWindow):
         #         self._logger.info(f'loading sample view from {fname}')
         #         resDict = pickle.load(fp)
         #         self._specObj.setClasses(resDict['classesAndPixels'])
-        #         self._specView.setDescriptorLibrary(resDict["descLib"])
-        #         self._specView.updateSpectra()
+        #         self._resultPlots.setDescriptorLibrary(resDict["descLib"])
+        #         self._resultPlots.updatePlots()
         #         classes: List[str] = list(resDict['classesAndPixels'].keys())
         #         self._clsCreator.setClasses(classes)
         #         self._clsCreator.activateClass(classes[0])

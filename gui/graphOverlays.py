@@ -120,7 +120,7 @@ class GraphView(QtWidgets.QGraphicsView):
         else:
             pos: QtCore.QPointF = self.mapToScene(event.pos())
             x, y = int(round(pos.x())), int(round(pos.y()))
-            self._mainWin.getSpecView().updateCursorSpectrum(x, y)
+            self._mainWin.getresultPlots().updateCursorSpectrum(x, y)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:

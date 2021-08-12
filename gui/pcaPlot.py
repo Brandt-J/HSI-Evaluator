@@ -1,0 +1,136 @@
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from typing import List, Union, Dict, Tuple
+from sklearn.decomposition import PCA
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
+
+
+class PCAPlot(FigureCanvas):
+    def __init__(self):
+        self._figure: plt.Figure = plt.Figure()
+        super(PCAPlot, self).__init__(self._figure)
+        self._ax: plt.Axes = self._figure.add_subplot()
+        self._spectraForPCA: Union[None, np.ndarray] = None
+        self._colors: List[List[float]] = []  # lists the color of each data point
+        self._name2colors: Dict[str, List[float]] = {}  # connects legend label to plot color
+
+    def resetPlots(self) -> None:
+        """
+        Called before starting to plot a new set of spectra.
+        """
+        self._ax.clear()
+        self._spectraForPCA = None
+        self._colors = []
+        self._name2colors = {}
+
+    def addSpectraToPCA(self, spectra: np.ndarray, linestyle: Union[str, tuple], color: List[float], legendName: str) -> None:
+        """
+        Plots the spectra array.
+        :param spectra: (NxM) array of N spectra with M wavenumbers
+        :param linestyle: the linestyle code to use
+        :param color: The rgb color to use (or rgba)
+        :param legendName: The legendname of the given spec set.
+        """
+        if self._spectraForPCA is None:
+            self._spectraForPCA = spectra
+        else:
+            self._spectraForPCA = np.vstack((self._spectraForPCA, spectra))
+
+        self._colors += [color] * spectra.shape[0]
+        self._name2colors[legendName] = color
+
+    def finishPlotting(self) -> None:
+        """
+        Called after finishing plotting a set of spectra.
+        """
+        if self._spectraForPCA is not None:
+            pca = PCA(n_components=2)
+            princComps: np.ndarray = pca.fit_transform(self._spectraForPCA)
+            self._ax.scatter(princComps[:, 0], princComps[:, 1], color=self._colors)
+            self._ax.set_xlabel("Scores on PC1")
+            self._ax.set_ylabel("Scores on PC2")
+            self._drawLegend()
+            self._drawConfidenceEllipses(princComps)
+        self.draw()
+
+    def _drawLegend(self) -> None:
+        """
+        Draws the legend into the plot
+        """
+        lines = []
+        # draw a point for each label
+        for name, color in self._name2colors.items():
+            line,  = self._ax.plot(0, 0, linestyle=None, color=color, label=name)
+        self._ax.legend()  # create the legend based on that
+
+        for line in lines:
+            line.remove()
+
+    def _drawConfidenceEllipses(self, princComps: np.ndarray) -> None:
+        """
+        Draws the confidence ellipses for the data.
+        """
+        colorArr: np.ndarray = np.array(self._colors)
+        for color in self._name2colors.values():
+            points: np.ndarray = getXYOfColor(np.array(color), colorArr, princComps)
+            confidence_ellipse(points[:, 0], points[:, 1], self._ax, edgecolor=color)
+
+
+def getXYOfColor(color: np.ndarray, colors: np.ndarray, datapoints: np.ndarray) -> np.ndarray:
+    indices: np.ndarray = np.unique(np.where(colors == color)[0])
+    return datapoints[indices, :]
+
+
+def confidence_ellipse(x: np.ndarray, y: np.ndarray, ax: plt.Axes, edgecolor: List[float], n_std: float = 3.0, **kwargs):
+    """
+    Create a plot of the covariance confidence ellipse of *x* and *y*.
+    Adapted from https://matplotlib.org/stable/gallery/statistics/confidence_ellipse.html#sphx-glr-gallery-statistics-confidence-ellipse-py
+    Parameters
+    ----------
+    x, y : array-like, shape (n, )
+        Input data.
+
+    ax : matplotlib.axes.Axes
+        The axes object to draw the ellipse into.
+
+    edgecolor: color to use
+
+    n_std : float
+        The number of standard deviations to determine the ellipse's radiuses.
+
+    **kwargs
+        Forwarded to `~matplotlib.patches.Ellipse`
+
+    """
+    if x.size != y.size:
+        raise ValueError("x and y must be the same size")
+
+    cov = np.cov(x, y)
+    pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
+    # Using a special case to obtain the eigenvalues of this
+    # two-dimensionl dataset.
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    facecolor = [edgecolor[0], edgecolor[1], edgecolor[2], 0.3]
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2, edgecolor=edgecolor,
+                      facecolor=facecolor, **kwargs)
+
+    # Calculating the stdandard deviation of x from
+    # the squareroot of the variance and multiplying
+    # with the given number of standard deviations.
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    mean_x = np.mean(x)
+
+    # calculating the stdandard deviation of y ...
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    mean_y = np.mean(y)
+
+    transf = transforms.Affine2D() \
+        .rotate_deg(45) \
+        .scale(scale_x, scale_y) \
+        .translate(mean_x, mean_y)
+
+    ellipse.set_transform(transf + ax.transData)
+    ax.add_patch(ellipse)

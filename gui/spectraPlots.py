@@ -2,14 +2,14 @@ import random
 from PyQt5 import QtWidgets, QtGui, QtCore
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.patches as mpatches
 from matplotlib.backend_bases import MouseEvent, MouseButton, PickEvent
 import numpy as np
-from typing import List, Dict, TYPE_CHECKING, cast, Union
+from typing import List, Dict, TYPE_CHECKING, cast, Union, Tuple
 
 from logger import getLogger
-from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 from preprocessors import Background
+from gui.pcaPlot import PCAPlot
+from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from logging import Logger
 
 
-class SpectraPreviewWidget(QtWidgets.QWidget):
+class ResultPlots(QtWidgets.QWidget):
     linestyles: List[Union[str, tuple]] = ["-", "--", "-.",
                                            (0, (1, 10)),
                                            (0, (1, 1)),
@@ -29,90 +29,56 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
                                            (0, (3, 5, 1, 5, 1, 5))]
 
     def __init__(self):
-        super(SpectraPreviewWidget, self).__init__()
-        self._descLib: DescriptorLibrary = DescriptorLibrary()
-        self._activeDescSet: Union[None, DescriptorSet] = None
+        super(ResultPlots, self).__init__()
         self._mainWindow: Union[None, 'MainWindow'] = None
-        self._descLines: List[List[plt.Line2D]] = []
-        self._legendItems: List[mpatches.Patch] = []
-        self._selectedDescIndex: int = -1
-        self._selectedPoint: int = -1
-        self._logger: 'Logger' = getLogger("SpectraPreview")
-        self._onClickeEnabled: bool = True
-        self._noClickTimer: QtCore.QTimer = QtCore.QTimer()
-        self._noClickTimer.timeout.connect(self._enableOnClick)
+        self._logger: 'Logger' = getLogger("ResultPlots")
 
         self._numSpecSpinner: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
-        self._stackSpinner: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
-        self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._showAllCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
-        self._showDescCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
 
-        self._figure: plt.Figure = plt.Figure()
-        self._specAx: plt.Axes = self._figure.add_subplot()
-        self._descAx: plt.Axes = self._specAx.twinx()
-        self._cursorSpec: Union[plt.Line2D, None] = None
-        self._canvas: FigureCanvas = FigureCanvas(self._figure)
-        self._canvas.mpl_connect('button_press_event', self._onClick)
-        self._canvas.mpl_connect('pick_event', self._onPick)
-        self._canvas.mpl_connect('motion_notify_event', self._movePoints)
-        self._canvas.mpl_connect('button_release_event', self._releasePoints)
+        self._specPlot: 'SpecPlot' = SpecPlot(self)
+        self._pcaPlot: 'PCAPlot' = PCAPlot()
 
+        self._tabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
         self._configureWidgets()
         self._createLayout()
 
     def setMainWinRef(self, mainWin: 'MainWindow') -> None:
         self._mainWindow = mainWin
+        self._specPlot.setMainWindow(mainWin)
 
     @QtCore.pyqtSlot(str)
     def switchToDescriptorSet(self, descSetName: str) -> None:
-        presentNames: List[str] = [descSet.name for descSet in self._descLib.get_descriptorSets()]
-        if descSetName in presentNames:
-            self._activeDescSet = self._descLib.get_descriptorSets()[presentNames.index(descSetName)]
-        else:
-            newDescSet: DescriptorSet = DescriptorSet(descSetName)
-            self._descLib.add_descriptorSet(newDescSet)
-            self._activeDescSet = newDescSet
-
-        self._plotDescriptors()
+        self._specPlot.switchToDescriptorSet(descSetName)
 
     def getDecsriptorLibrary(self) -> DescriptorLibrary:
-        return self._descLib
+        return self._specPlot.getDecsriptorLibrary()
 
     def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
-        self._descLib = descLib
-        self._activeDescSet = None
-        self._plotDescriptors()
-        self._figure.tight_layout()
+        self._specPlot.setDescriptorLibrary(descLib)
 
-    def updateSpectra(self) -> None:
+    def updatePlots(self) -> None:
         """
         Updating the spec plot
         :return:
         """
-        self._specAx.clear()
-        self._resetLegendItems()
-
+        self._specPlot.resetPlots()
+        self._pcaPlot.resetPlots()
         if self._mainWindow is not None:
             if self._showAllCheckBox.isChecked():
-                self._plotSpectraFromAllSamples()
+                self._plotAllSamples()
             else:
                 background: np.ndarray = self._mainWindow.getBackgroundOfActiveSample()
                 self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView(), background)
 
-        if self._cursorSpec is not None:
-            cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
-            self._cursorSpec = self._specAx.plot(self._mainWindow.getWavenumbers(), cursorSpec, color='gray')[0]
+        self._specPlot.finishPlotting()
+        self._pcaPlot.finishPlotting()
 
-        self._specAx.legend(self._legendItems)
-        self._plotDescriptors()
-
-    def _plotSpectraFromAllSamples(self) -> None:
+    def _plotAllSamples(self) -> None:
         """
         Plots the Spectra from all samples, labelled also with sample names.
         :return:
         """
-
         i: int = 0
         allSpecs: Dict[str, Dict[str, np.ndarray]] = self._mainWindow.getLabelledSpectraFromAllViews()
         allBackgrounds: Dict[str, np.ndarray] = self._mainWindow.getBackgroundsOfAllSamples()
@@ -137,22 +103,23 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         :param linestyle: optional linestyle for the sample spectra
         :return:
         """
+        def getLegendName() -> str:
+            if sampleName is None:
+                nameForLegend = cls_name
+            else:
+                nameForLegend = f"{cls_name} from {sampleName}"
+            return nameForLegend
+
         preprocessors: List['Preprocessor'] = self._mainWindow.getPreprocessors()
 
         for i, (cls_name, cls_specs) in enumerate(specs.items()):
             color = [i / 255 for i in self._mainWindow.getColorOfClass(cls_name)]
             cls_specs = self._limitSpecNumber(cls_specs)
-            cls_specs = self._prepareSpecsForPlot(cls_specs, preprocessors, backgroundSpec)
+            cls_specs = self._preprocessSpectra(cls_specs, preprocessors, backgroundSpec)
 
-            self._specAx.plot(self._mainWindow.getWavenumbers(), cls_specs - i*self._stackSpinner.value(),
-                              linestyle=linestyle, color=color)
-
-            if sampleName is None:
-                legendName = cls_name
-            else:
-                legendName = f"{cls_name} from {sampleName}"
-
-            self._legendItems.append(legendName)
+            legendName = getLegendName()
+            self._specPlot.plotSpectra(cls_specs, i, linestyle, color, legendName)
+            self._pcaPlot.addSpectraToPCA(cls_specs, linestyle, color, legendName)
 
     def updateCursorSpectrum(self, x: int, y: int) -> None:
         pass  # TODO: REFACTOR to directly take spectrum as input
@@ -168,21 +135,11 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         self._numSpecSpinner.setMaximum(100)
         self._numSpecSpinner.setValue(20)
 
-        self._stackSpinner.setMinimum(0)
-        self._stackSpinner.setMaximum(2)
-        self._stackSpinner.setDecimals(2)
-        self._stackSpinner.setSingleStep(0.1)
+        self._numSpecSpinner.setMaximumWidth(50)
+        self._numSpecSpinner.valueChanged.connect(self.updatePlots)
 
-        self._avgCheckBox.setChecked(True)
-        self._showDescCheckBox.setChecked(True)
         self._showAllCheckBox.setChecked(True)
-
-        for spinner in [self._numSpecSpinner, self._stackSpinner]:
-            spinner.setMaximumWidth(50)
-            spinner.valueChanged.connect(self.updateSpectra)
-
-        for checkbox in [self._avgCheckBox, self._showDescCheckBox, self._showAllCheckBox]:
-            checkbox.stateChanged.connect(self.updateSpectra)
+        self._showAllCheckBox.stateChanged.connect(self.updatePlots)
 
     def _createLayout(self) -> None:
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
@@ -190,17 +147,181 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         leftLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         rightLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         leftLayout.addRow("Show All Samples", self._showAllCheckBox)
-        leftLayout.addRow("Average per Class", self._avgCheckBox)
-        leftLayout.addRow("Show Decriptors", self._showDescCheckBox)
         rightLayout.addRow("Max. Spectra per Class", self._numSpecSpinner)
-        rightLayout.addRow("Spectra Group Stacking", self._stackSpinner)
 
         optionsLayout.addLayout(leftLayout)
         optionsLayout.addLayout(rightLayout)
 
+        self._tabView.addTab(self._specPlot, "Spectra View")
+        self._tabView.addTab(self._pcaPlot, "PCA View")
+
+        layout.addLayout(optionsLayout)
+        layout.addWidget(self._tabView)
+        self.setLayout(layout)
+
+    def _preprocessSpectra(self, specArr: np.ndarray, preprocessors: List['Preprocessor'],
+                             backgroundSpec: np.ndarray) -> np.ndarray:
+        """
+        Prepares the spec (NxM) array of N spec with M wavenums for plotting.
+        Performs averating (if desired) and transpose.
+        :param specArr: (NxM) array of N spec with M wavenums
+        :param preprocessors: The preprocessors to use
+        :param backgroundSpec: Averaged spectrum of background
+        :return: spec array in (MxN) shape, as required for plt batch plotting
+        """
+        newArr: np.ndarray = specArr.copy()
+        onedimensional = len(newArr.shape) == 1
+        if onedimensional:
+            newArr = newArr[np.newaxis, :]
+
+        for processor in preprocessors:
+            if type(processor) == Background:
+                processor: Background = cast(Background, processor)
+                processor.setBackground(backgroundSpec)
+            newArr = processor.applyToSpectra(newArr)
+
+        return newArr
+
+    def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
+        """
+        Limits number of given specSet to not exceed the value given with numSpecSpinner.
+        :param specSet: (NxM) set of N spectra with M wavenumbers
+        :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavenumbers
+        """
+        numSpecs: int = specSet.shape[0]
+        maxSpecs: int = self._numSpecSpinner.value()
+        if numSpecs > maxSpecs:
+            specSet = specSet.copy()
+            randInd: np.ndarray = np.array(random.sample(list(np.arange(numSpecs)), maxSpecs))
+            specSet = specSet[randInd, :]
+        return specSet
+
+
+class SpecPlot(QtWidgets.QWidget):
+    def __init__(self, parent: 'ResultPlots'):
+        super(SpecPlot, self).__init__()
+        self._figure: plt.Figure = plt.Figure()
+        self._canvas: FigureCanvas = FigureCanvas(self._figure)
+
+        self._parent: 'ResultPlots' = parent
+        self._mainWin: Union[None, 'MainWindow'] = None
+        self._showDescCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._stackSpinner: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+
+        self._specAx: plt.Axes = self._figure.add_subplot()
+        self._descAx: plt.Axes = self._specAx.twinx()
+        self._cursorSpec: Union[plt.Line2D, None] = None
+
+        self._descLib: DescriptorLibrary = DescriptorLibrary()
+        self._activeDescSet: Union[None, DescriptorSet] = None
+
+        self._legendItems: List[str] = []
+        self._descLines: List[List[plt.Line2D]] = []
+        self._selectedDescIndex: int = -1
+        self._selectedPoint: int = -1
+        self._onClickeEnabled: bool = True
+        self._noClickTimer: QtCore.QTimer = QtCore.QTimer()
+
+        self._configureWidgets()
+        self._createLayout()
+
+    def setMainWindow(self, mainWinRef: 'MainWindow') -> None:
+        self._mainWin = mainWinRef
+
+    def getDecsriptorLibrary(self) -> DescriptorLibrary:
+        return self._descLib
+
+    def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
+        self._descLib = descLib
+        self._activeDescSet = None
+        self._plotDescriptors()
+        self._figure.tight_layout()
+
+    def switchToDescriptorSet(self, descSetName: str) -> None:
+        presentNames: List[str] = [descSet.name for descSet in self._descLib.get_descriptorSets()]
+        if descSetName in presentNames:
+            self._activeDescSet = self._descLib.get_descriptorSets()[presentNames.index(descSetName)]
+        else:
+            newDescSet: DescriptorSet = DescriptorSet(descSetName)
+            self._descLib.add_descriptorSet(newDescSet)
+            self._activeDescSet = newDescSet
+
+        self._plotDescriptors()
+
+    def resetPlots(self) -> None:
+        """
+        Called before starting to plot a new set of spectra.
+        """
+        self._specAx.clear()
+        self._legendItems = []
+
+    def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
+                     color: List[float], legendName: str) -> None:
+        """
+        Plots the spectra array.
+        :param spectra: (NxM) array of N spectra with M wavenumbers
+        :param index: index of specset, used for optional offset.
+        :param linestyle: the linestyle code to use
+        :param color: The rgb color to use (or rgba)
+        :param legendName: The legendname of the given spec set.
+        """
+        spectra: np.ndarray = self._prepareSpecsForPlot(spectra)
+        self._specAx.plot(self._mainWin.getWavenumbers(), spectra - index * self._stackSpinner.value(),
+                          linestyle=linestyle, color=color)
+
+        self._legendItems.append(legendName)
+
+    def finishPlotting(self) -> None:
+        """
+        Called after finishing plotting a set of spectra.
+        """
+        # if self._cursorSpec is not None:
+        #     cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
+        #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavenumbers(), cursorSpec, color='gray')[0]
+
+        self._specAx.legend(self._legendItems)
+        self._plotDescriptors()
+        self._canvas.draw()
+
+    def _createLayout(self) -> None:
+        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        optionsLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        optionsLayout.addRow("Average spectra per class", self._avgCheckBox)
+        optionsLayout.addRow("Stack amount", self._stackSpinner)
+        optionsLayout.addRow("Show descriptors", self._showDescCheckBox)
+
         layout.addLayout(optionsLayout)
         layout.addWidget(self._canvas)
         self.setLayout(layout)
+
+    def _configureWidgets(self) -> None:
+        self._stackSpinner.setMinimum(0)
+        self._stackSpinner.setMaximum(2)
+        self._stackSpinner.setDecimals(2)
+        self._stackSpinner.setSingleStep(0.1)
+
+        self._avgCheckBox.setChecked(True)
+        self._showDescCheckBox.setChecked(True)
+
+        self._stackSpinner.setMaximumWidth(50)
+        self._stackSpinner.valueChanged.connect(self._parent.updatePlots)
+
+        for checkbox in [self._avgCheckBox, self._showDescCheckBox]:
+            checkbox.stateChanged.connect(self._parent.updatePlots)
+
+        self._noClickTimer.timeout.connect(self._enableOnClick)
+
+        self._canvas.mpl_connect('button_press_event', self._onClick)
+        self._canvas.mpl_connect('pick_event', self._onPick)
+        self._canvas.mpl_connect('motion_notify_event', self._movePoints)
+        self._canvas.mpl_connect('button_release_event', self._releasePoints)
+
+    def _prepareSpecsForPlot(self, specArr: np.ndarray) -> np.ndarray:
+        specArr = specArr.copy()
+        if self._avgCheckBox.isChecked():
+            specArr = np.mean(specArr, axis=0)
+        return specArr.transpose()
 
     def _plotDescriptors(self) -> None:
         self._descAx.clear()
@@ -215,32 +336,6 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
 
         self._figure.tight_layout()
         self._canvas.draw()
-
-    def _prepareSpecsForPlot(self, specArr: np.ndarray, preprocessors: List['Preprocessor'],
-                             backgroundSpec: np.ndarray) -> np.ndarray:
-        """
-        Prepares the spec (NxM) array of N spec with M wavenums for plotting.
-        Performs averating (if desired) and transpose.
-        :param specArr: (NxM) array of N spec with M wavenums
-        :param preprocessors: The preprocessors to use
-        :param backgroundSpec: Averaged spectrum of background
-        :return: spec array in (MxN) shape, as required for plt batch plotting
-        """
-        newArr: np.ndarray = specArr.copy()
-        if self._avgCheckBox.isChecked():
-            newArr = np.mean(newArr, axis=0)
-
-        onedimensional = len(newArr.shape) == 1
-        if onedimensional:
-            newArr = newArr[np.newaxis, :]
-
-        for processor in preprocessors:
-            if type(processor) == Background:
-                processor: Background = cast(Background, processor)
-                processor.setBackground(backgroundSpec)
-            newArr = processor.applyToSpectra(newArr)
-
-        return newArr.transpose()
 
     def _onClick(self, event: MouseEvent) -> None:
         if self._onClickeEnabled:
@@ -285,7 +380,7 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         if self._activeDescSet is not None:
             middlePos = max([10, middlePos])  # prevent getting a negative start position
             self._activeDescSet.add_descriptor(middlePos-10, middlePos, middlePos+10)
-            self.updateSpectra()
+            self.updatePlots()
 
     def _enableOnClick(self) -> None:
         self._onClickeEnabled = True
@@ -299,20 +394,3 @@ class SpectraPreviewWidget(QtWidgets.QWidget):
         if self._selectedDescIndex > -1:
             self._activeDescSet.remove_descriptor_of_index(self._selectedDescIndex)
             self._deselectDescriptor()
-
-    def _resetLegendItems(self) -> None:
-        self._legendItems = []
-
-    def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
-        """
-        Limits number of given specSet to not exceed the value given with numSpecSpinner.
-        :param specSet: (NxM) set of N spectra with M wavenumbers
-        :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavenumbers
-        """
-        numSpecs: int = specSet.shape[0]
-        maxSpecs: int = self._numSpecSpinner.value()
-        if numSpecs > maxSpecs:
-            specSet = specSet.copy()
-            randInd: np.ndarray = np.array(random.sample(list(np.arange(numSpecs)), maxSpecs))
-            specSet = specSet[randInd, :]
-        return specSet
