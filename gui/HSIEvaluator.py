@@ -51,24 +51,33 @@ class MainWindow(QtWidgets.QMainWindow):
         sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
 
     def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
+        """
+        Returns a unique color for the class. Color is returned in 0-255 int values for R, G, B.
+        """
         return self._clsCreator.getColorOfClassName(className)
+
+    def classIsVisible(self, className: str) -> bool:
+        """
+        Returns, if the given class is set to visible or not-visible in the class selector.
+        """
+        return self._clsCreator.getClassVisibility(className)
 
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
-    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
         """
         Gets the currently labelled Spectra from the currently active sampleview.
         :return: Dictionary[className, (NxM) specArray of N spectra with M wavenumbers
         """
-        return self._multiSampleView.getLabelledSpectraFromActiveView()
+        return self._multiSampleView.getLabelledSpectraFromActiveView(onlyVisible)
 
-    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self, onlyVisible: bool = False) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
         :return:
         """
-        return self._multiSampleView.getLabelledSpectraFromAllViews()
+        return self._multiSampleView.getLabelledSpectraFromAllViews(onlyVisible)
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
         """
@@ -171,6 +180,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._clsCreator.ClassDeleted.connect(self._resultPlots.updatePlots)
         self._clsCreator.ClassActivated.connect(self._resultPlots.switchToDescriptorSet)
+        self._clsCreator.ClassVisibilityChanged.connect(self._resultPlots.updatePlots)
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)

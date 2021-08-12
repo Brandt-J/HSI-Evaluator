@@ -34,7 +34,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         :return: the new sampleview
         """
         newView: 'SampleView' = SampleView()
-        newView.setParentToGraphView(self._mainWinParent)
+        newView.setMainWindowReferences(self._mainWinParent)
         newView.SizeChanged.connect(self._recreateLayout)
         newView.Activated.connect(self._viewActivated)
         newView.Closed.connect(self._viewClosed)
@@ -51,22 +51,28 @@ class MultiSampleView(QtWidgets.QScrollArea):
     def getWavenumbers(self) -> np.ndarray:
         return self._sampleviews[0].getWavenumbers()
 
-    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
         """
-        Gets the labelled Spectra, in form of a dictionary, from the active ampleview
+        Gets the labelled Spectra, in form of a dictionary, from the active sampleview
+        :param onlyVisible: If True, only visible classes are returned
         :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
         """
         spectra: Dict[str, np.ndarray] = {}
         for view in self._sampleviews:
             if view.isActive():
-                spectra = view.getLabelledSpectra()
+                spectra = view.getLabelledSpectra(onlyVisible)
                 break
         return spectra
 
-    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self, onlyVisible: bool = False) -> Dict[str, Dict[str, np.ndarray]]:
+        """
+        Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
+        :param onlyVisible: If True, only visible classes are returned
+        :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
+        """
         spectra: Dict[str, Dict[str, np.ndarray]] = {}
         for view in self._sampleviews:
-            spectra[view.getName()] = view.getLabelledSpectra()
+            spectra[view.getName()] = view.getLabelledSpectra(onlyVisible)
         return spectra
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
@@ -151,6 +157,7 @@ class SampleView(QtWidgets.QMainWindow):
     def __init__(self):
         super(SampleView, self).__init__()
         self._name: str = ''
+        self._mainWindow: Union[None, 'MainWindow'] = None
         self._specObj: SpectraObject = SpectraObject()
         self._graphView: 'GraphView' = GraphView()
         self._classes2Indices: Dict[str, Set[int]] = {}
@@ -177,8 +184,9 @@ class SampleView(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._establish_connections()
 
-    def setParentToGraphView(self, parent: 'MainWindow') -> None:
+    def setMainWindowReferences(self, parent: 'MainWindow') -> None:
         self._graphView.setMainWindowReference(parent)
+        self._mainWindow = parent
 
     def setUp(self, name: str, cube: np.ndarray) -> None:
         self._name = name
@@ -219,14 +227,16 @@ class SampleView(QtWidgets.QMainWindow):
 
         return background
 
-    def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectra(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
+        :param onlyVisible: If True, only visible classes are included.
         :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._specObj.getNotPreprocessedCube())
+            if self._mainWindow.classIsVisible(name):
+                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._specObj.getNotPreprocessedCube())
         return spectra
 
     def isActive(self) -> bool:

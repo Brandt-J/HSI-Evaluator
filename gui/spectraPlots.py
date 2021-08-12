@@ -35,6 +35,7 @@ class ResultPlots(QtWidgets.QWidget):
 
         self._numSpecSpinner: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
         self._showAllCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._seedSpinner: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
 
         self._specPlot: 'SpecPlot' = SpecPlot(self)
         self._pcaPlot: 'PCAPlot' = PCAPlot()
@@ -135,6 +136,11 @@ class ResultPlots(QtWidgets.QWidget):
         self._numSpecSpinner.setMaximum(100)
         self._numSpecSpinner.setValue(20)
 
+        self._seedSpinner.setMinimum(0)
+        self._seedSpinner.setMaximum(100)
+        self._seedSpinner.setValue(42)
+        self._seedSpinner.valueChanged.connect(self.updatePlots)
+
         self._numSpecSpinner.setMaximumWidth(50)
         self._numSpecSpinner.valueChanged.connect(self.updatePlots)
 
@@ -144,13 +150,15 @@ class ResultPlots(QtWidgets.QWidget):
     def _createLayout(self) -> None:
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         optionsLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
-        leftLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        rightLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        leftLayout.addRow("Show All Samples", self._showAllCheckBox)
-        rightLayout.addRow("Max. Spectra per Class", self._numSpecSpinner)
-
-        optionsLayout.addLayout(leftLayout)
-        optionsLayout.addLayout(rightLayout)
+        optionsLayout.addWidget(QtWidgets.QLabel("Show all samples:"))
+        optionsLayout.addWidget(self._showAllCheckBox)
+        optionsLayout.addStretch()
+        optionsLayout.addWidget(QtWidgets.QLabel("Max. spectra per class:"))
+        optionsLayout.addWidget(self._numSpecSpinner)
+        optionsLayout.addStretch()
+        optionsLayout.addWidget(QtWidgets.QLabel("Random seed:"))
+        optionsLayout.addWidget(self._seedSpinner)
+        optionsLayout.addStretch()
 
         self._tabView.addTab(self._specPlot, "Spectra View")
         self._tabView.addTab(self._pcaPlot, "PCA View")
@@ -188,6 +196,7 @@ class ResultPlots(QtWidgets.QWidget):
         :param specSet: (NxM) set of N spectra with M wavenumbers
         :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavenumbers
         """
+        random.seed(self._seedSpinner.value())
         numSpecs: int = specSet.shape[0]
         maxSpecs: int = self._numSpecSpinner.value()
         if numSpecs > maxSpecs:
