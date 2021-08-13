@@ -108,7 +108,7 @@ class ResultPlots(QtWidgets.QWidget):
             if sampleName is None:
                 nameForLegend = cls_name
             else:
-                nameForLegend = f"{cls_name} from {sampleName}"
+                nameForLegend = f"{cls_name} from {sampleName[:15]}"
             return nameForLegend
 
         preprocessors: List['Preprocessor'] = self._mainWindow.getPreprocessors()
@@ -133,8 +133,8 @@ class ResultPlots(QtWidgets.QWidget):
 
     def _configureWidgets(self) -> None:
         self._numSpecSpinner.setMinimum(0)
-        self._numSpecSpinner.setMaximum(100)
-        self._numSpecSpinner.setValue(20)
+        self._numSpecSpinner.setMaximum(1000)
+        self._numSpecSpinner.setValue(100)
 
         self._seedSpinner.setMinimum(0)
         self._seedSpinner.setMaximum(100)
