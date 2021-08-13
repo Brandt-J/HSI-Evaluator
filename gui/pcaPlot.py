@@ -1,16 +1,22 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from typing import List, Union, Dict, Tuple
+from typing import List, Union, Dict, TYPE_CHECKING
 from sklearn.decomposition import PCA
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
+
+from logger import getLogger
+
+if TYPE_CHECKING:
+    from logging import Logger
 
 
 class PCAPlot(FigureCanvas):
     def __init__(self):
         self._figure: plt.Figure = plt.Figure()
         super(PCAPlot, self).__init__(self._figure)
+        self._logger: 'Logger' = getLogger("PCA-Plot")
         self._ax: plt.Axes = self._figure.add_subplot()
         self._spectraForPCA: Union[None, np.ndarray] = None
         self._colors: List[List[float]] = []  # lists the color of each data point
@@ -52,14 +58,17 @@ class PCAPlot(FigureCanvas):
         Called after finishing plotting a set of spectra.
         """
         if self._spectraForPCA is not None:
-            pca = PCA(n_components=2)
-            princComps: np.ndarray = pca.fit_transform(self._spectraForPCA)
-            self._ax.scatter(princComps[:, 0], princComps[:, 1], color=self._colors)
-            self._ax.set_xlabel("Scores on PC1")
-            self._ax.set_ylabel("Scores on PC2")
-            self._drawLegend()
-            self._drawConfidenceEllipses(princComps)
-        self.draw()
+            if self._spectraForPCA.shape[0] <= 2:
+                self._logger.warning(f"Not doing PCA, because only {self._spectraForPCA.shape[0]} spectra were obtained.")
+            else:
+                pca = PCA(n_components=2)
+                princComps: np.ndarray = pca.fit_transform(self._spectraForPCA)
+                self._ax.scatter(princComps[:, 0], princComps[:, 1], color=self._colors)
+                self._ax.set_xlabel("Scores on PC1")
+                self._ax.set_ylabel("Scores on PC2")
+                self._drawLegend()
+                self._drawConfidenceEllipses(princComps)
+                self.draw()
 
     def _drawLegend(self) -> None:
         """

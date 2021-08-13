@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import List
 import numpy as np
-
+import sys
+import os
+sys.path.append(os.getcwd())
 from SpectraProcessing.Preprocessing.processing import *
 
 
