@@ -219,7 +219,7 @@ class SpecPlot(QtWidgets.QWidget):
         self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
 
         self._specAx: plt.Axes = self._figure.add_subplot()
-        self._descAx: plt.Axes = self._specAx.twinx()
+        # self._descAx: plt.Axes = self._specAx.twinx()
         self._cursorSpec: Union[plt.Line2D, None] = None
 
         self._descLib: DescriptorLibrary = DescriptorLibrary()
@@ -335,18 +335,19 @@ class SpecPlot(QtWidgets.QWidget):
         return specArr.transpose()
 
     def _plotDescriptors(self) -> None:
-        self._descAx.clear()
-        self._descLines = []
-        if self._activeDescSet is not None and self._showDescCheckBox.isChecked():
-            for i, desc in enumerate(self._activeDescSet.getDescriptors()):
-                x = [desc.start, desc.peak, desc.end]
-                y = [0, 1, 0]
-                color = 'black' if i != self._selectedDescIndex else 'green'
-                line: plt.Line2D = self._descAx.plot(x, y, color=color, marker='o', picker=5)[0]
-                self._descLines.append(line)
-
-        self._figure.tight_layout()
-        self._canvas.draw()
+        pass
+        # self._descAx.clear()
+        # self._descLines = []
+        # if self._activeDescSet is not None and self._showDescCheckBox.isChecked():
+        #     for i, desc in enumerate(self._activeDescSet.getDescriptors()):
+        #         x = [desc.start, desc.peak, desc.end]
+        #         y = [0, 1, 0]
+        #         color = 'black' if i != self._selectedDescIndex else 'green'
+        #         line: plt.Line2D = self._descAx.plot(x, y, color=color, marker='o', picker=5)[0]
+        #         self._descLines.append(line)
+        #
+        # self._figure.tight_layout()
+        # self._canvas.draw()
 
     def _onClick(self, event: MouseEvent) -> None:
         if self._onClickeEnabled:
