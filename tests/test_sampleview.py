@@ -8,13 +8,12 @@ import numpy as np
 import pickle
 
 from gui.HSIEvaluator import MainWindow
-from gui.sampleview import MultiSampleView, SampleView, getSpectraFromIndices
+from gui.sampleview import MultiSampleView, SampleView, getSpectraFromIndices, Sample
 from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
 
 if TYPE_CHECKING:
     from gui.classification import ClassCreator
-    from gui.sampleview import Sample
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -149,10 +148,10 @@ class TestSampleView(TestCase):
         imgClf: MainWindow = MainWindow()
 
         classesSample1: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4},
-                                              'class2': {5, 6, 7, 8}}
+                                               'class2': {5, 6, 7, 8}}
         classesSample2: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4, 5, 7},
-                                              'class2': {8, 9, 10, 11},
-                                              'class3': {12, 13, 14}}
+                                               'class2': {8, 9, 10, 11},
+                                               'class3': {12, 13, 14}}
 
         # Create MultiView and two SampleViews.
         multiView: MultiSampleView = MultiSampleView(imgClf)
@@ -166,11 +165,10 @@ class TestSampleView(TestCase):
         sample2._sampleData.filePath = os.path.join(r'FakeDir/Sample2.npy')
         sample2._classes2Indices = classesSample2
 
-        classCreator: 'ClassCreator' = imgClf._clsCreator
         with tempfile.TemporaryDirectory() as tmpdirname:
-            multiView._getSampleSaveDirectory = lambda: tmpdirname
+            multiView.getSampleSaveDirectory = lambda: tmpdirname
             multiView._saveSampleView(sample1)
-            savename: str = os.path.join(multiView._getSampleSaveDirectory(), sample1._name + '.pkl')
+            savename: str = os.path.join(multiView.getSampleSaveDirectory(), sample1.getSaveFileName())
             self.assertTrue(os.path.exists(savename))
             with open(savename, "rb") as fp:
                 savedData: 'Sample' = pickle.load(fp)
@@ -179,7 +177,7 @@ class TestSampleView(TestCase):
             self.assertEqual(savedData.filePath, r'FakeDir/Sample1.npy')
 
             multiView._saveSampleView(sample2)
-            savename: str = os.path.join(multiView._getSampleSaveDirectory(), sample2._name + '.pkl')
+            savename: str = os.path.join(multiView.getSampleSaveDirectory(), sample2.getSaveFileName())
             self.assertTrue(os.path.exists(savename))
             with open(savename, "rb") as fp:
                 savedData: 'Sample' = pickle.load(fp)
@@ -187,4 +185,33 @@ class TestSampleView(TestCase):
             self.assertEqual(savedData.name, 'Sample2')
             self.assertEqual(savedData.filePath, r'FakeDir/Sample2.npy')
 
+    def test_loadFromSample(self) -> None:
+        imgClf: MainWindow = MainWindow()
+        sample: Sample = Sample()
+        sample.name = 'Sample1'
+        sample.classes2Indices = {'Background': {1, 2, 3, 4},
+                                  'class2': {5, 6, 7, 8}}
+        testCube: np.ndarray = np.random.rand(3, 10, 10)
+
+        multiView: MultiSampleView = MultiSampleView(imgClf)
+        self.assertTrue(len(multiView._sampleviews) == 0)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            sample.filePath = os.path.join(tmpdirname, "testCube.npy")
+            saveName: str = os.path.join(tmpdirname, sample.getFileHash() + '.pkl')
+            with open(saveName, "wb") as fp:
+                pickle.dump(sample, fp)
+            np.save(sample.filePath, testCube)
+            multiView.loadSampleViewFromFile(saveName)
+
+        self.assertTrue(len(multiView._sampleviews) == 1)
+        createdSample: SampleView = multiView._sampleviews[0]
+        self.assertDictEqual(sample.__dict__, createdSample.getSampleData().__dict__)
+        classCreator: ClassCreator = imgClf._clsCreator
+        presentClasses: List[str] = [cls.name for cls in classCreator._classes]
+        for cls in sample.classes2Indices.keys():
+            self.assertTrue(cls in presentClasses)
+
+        self.assertTrue(np.array_equal(createdSample._specObj.getCube(), testCube))
+        self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
 

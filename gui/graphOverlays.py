@@ -3,7 +3,7 @@ import numba
 from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
 from PIL import Image, ImageEnhance
-from typing import Tuple, Union, TYPE_CHECKING, Set, List
+from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
 
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
@@ -41,6 +41,12 @@ class GraphView(QtWidgets.QGraphicsView):
         img = cube2RGB(cube)
         self._selectionOverlay.initOverlay(img.shape)
         self._item.setPixmap(npy2Pixmap(img))
+
+    def setCurrentlyPresentSelection(self, classes2Ind: Dict[str, Set[int]]) -> None:
+        for cls, indices in classes2Ind.items():
+            color: Tuple[int, int, int] = self._mainWin.getColorOfClass(cls)
+            self._selectionOverlay.addPixelsToSelection(indices, color)
+        self.SelectionChanged.emit()
 
     def getCurrentViewBounds(self) -> QtCore.QRectF:
         return self.mapToScene(self.rect()).boundingRect()
@@ -84,9 +90,6 @@ class GraphView(QtWidgets.QGraphicsView):
     def hideClassImage(self) -> None:
         self._classOverlay.hide()
         self._selectionOverlay.show()
-
-    def setSelectionPixelsToColor(self, px: Tuple[np.ndarray, np.ndarray], color: Tuple[int, int, int]) -> None:
-        self._selectionOverlay.setPixelColors(px, color)
 
     def getPixelsOfColor(self, rgb: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -181,13 +184,6 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
 
     def initOverlay(self, shape: Tuple[int, int, int]) -> None:
         self._overlayArr = np.zeros((shape[0], shape[1], 4), dtype=np.uint8)
-        self._updatePixmap()
-
-    def setPixelColors(self, pixCoords: Tuple[np.ndarray, np.ndarray], color: Tuple[int, int, int]) -> None:
-        for i in range(len(pixCoords[0])):
-            y, x = pixCoords[0][i], pixCoords[1][i]
-            self._overlayArr[y, x, :3] = color
-            self._overlayArr[y, x, 3] = 255
         self._updatePixmap()
 
     def startNewSelection(self, pos: QtCore.QPoint, colorRGB: Tuple[int, int, int]) -> None:

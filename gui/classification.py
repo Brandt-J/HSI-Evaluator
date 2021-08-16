@@ -75,8 +75,17 @@ class ClassCreator(QtWidgets.QGroupBox):
     def activateClass(self, clsName: str) -> None:
         if clsName in self._classes:
             self._activeCls = clsName
-            # self._recreateLayout()
             self.ClassActivated.emit(clsName)
+
+    def checkForRequiredClasses(self, classes: List[str]) -> None:
+        """
+        Creates classes that are needed if they aren't yet present.
+        """
+        presentClassNames: List[str] = [clsObj.name for clsObj in self._classes]
+        for cls in classes:
+            if cls not in presentClassNames:
+                self._addClass(cls)
+        self._recreateLayout()
 
     def getCurrentColor(self) -> Tuple[int, int, int]:
         color: Union[None, tuple] = None

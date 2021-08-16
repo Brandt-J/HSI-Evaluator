@@ -1,10 +1,10 @@
 import os
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
 from typing import *
 
 from logger import getLogger
-from gui.sampleview import MultiSampleView
+from gui.sampleview import MultiSampleView, getFilePathHash
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
@@ -50,17 +50,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
         sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
 
-    def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
-        """
-        Returns a unique color for the class. Color is returned in 0-255 int values for R, G, B.
-        """
-        return self._clsCreator.getColorOfClassName(className)
-
     def classIsVisible(self, className: str) -> bool:
         """
         Returns, if the given class is set to visible or not-visible in the class selector.
         """
         return self._clsCreator.getClassVisibility(className)
+
+    def checkForRequiredClasses(self, classes: List[str]) -> None:
+        """Makes sure that the given classes are present in the class creator. Missing ones are created."""
+        self._clsCreator.checkForRequiredClasses(classes)
+
+    def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
+        """
+        Returns a unique color for the class. Color is returned in 0-255 int values for R, G, B.
+        """
+        return self._clsCreator.getColorOfClassName(className)
 
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
@@ -111,15 +115,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _loadFile(self, fname: str) -> None:
         name = os.path.basename(fname.split('.npy')[0])
-        try:
+        savedSampleDir: str = self._multiSampleView.getSampleSaveDirectory()
+        savedSamplePath: str = os.path.join(savedSampleDir, getFilePathHash(fname) + '.pkl')
+
+        if os.path.exists(savedSamplePath):
+            self._multiSampleView.loadSampleViewFromFile(savedSamplePath)
+            self._logger.info(f"Loading saved status for sample {name}")
+        else:
             cube: np.ndarray = np.load(fname)
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "File Error", f"Could not load file {fname}."
-                                                               f"\nError is:\n{e}")
-            return
-        newView: 'SampleView' = self._multiSampleView.addSampleView()
-        newView.setUp(fname, cube)
-        self._logger.info(f"Loaded sample: {name}")
+            newView: 'SampleView' = self._multiSampleView.addSampleView()
+            newView.setUp(fname, cube)
+            self._logger.info(f"Creating new sample from: {name}")
+
         self.enableWidgets()
         self.showMaximized()
 
@@ -128,38 +135,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _export(self) -> None:
         raise NotImplementedError
-        # folderPath: str = QtWidgets.QFileDialog.getExistingDirectory(self, "Choose Target Directory")
-        # if folderPath:
-        #     classes, colors = self._clsCreator.getClassNamesAndColors()
-        #     uniqueClasses: List[str] = list(np.unique(classes))
-        #
-        #     cube: np.ndarray = self._specObj.getCube()
-        #     assignments: List[int] = []
-        #     specs: List[np.ndarray] = []
-        #     for cls, rgb in zip(classes, colors):
-        #         pixels = self._graphView.getPixelsOfColor(rgb)
-        #         for y, x in zip(pixels[0], pixels[1]):
-        #             specs.append(cube[:, y, x])
-        #             assignments.append(uniqueClasses.index(cls))
-        #
-        #     specs: np.ndarray = np.array(specs)
-        #     self._logger.info(f"Saving spectra to {folderPath}")
-        #
-        #     np.save(os.path.join(folderPath, f"Assignments of {self._name}.npy"), assignments)
-        #     np.save(os.path.join(folderPath, f"Spectra of {self._name}.npy"), specs)
-        #     np.savetxt(os.path.join(folderPath, f"Assignments of {self._name}.txt"), assignments)
-        #     np.savetxt(os.path.join(folderPath, f"Spectra of {self._name}.txt"), specs)
-
-    def getClassesAndPixels(self) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-        """
-        :return: Tuple: ClassName: Tuple[array of y-coordinates, array of x-coordinates]
-        """
-        raise NotImplementedError
-        # classPixels: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
-        # classes, colors = self._clsCreator.getClassNamesAndColors()
-        # for cls, rgb in zip(classes, colors):
-        #     classPixels[cls] = self._graphView.getPixelsOfColor(rgb)
-        # return classPixels
 
     def enableWidgets(self) -> None:
         for widget in self._getUIWidgets():
@@ -221,8 +196,8 @@ class MainWindow(QtWidgets.QMainWindow):
         widgetList = [self._exportBtn, self._resultPlots, self._clfWidget, self._clsCreator]
         return widgetList
 
-    # def closeEvent(self, a0: QtGui.QCloseEvent) -> None:  # TODO: REIMPLEMENT
-    #     self._saveViewToFile(self._getSaveFileName())
+    def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
+        self._multiSampleView.saveSession()
 
 
 def main():

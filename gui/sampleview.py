@@ -4,6 +4,7 @@ import pickle
 import os
 from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
 import numpy as np
+import hashlib
 
 from logger import getLogger
 from projectPaths import getAppFolder
@@ -44,6 +45,21 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._sampleviews.append(newView)
         self._logger.debug("New Sampleview added")
         return newView
+
+    def loadSampleViewFromFile(self, fpath: str) -> None:
+        """Loads the sample configuration from the file and creates a sampleview accordingly"""
+        with open(fpath, "rb") as fp:
+            sampleData: 'Sample' = pickle.load(fp)
+        newView: SampleView = self.addSampleView()
+        newView.setSampleData(sampleData)
+        newView.setupFromSampleData()
+
+        classes: List[str] = list(sampleData.classes2Indices.keys())
+        self._mainWinParent.checkForRequiredClasses(classes)
+
+    def saveSession(self) -> None:
+        for sample in self._sampleviews:
+            self._saveSampleView(sample)
 
     def getSampleViews(self) -> List['SampleView']:
         return self._sampleviews
@@ -108,15 +124,18 @@ class MultiSampleView(QtWidgets.QScrollArea):
         """
         Saves the given sampleview.
         """
-        directory: str = self._getSampleSaveDirectory()
-        savePath: str = os.path.join(directory, sampleview.getName() + '.pkl')
+        directory: str = self.getSampleSaveDirectory()
+        savePath: str = os.path.join(directory, sampleview.getSaveFileName())
+        sampleData: 'Sample' = sampleview.getSampleData()
         with open(savePath, "wb") as fp:
-            pickle.dump(sampleview.getSampleData(), fp)
+            pickle.dump(sampleData, fp)
+
+        self._logger.info(f"Saved sampleview {sampleview.getName()} at {savePath}")
 
     @QtCore.pyqtSlot(str)
     def _viewActivated(self, samplename: str) -> None:
         """
-        Handles activation of a new sampleview.
+        Handles activation of a new sampleview, i.e., deactivates the previously active one.
         :param samplename: The name of the sample
         :return:
         """
@@ -137,15 +156,17 @@ class MultiSampleView(QtWidgets.QScrollArea):
         group.setLayout(layout)
         self.setWidget(group)
 
-    def _getSampleSaveDirectory(self) -> str:
+    @staticmethod
+    def getSampleSaveDirectory() -> str:
         """
         Returns the path of a directory used for storing individual sample views.
         """
-        path: str = os.path.join(getAppFolder, "Samples")
+        path: str = os.path.join(getAppFolder(), "Samples")
         os.makedirs(path, exist_ok=True)
         return path
 
-    def _getViewSaveDirectory(self) -> str:
+    @staticmethod
+    def getViewSaveDirectory() -> str:
         """
         Returns the path of a directoy used for storing the entirety of the current selection.
         """
@@ -170,10 +191,19 @@ def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
     return spectra
 
 
+def getFilePathHash(fpath: str) -> str:
+    """
+    Function for hashing a filePath. Needs to be accessible as standalone as well for checking for saved samples
+    before actually creating them..
+    """
+    return hashlib.sha1(fpath.encode()).hexdigest()
+
+
 class Sample:
-    filePath: str = ''
-    classes2Indices: Dict[str, Set[int]] = {}
-    name: str = ''
+    def __init__(self):
+        self.filePath: str = ''  # Path to the spectra cube (.npy file)
+        self.classes2Indices: Dict[str, Set[int]] = {}
+        self.name: str = ''
 
     def setDefaultName(self) -> None:
         if len(self.filePath) > 0:
@@ -181,6 +211,10 @@ class Sample:
         else:
             _name: str = 'NoNameDefined'
         self.name = _name
+
+    def getFileHash(self) -> str:
+        """Used for saving the files"""
+        return getFilePathHash(self.filePath)
 
 
 class SampleView(QtWidgets.QMainWindow):
@@ -247,11 +281,24 @@ class SampleView(QtWidgets.QMainWindow):
     def setUp(self, filePath: str, cube: np.ndarray) -> None:
         self._sampleData.filePath = filePath
         self._sampleData.setDefaultName()
+        self.setCube(cube)
+        self._setupWidgetsFromSampleData()
+
+    def setupFromSampleData(self) -> None:
+        cube: np.ndarray = np.load(self._sampleData.filePath)
+        self.setCube(cube)
+        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+        self._setupWidgetsFromSampleData()
+
+    def _setupWidgetsFromSampleData(self) -> None:
         self._nameLabel.setText(self._sampleData.name)
+        self.createLayout()
+        self.SizeChanged.emit()
+
+    def setCube(self, cube: np.ndarray) -> None:
+        """Sets references to the spec cube."""
         self._graphView.setCube(cube)
         self._specObj.setCube(cube)
-        self._createLayout()
-        self.SizeChanged.emit()
 
     def getName(self) -> str:
         return self._name
@@ -307,6 +354,9 @@ class SampleView(QtWidgets.QMainWindow):
     def setSampleData(self, data: Sample) -> None:
         self._sampleData = data
 
+    def getSaveFileName(self) -> str:
+        return self._sampleData.getFileHash() + '.pkl'
+
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()
 
@@ -341,7 +391,7 @@ class SampleView(QtWidgets.QMainWindow):
         if self._activeBtn.isChecked():
             self.Activated.emit(self._name)
 
-    def _createLayout(self) -> None:
+    def createLayout(self) -> None:
         adjustLayout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         adjustLayout.addWidget(VerticalLabel("Brightness"), 0, 0)
         adjustLayout.addWidget(self._brightnessSlider, 0, 1)
@@ -406,30 +456,6 @@ class SampleView(QtWidgets.QMainWindow):
 
     def _getSaveFileName(self) -> str:
         return os.path.join(getAppFolder(), 'saveFiles', self._name + '_savefile.pkl')
-
-    # def saveIntoDirectory(self, dirName: str) -> None:
-    #     resDict: dict = {'classes2Ind': self._classes2Indices}
-    #                      # 'descLib': self._resultPlots.getDecsriptorLibrary()}
-    #     saveFileName: str = os.path.join(dirName, self._name + '.pkl')
-    #     with open(saveFileName, "wb") as fp:
-    #         pickle.dump(resDict, fp)
-    #     self._logger.info(f'saving sample view to {saveFileName}')
-
-    # def _loadViewFromFile(self, fname: str = 'test.pkl') -> None:
-    #     raise NotImplementedError
-        # if os.path.exists(fname):
-        #     with open(fname, "rb") as fp:
-        #         self._logger.info(f'loading sample view from {fname}')
-        #         resDict = pickle.load(fp)
-        #         self._specObj.setClasses(resDict['classesAndPixels'])
-        #         self._resultPlots.setDescriptorLibrary(resDict["descLib"])
-        #         self._resultPlots.updatePlots()
-        #         classes: List[str] = list(resDict['classesAndPixels'].keys())
-        #         self._clsCreator.setClasses(classes)
-        #         self._clsCreator.activateClass(classes[0])
-        #         for cls in classes:
-        #             self._graphView.setSelectionPixelsToColor(resDict['classesAndPixels'][cls],
-        #                                                       self._clsCreator.getColorOfClassName(cls))
 
     @QtCore.pyqtSlot(str, set)
     def _addNewSelection(self, selectedClass: str,  selectedIndices: Set[int]) -> None:
