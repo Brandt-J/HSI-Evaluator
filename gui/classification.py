@@ -121,10 +121,10 @@ class ClassCreator(QtWidgets.QGroupBox):
                 QtWidgets.QMessageBox.warning(self, "Warning", f"The class {newName} already exists.\n"
                                                                f"Please try again.")
                 self._createNewClass()
-
-            self._addClass(newName)
-            self._activateClass(newName)
-            self._recreateLayout()
+            else:
+                self._addClass(newName)
+                self._activateClass(newName)
+                self._recreateLayout()
 
     def _addClass(self, name: str) -> None:
         """
