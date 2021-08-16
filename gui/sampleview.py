@@ -104,6 +104,15 @@ class MultiSampleView(QtWidgets.QScrollArea):
                 self._recreateLayout()
                 break
 
+    def _saveSampleView(self, sampleview: 'SampleView') -> None:
+        """
+        Saves the given sampleview.
+        """
+        directory: str = self._getSampleSaveDirectory()
+        savePath: str = os.path.join(directory, sampleview.getName() + '.pkl')
+        with open(savePath, "wb") as fp:
+            pickle.dump(sampleview.getSampleData(), fp)
+
     @QtCore.pyqtSlot(str)
     def _viewActivated(self, samplename: str) -> None:
         """
@@ -128,6 +137,22 @@ class MultiSampleView(QtWidgets.QScrollArea):
         group.setLayout(layout)
         self.setWidget(group)
 
+    def _getSampleSaveDirectory(self) -> str:
+        """
+        Returns the path of a directory used for storing individual sample views.
+        """
+        path: str = os.path.join(getAppFolder, "Samples")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _getViewSaveDirectory(self) -> str:
+        """
+        Returns the path of a directoy used for storing the entirety of the current selection.
+        """
+        path: str = os.path.join(getAppFolder, "Views")
+        os.makedirs(path, exist_ok=True)
+        return path
+
 
 @numba.njit()
 def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
@@ -145,6 +170,19 @@ def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
     return spectra
 
 
+class Sample:
+    filePath: str = ''
+    classes2Indices: Dict[str, Set[int]] = {}
+    name: str = ''
+
+    def setDefaultName(self) -> None:
+        if len(self.filePath) > 0:
+            _name: str = os.path.basename(self.filePath.split('.npy')[0])
+        else:
+            _name: str = 'NoNameDefined'
+        self.name = _name
+
+
 class SampleView(QtWidgets.QMainWindow):
     SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
@@ -154,11 +192,11 @@ class SampleView(QtWidgets.QMainWindow):
 
     def __init__(self):
         super(SampleView, self).__init__()
-        self._name: str = ''
+        self._sampleData: Sample = Sample()
+
         self._mainWindow: Union[None, 'MainWindow'] = None
         self._specObj: SpectraObject = SpectraObject()
         self._graphView: 'GraphView' = GraphView()
-        self._classes2Indices: Dict[str, Set[int]] = {}
         self._logger: 'Logger' = getLogger('SampleView')
 
         self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
@@ -167,7 +205,6 @@ class SampleView(QtWidgets.QMainWindow):
         self.setCentralWidget(self._group)
 
         self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
-
         self._brightnessSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Vertical)
         self._contrastSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Vertical)
         self._maxContrast: float = 5
@@ -183,13 +220,34 @@ class SampleView(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._establish_connections()
 
+    @property
+    def _classes2Indices(self) -> Dict[str, Set[int]]:
+        """Shorthand for retrieving data from the sampleData object"""
+        return self._sampleData.classes2Indices
+
+    @_classes2Indices.setter
+    def _classes2Indices(self, newData: Dict[str, Set[int]]) -> None:
+        """Shorthand for setting data on the sampleData object"""
+        self._sampleData.classes2Indices = newData
+
+    @property
+    def _name(self) -> str:
+        """Shorthand for retrieveing name from the sampleData object"""
+        return self._sampleData.name
+
+    @_name.setter
+    def _name(self, newName: str) -> None:
+        """Shorthand for setting name on sampleData object"""
+        self._sampleData.name = newName
+
     def setMainWindowReferences(self, parent: 'MainWindow') -> None:
         self._graphView.setParentReferences(self, parent)
         self._mainWindow = parent
 
-    def setUp(self, name: str, cube: np.ndarray) -> None:
-        self._name = name
-        self._nameLabel.setText(name)
+    def setUp(self, filePath: str, cube: np.ndarray) -> None:
+        self._sampleData.filePath = filePath
+        self._sampleData.setDefaultName()
+        self._nameLabel.setText(self._sampleData.name)
         self._graphView.setCube(cube)
         self._specObj.setCube(cube)
         self._createLayout()
@@ -226,6 +284,9 @@ class SampleView(QtWidgets.QMainWindow):
 
         return background
 
+    def getSampleData(self) -> Sample:
+        return self._sampleData
+
     def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
@@ -243,6 +304,9 @@ class SampleView(QtWidgets.QMainWindow):
         """
         return self._maxBrightnessSpinbox.value()
 
+    def setSampleData(self, data: Sample) -> None:
+        self._sampleData = data
+
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()
 
@@ -258,7 +322,7 @@ class SampleView(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(str)
     def removeClass(self, className: str) -> None:
         if className in self._classes2Indices.keys():
-            del self._classes2Indices[className]
+            del self._sampleData.classes2Indices[className]
             self._logger.info(f"Sample {self._name}: Deleted Selecion of class {className}")
             self.ClassDeleted.emit(className)
         else:
@@ -343,15 +407,16 @@ class SampleView(QtWidgets.QMainWindow):
     def _getSaveFileName(self) -> str:
         return os.path.join(getAppFolder(), 'saveFiles', self._name + '_savefile.pkl')
 
-    def _saveViewToFile(self, saveFileName: str = 'test.pkl') -> None:
-        resDict: dict = {'classesAndPixels': self.getClassesAndPixels(),
-                         'descLib': self._resultPlots.getDecsriptorLibrary()}
-        with open(saveFileName, "wb") as fp:
-            pickle.dump(resDict, fp)
-        self._logger.info(f'saving sample view to {saveFileName}')
+    # def saveIntoDirectory(self, dirName: str) -> None:
+    #     resDict: dict = {'classes2Ind': self._classes2Indices}
+    #                      # 'descLib': self._resultPlots.getDecsriptorLibrary()}
+    #     saveFileName: str = os.path.join(dirName, self._name + '.pkl')
+    #     with open(saveFileName, "wb") as fp:
+    #         pickle.dump(resDict, fp)
+    #     self._logger.info(f'saving sample view to {saveFileName}')
 
-    def _loadViewFromFile(self, fname: str = 'test.pkl') -> None:
-        raise NotImplementedError
+    # def _loadViewFromFile(self, fname: str = 'test.pkl') -> None:
+    #     raise NotImplementedError
         # if os.path.exists(fname):
         #     with open(fname, "rb") as fp:
         #         self._logger.info(f'loading sample view from {fname}')
@@ -369,9 +434,9 @@ class SampleView(QtWidgets.QMainWindow):
     @QtCore.pyqtSlot(str, set)
     def _addNewSelection(self, selectedClass: str,  selectedIndices: Set[int]) -> None:
         if selectedClass in self._classes2Indices:
-            self._classes2Indices[selectedClass].update(selectedIndices)
+            self._sampleData.classes2Indices[selectedClass].update(selectedIndices)
         else:
-            self._classes2Indices[selectedClass] = selectedIndices
+            self._sampleData.classes2Indices[selectedClass] = selectedIndices
 
     def _selectAllFromSample(self) -> None:
         """

@@ -118,7 +118,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                                                f"\nError is:\n{e}")
             return
         newView: 'SampleView' = self._multiSampleView.addSampleView()
-        newView.setUp(name, cube)
+        newView.setUp(fname, cube)
         self._logger.info(f"Loaded sample: {name}")
         self.enableWidgets()
         self.showMaximized()

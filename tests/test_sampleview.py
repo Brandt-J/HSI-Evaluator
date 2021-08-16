@@ -1,13 +1,20 @@
+import os.path
+import tempfile
 from unittest import TestCase
 import sys
 from PyQt5 import QtWidgets
-from typing import List, Dict
+from typing import List, Dict, TYPE_CHECKING, Set
 import numpy as np
+import pickle
 
 from gui.HSIEvaluator import MainWindow
 from gui.sampleview import MultiSampleView, SampleView, getSpectraFromIndices
 from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
+
+if TYPE_CHECKING:
+    from gui.classification import ClassCreator
+    from gui.sampleview import Sample
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -53,10 +60,10 @@ class TestSampleView(TestCase):
 
     def testSetupSampleView(self) -> None:
         sampleView: SampleView = SampleView()
-        name, cube = "testName", np.ones((3, 5, 5))
-        sampleView.setUp(name, cube)
+        fname, cube = "testName.npy", np.ones((3, 5, 5))
+        sampleView.setUp(fname, cube)
 
-        self.assertEqual(sampleView._name, name)
+        self.assertEqual(sampleView._name, fname.split('.npy')[0])
         self.assertTrue(sampleView.getGraphView()._origCube is cube)
         self.assertTrue(sampleView._specObj.getCube() is cube)
 
@@ -137,3 +144,47 @@ class TestSampleView(TestCase):
             self.assertEqual(len(multiView.getSampleViews()), i)
             remainingSampleNames = [view.getName() for view in multiView.getSampleViews()]
             self.assertTrue(getSampleName(i) not in remainingSampleNames)
+
+    def test_saveSample(self) -> None:
+        imgClf: MainWindow = MainWindow()
+
+        classesSample1: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4},
+                                              'class2': {5, 6, 7, 8}}
+        classesSample2: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4, 5, 7},
+                                              'class2': {8, 9, 10, 11},
+                                              'class3': {12, 13, 14}}
+
+        # Create MultiView and two SampleViews.
+        multiView: MultiSampleView = MultiSampleView(imgClf)
+        sample1: SampleView = multiView.addSampleView()
+        sample1._name = 'Sample1'
+        sample1._sampleData.filePath = os.path.join(r'FakeDir/Sample1.npy')
+        sample1._classes2Indices = classesSample1
+
+        sample2: SampleView = multiView.addSampleView()
+        sample2._name = 'Sample2'
+        sample2._sampleData.filePath = os.path.join(r'FakeDir/Sample2.npy')
+        sample2._classes2Indices = classesSample2
+
+        classCreator: 'ClassCreator' = imgClf._clsCreator
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            multiView._getSampleSaveDirectory = lambda: tmpdirname
+            multiView._saveSampleView(sample1)
+            savename: str = os.path.join(multiView._getSampleSaveDirectory(), sample1._name + '.pkl')
+            self.assertTrue(os.path.exists(savename))
+            with open(savename, "rb") as fp:
+                savedData: 'Sample' = pickle.load(fp)
+            self.assertDictEqual(savedData.classes2Indices, classesSample1)
+            self.assertEqual(savedData.name, 'Sample1')
+            self.assertEqual(savedData.filePath, r'FakeDir/Sample1.npy')
+
+            multiView._saveSampleView(sample2)
+            savename: str = os.path.join(multiView._getSampleSaveDirectory(), sample2._name + '.pkl')
+            self.assertTrue(os.path.exists(savename))
+            with open(savename, "rb") as fp:
+                savedData: 'Sample' = pickle.load(fp)
+            self.assertDictEqual(savedData.classes2Indices, classesSample2)
+            self.assertEqual(savedData.name, 'Sample2')
+            self.assertEqual(savedData.filePath, r'FakeDir/Sample2.npy')
+
+
