@@ -65,19 +65,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
-    def getLabelledSpectraFromActiveView(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
         """
         Gets the currently labelled Spectra from the currently active sampleview.
         :return: Dictionary[className, (NxM) specArray of N spectra with M wavenumbers
         """
-        return self._multiSampleView.getLabelledSpectraFromActiveView(onlyVisible)
+        return self._multiSampleView.getLabelledSpectraFromActiveView()
 
-    def getLabelledSpectraFromAllViews(self, onlyVisible: bool = False) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
         :return:
         """
-        return self._multiSampleView.getLabelledSpectraFromAllViews(onlyVisible)
+        return self._multiSampleView.getLabelledSpectraFromAllViews()
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
         """

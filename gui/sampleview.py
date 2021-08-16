@@ -51,28 +51,26 @@ class MultiSampleView(QtWidgets.QScrollArea):
     def getWavenumbers(self) -> np.ndarray:
         return self._sampleviews[0].getWavenumbers()
 
-    def getLabelledSpectraFromActiveView(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary, from the active sampleview
-        :param onlyVisible: If True, only visible classes are returned
         :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
         """
         spectra: Dict[str, np.ndarray] = {}
         for view in self._sampleviews:
             if view.isActive():
-                spectra = view.getLabelledSpectra(onlyVisible)
+                spectra = view.getLabelledSpectra()
                 break
         return spectra
 
-    def getLabelledSpectraFromAllViews(self, onlyVisible: bool = False) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
-        :param onlyVisible: If True, only visible classes are returned
         :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
         """
         spectra: Dict[str, Dict[str, np.ndarray]] = {}
         for view in self._sampleviews:
-            spectra[view.getName()] = view.getLabelledSpectra(onlyVisible)
+            spectra[view.getName()] = view.getLabelledSpectra()
         return spectra
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
@@ -178,6 +176,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._activeBtn: ActivateToggleButton = ActivateToggleButton()
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._selectAllBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select All")
 
         self._toolbar = QtWidgets.QToolBar()
         self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
@@ -185,7 +184,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._establish_connections()
 
     def setMainWindowReferences(self, parent: 'MainWindow') -> None:
-        self._graphView.setMainWindowReference(parent)
+        self._graphView.setParentReferences(self, parent)
         self._mainWindow = parent
 
     def setUp(self, name: str, cube: np.ndarray) -> None:
@@ -227,10 +226,9 @@ class SampleView(QtWidgets.QMainWindow):
 
         return background
 
-    def getLabelledSpectra(self, onlyVisible: bool = False) -> Dict[str, np.ndarray]:
+    def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
-        :param onlyVisible: If True, only visible classes are included.
         :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
         """
         spectra: Dict[str, np.ndarray] = {}
@@ -238,6 +236,12 @@ class SampleView(QtWidgets.QMainWindow):
             if self._mainWindow.classIsVisible(name):
                 spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._specObj.getNotPreprocessedCube())
         return spectra
+
+    def getSelectedMaxBrightness(self) -> float:
+        """
+        Get's the user selected max brightness value.
+        """
+        return self._maxBrightnessSpinbox.value()
 
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()
@@ -281,6 +285,7 @@ class SampleView(QtWidgets.QMainWindow):
         adjustLayout.addWidget(self._contrastSlider, 1, 1)
         adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
         adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
+        adjustLayout.addWidget(self._selectAllBtn, 3, 0, 1, 2)
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
@@ -315,6 +320,8 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._closeBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogDiscardButton')))
         self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
+
+        self._selectAllBtn.released.connect(self._selectAllFromSample)
 
         self._toolbar.addWidget(self._activeBtn)
         self._toolbar.addWidget(QtWidgets.QLabel('      '))
@@ -365,6 +372,12 @@ class SampleView(QtWidgets.QMainWindow):
             self._classes2Indices[selectedClass].update(selectedIndices)
         else:
             self._classes2Indices[selectedClass] = selectedIndices
+
+    def _selectAllFromSample(self) -> None:
+        """
+        If confirmed, all "bright" pixles will be assigned to the current class.
+        """
+        self._graphView.selectAllBrightPixels()
 
 
 class VerticalLabel(QtWidgets.QLabel):

@@ -1,4 +1,4 @@
-import time
+import cv2
 import numba
 from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
@@ -7,17 +7,19 @@ from typing import Tuple, Union, TYPE_CHECKING, Set, List
 
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
+    from sampleview import SampleView
 
 
 class GraphView(QtWidgets.QGraphicsView):
     SelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
-    NewSelection: QtCore.pyqtSignal = QtCore.pyqtSignal(str, set)
+    NewSelection: QtCore.pyqtSignal = QtCore.pyqtSignal(str, set)  # Tuple[class_name, set of pixelIndices]
 
     def __init__(self):
         super(GraphView, self).__init__()
         scene = self._setUpScene()
         self.setMinimumSize(500, 500)
         self._mainWin: Union[None, 'MainWindow'] = None
+        self._sampleView: Union[None, 'SampleView'] = None
         self._origCube: Union[None, np.ndarray] = None
         self._item = QtWidgets.QGraphicsPixmapItem()
         self._selectionOverlay: SelectionOverlay = SelectionOverlay()
@@ -30,7 +32,8 @@ class GraphView(QtWidgets.QGraphicsView):
 
         self.setMouseTracking(True)
 
-    def setMainWindowReference(self, mainWinRef: 'MainWindow') -> None:
+    def setParentReferences(self, _sampleViewRef: 'SampleView', mainWinRef: 'MainWindow') -> None:
+        self._sampleView = _sampleViewRef
         self._mainWin = mainWinRef
 
     def setCube(self, cube: np.ndarray) -> None:
@@ -101,6 +104,14 @@ class GraphView(QtWidgets.QGraphicsView):
         self.removeColor(rgb)
         self.SelectionChanged.emit()
 
+    def selectAllBrightPixels(self) -> None:
+        """
+        Convienience function to automatically get all bright pixels and assign them to the currently selected class!
+        """
+        indices: Set[int] = getBrightIndices(self._origCube, self._sampleView.getSelectedMaxBrightness())
+        self._emitNewSelection(indices)
+        self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
+
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
             self._startDrag = event.pos()
@@ -130,9 +141,12 @@ class GraphView(QtWidgets.QGraphicsView):
             self._selectionOverlay.updateSelection(pos, self._mainWin.getCurrentColor())
             self._selecting = False
             pixelIndices: Set[int] = self._selectionOverlay.finishSelection(pos)
-            self.NewSelection.emit(self._mainWin.getCurrentClass(), pixelIndices)
-            self.SelectionChanged.emit()
-            self.scene().update()
+            self._emitNewSelection(pixelIndices)
+
+    def _emitNewSelection(self, pixelIndices: Set[int]) -> None:
+        self.NewSelection.emit(self._mainWin.getCurrentClass(), pixelIndices)
+        self.SelectionChanged.emit()
+        self.scene().update()
 
     def wheelEvent(self, event: QtGui.QWheelEvent):
         factor = 1.01**(event.angleDelta().y()/8)
@@ -195,6 +209,17 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
         x0, x1, y0, y1 = self._getStartStopCoords(pos)
         self._startDrag = None
         return self._getCurrentSelectionIndices(x0, x1, y0, y1)
+
+    def addPixelsToSelection(self, pixelIndices: Set[int], rgb: Tuple[int, int, int]) -> None:
+        """
+        Adds the given pixel indices to the currently selected class.
+        """
+        for ind in pixelIndices:
+            y: int = ind // self._overlayArr.shape[1]
+            x: int = ind % self._overlayArr.shape[1]
+            self._overlayArr[y, x, :3] = rgb
+            self._overlayArr[y, x, 3] = 255
+        self._updatePixmap()
 
     def getPixelsOfColor(self, rgb: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -268,11 +293,17 @@ def getIndices(x0: int, x1: int, y0: int, y1: int, shape: np.ndarray) -> List[in
     return indices
 
 
+def getBrightIndices(cube: np.ndarray, maxBrightness: float = 1.5) -> Set[int]:
+    avgImg: np.ndarray = cube2RGB(cube, maxBrightness)[:, :, 0]
+    thresh, binImg = cv2.threshold(avgImg, 0, 255, cv2.THRESH_OTSU)
+    return set(np.where(binImg.flatten())[0])
+
+
 class ClassificationOverlay(QtWidgets.QGraphicsObject):
     def __init__(self):
         super(ClassificationOverlay, self).__init__()
-        self._overlayArr: np.ndarray = None
-        self._overlayPix: QtGui.QPixmap = None
+        self._overlayArr: Union[None, np.ndarray] = None
+        self._overlayPix: Union[None, QtGui.QPixmap] = None
         self._alpha: float = 2.0
         self.setZValue(1)
 
