@@ -346,14 +346,16 @@ def npy2Pixmap(img: np.ndarray) -> QtGui.QPixmap:
     return pix
 
 
-def cube2RGB(cube: np.ndarray, maxVal: float = 1.5) -> np.ndarray:
+def cube2RGB(cube: np.ndarray, maxVal: float = 1.5, defectThreshold: float = 1000.0) -> np.ndarray:
     """
     Converts HSI cube to rgb preview image
     :param cube: Array shape (NWavelength, Height, Width)
     :param maxVal: The maximum reflectance value to clip to
+    :param defectThreshold: Values higher than that indicate defect (over saturated) pixels, which will be set to 0
     :return: np.uint8 array shape (Height, Width, 3)
     """
     avg = np.mean(cube, axis=0)
+    avg[avg > defectThreshold] = 0
     avg = np.clip(avg, 0.0, maxVal)
     avg -= avg.min()
     if avg.max() != 0:
