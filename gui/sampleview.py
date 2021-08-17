@@ -248,6 +248,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._selectAllBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select All")
+        self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
 
         self._toolbar = QtWidgets.QToolBar()
         self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
@@ -400,6 +401,7 @@ class SampleView(QtWidgets.QMainWindow):
         adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
         adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
         adjustLayout.addWidget(self._selectAllBtn, 3, 0, 1, 2)
+        adjustLayout.addWidget(self._selectNoneBtn, 4, 0, 1, 2)
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
@@ -436,6 +438,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
 
         self._selectAllBtn.released.connect(self._selectAllFromSample)
+        self._selectNoneBtn.released.connect(self._selectNone)
 
         self._toolbar.addWidget(self._activeBtn)
         self._toolbar.addWidget(QtWidgets.QLabel('      '))
@@ -468,7 +471,21 @@ class SampleView(QtWidgets.QMainWindow):
         """
         If confirmed, all "bright" pixles will be assigned to the current class.
         """
-        self._graphView.selectAllBrightPixels()
+        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all bright pixels?",
+                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                                             QtWidgets.QMessageBox.Yes)
+        if ret == QtWidgets.QMessageBox.Yes:
+            self._graphView.selectAllBrightPixels()
+
+    def _selectNone(self) -> None:
+        """
+        If confirmed, all pixels are deselected
+        """
+        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to deselect all pixels?",
+                                             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes)
+        if ret == QtWidgets.QMessageBox.Yes:
+            self._classes2Indices = {}
+            self._graphView.deselectAll()
 
 
 class VerticalLabel(QtWidgets.QLabel):

@@ -54,6 +54,11 @@ class GraphView(QtWidgets.QGraphicsView):
     def setClassOverlay(self, img: np.ndarray) -> None:
         self._classOverlay.updateImage(img)
 
+    def deselectAll(self) -> None:
+        """Removes all selection"""
+        self._selectionOverlay.deselectAll()
+        self.SelectionChanged.emit()
+
     def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
         """
         Updating the previewed image with new zero value and contrast factor
@@ -205,6 +210,9 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
         x0, x1, y0, y1 = self._getStartStopCoords(pos)
         self._startDrag = None
         return self._getCurrentSelectionIndices(x0, x1, y0, y1)
+
+    def deselectAll(self) -> None:
+        self.initOverlay(self._overlayArr.shape)
 
     def addPixelsToSelection(self, pixelIndices: Set[int], rgb: Tuple[int, int, int]) -> None:
         """
