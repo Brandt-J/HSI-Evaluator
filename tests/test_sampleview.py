@@ -6,6 +6,7 @@ from PyQt5 import QtWidgets
 from typing import List, Dict, TYPE_CHECKING, Set
 import numpy as np
 import pickle
+from copy import deepcopy
 
 from gui.HSIEvaluator import MainWindow
 from gui.sampleview import MultiSampleView, SampleView, getSpectraFromIndices, Sample
@@ -14,6 +15,8 @@ from spectraObject import SpectraObject
 
 if TYPE_CHECKING:
     from gui.classification import ClassCreator
+    from gui.sampleview import View
+    from gui.preprocessEditor import PreprocessingSelector, Preprocessor, SelectableLabel
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -165,6 +168,7 @@ class TestSampleView(TestCase):
         sample2._sampleData.filePath = os.path.join(r'FakeDir/Sample2.npy')
         sample2._classes2Indices = classesSample2
 
+        # Test saving the individual samples
         with tempfile.TemporaryDirectory() as tmpdirname:
             multiView.getSampleSaveDirectory = lambda: tmpdirname
             multiView._saveSampleView(sample1)
@@ -184,6 +188,28 @@ class TestSampleView(TestCase):
             self.assertDictEqual(savedData.classes2Indices, classesSample2)
             self.assertEqual(savedData.name, 'Sample2')
             self.assertEqual(savedData.filePath, r'FakeDir/Sample2.npy')
+
+        # Test saving the view:
+        # Set a preprocessing stack
+        preprocSelector: 'PreprocessingSelector' = imgClf._preprocSelector
+        preprocSelector._selected = preprocSelector._available  # just select them all
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            multiView.getViewSaveDirectory = lambda: tmpdirname
+            viewPath: str = os.path.join(tmpdirname, "NewView.view")
+            multiView.saveView(viewPath)
+            self.assertTrue(os.path.exists(viewPath))
+
+            with open(viewPath, "rb") as fp:
+                savedView: View = pickle.load(fp)
+
+            self.assertEqual(len(savedView.samples), 2)
+            self.assertEqual(savedView.samples[0], sample1._sampleData)
+            self.assertEqual(savedView.samples[1], sample2._sampleData)
+            self.assertEqual(len(savedView.processStack), len(preprocSelector._selected))
+            for i in range(len(savedView.processStack)):
+                processorName: str = savedView.processStack[i]
+                self.assertEqual(processorName, preprocSelector._selected[i].text())
 
     def test_loadFromSample(self) -> None:
         imgClf: MainWindow = MainWindow()

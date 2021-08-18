@@ -31,6 +31,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clfWidget: ClassifierWidget = ClassifierWidget(self)
         self._loadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
         self._exportBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Export")
+        self._saveViewBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Save View")
 
         self._toolbar: QtWidgets.QToolBar = QtWidgets.QToolBar()
         self.addToolBar(QtCore.Qt.TopToolBarArea, self._toolbar)
@@ -38,7 +39,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createLayout()
         self.disableWidgets()
-        # self._loadFile(r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI\Telecentric 2x\PE, PS, PET_corrected.npy")
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._resultPlots.updatePlots)
@@ -133,6 +133,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
         return self._resultPlots.getDecsriptorLibrary()
 
+    def getProcessingStack(self) -> List[str]:
+        """Gets a list of the names of the currently selected processing stack"""
+        return self._preprocSelector.getPreprocessorNames()
+
+    def _saveView(self) -> None:
+        """Prompts for saving the current view. See method in multisampleview for details."""
+        directory: str = self._multiSampleView.getViewSaveDirectory()
+        savePath, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select File", directory, "*.view")
+        if savePath:
+            self._multiSampleView.saveView(savePath)
+
     def _export(self) -> None:
         raise NotImplementedError
 
@@ -161,11 +172,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clfWidget.setMaximumWidth(300)
 
         self._loadBtn.released.connect(self._getFileAndOpen)
-        self._exportBtn.released.connect(self._export)
+        self._saveViewBtn.released.connect(self._saveView)
+        # self._exportBtn.released.connect(self._export)
 
         self._toolbar.addWidget(self._loadBtn)
         self._toolbar.addSeparator()
-        self._toolbar.addWidget(self._exportBtn)
+        self._toolbar.addWidget(self._saveViewBtn)
+        # self._toolbar.addWidget(self._exportBtn)
 
         self._resultPlots.setMainWinRef(self)
 
@@ -193,11 +206,11 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(specLayout)
 
     def _getUIWidgets(self) -> List[QtWidgets.QWidget]:
-        widgetList = [self._exportBtn, self._resultPlots, self._clfWidget, self._clsCreator]
+        widgetList = [self._saveViewBtn, self._multiSampleView, self._exportBtn, self._resultPlots, self._clfWidget, self._clsCreator]
         return widgetList
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
-        self._multiSampleView.saveSession()
+        self._multiSampleView.saveSamples()
 
 
 def main():

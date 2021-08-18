@@ -2,7 +2,7 @@ import numba
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pickle
 import os
-from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
+from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union, cast
 import numpy as np
 import hashlib
 
@@ -57,7 +57,22 @@ class MultiSampleView(QtWidgets.QScrollArea):
         classes: List[str] = list(sampleData.classes2Indices.keys())
         self._mainWinParent.checkForRequiredClasses(classes)
 
-    def saveSession(self) -> None:
+    def saveView(self, savePath: str) -> None:
+        """
+        Saves the current view (aggregation of all currently opened samples and the preprocessing stack)
+        into a specified file.
+        :param savePath: The full path to where save the view object.
+        """
+        viewObj: View = View()
+        viewObj.samples = [sample.getSampleData() for sample in self._sampleviews]
+        viewObj.processStack = self._mainWinParent.getProcessingStack()
+        with open(savePath, "wb") as fp:
+            pickle.dump(viewObj, fp)
+
+    def saveSamples(self) -> None:
+        """
+        Saves all the loaded samples individually.
+        """
         for sample in self._sampleviews:
             self._saveSampleView(sample)
 
@@ -170,7 +185,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         """
         Returns the path of a directoy used for storing the entirety of the current selection.
         """
-        path: str = os.path.join(getAppFolder, "Views")
+        path: str = os.path.join(getAppFolder(), "Views")
         os.makedirs(path, exist_ok=True)
         return path
 
@@ -197,24 +212,6 @@ def getFilePathHash(fpath: str) -> str:
     before actually creating them..
     """
     return hashlib.sha1(fpath.encode()).hexdigest()
-
-
-class Sample:
-    def __init__(self):
-        self.filePath: str = ''  # Path to the spectra cube (.npy file)
-        self.classes2Indices: Dict[str, Set[int]] = {}
-        self.name: str = ''
-
-    def setDefaultName(self) -> None:
-        if len(self.filePath) > 0:
-            _name: str = os.path.basename(self.filePath.split('.npy')[0])
-        else:
-            _name: str = 'NoNameDefined'
-        self.name = _name
-
-    def getFileHash(self) -> str:
-        """Used for saving the files"""
-        return getFilePathHash(self.filePath)
 
 
 class SampleView(QtWidgets.QMainWindow):
@@ -332,7 +329,7 @@ class SampleView(QtWidgets.QMainWindow):
 
         return background
 
-    def getSampleData(self) -> Sample:
+    def getSampleData(self) -> 'Sample':
         return self._sampleData
 
     def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
@@ -352,7 +349,7 @@ class SampleView(QtWidgets.QMainWindow):
         """
         return self._maxBrightnessSpinbox.value()
 
-    def setSampleData(self, data: Sample) -> None:
+    def setSampleData(self, data: 'Sample') -> None:
         self._sampleData = data
 
     def getSaveFileName(self) -> str:
@@ -561,3 +558,38 @@ class ActivateToggleButton(QtWidgets.QPushButton):
             self.setEnabled(True)
             self.setText("Inactive")
             self.setStyleSheet("QPushButton{background-color: lightgrey; border: 1px solid black; border-radius: 7}")
+
+
+class Sample:
+    """Data Container for a sample view"""
+    def __init__(self):
+        self.filePath: str = ''  # Path to the spectra cube (.npy file)
+        self.classes2Indices: Dict[str, Set[int]] = {}
+        self.name: str = ''
+
+    def setDefaultName(self) -> None:
+        if len(self.filePath) > 0:
+            _name: str = os.path.basename(self.filePath.split('.npy')[0])
+        else:
+            _name: str = 'NoNameDefined'
+        self.name = _name
+
+    def getFileHash(self) -> str:
+        """Used for saving the files"""
+        return getFilePathHash(self.filePath)
+
+    def __eq__(self, other) -> bool:
+        isEqual: bool = False
+        if type(other) == Sample:
+            other: Sample = cast(Sample, other)
+            if other.name == self.name and other.filePath == self.filePath and other.classes2Indices == self.classes2Indices:
+                isEqual = True
+
+        return isEqual
+
+
+class View:
+    """Data container for an entire view, including multiple samples and a processing stack"""
+    def __init__(self):
+        self.samples: List['Sample'] = []
+        self.processStack: List[str] = []

@@ -52,6 +52,9 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         return labelList
 
     def getPreprocessors(self) -> List['Preprocessor']:
+        """
+        Returns a list of the currently selected preprocessors.
+        """
         selectedProcessors: List['Preprocessor'] = []
         availableProc: List['Preprocessor'] = getPreprocessors()
         for lbl in self._selected:
@@ -60,6 +63,12 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
                     selectedProcessors.append(proc)
                     break
         return selectedProcessors
+
+    def getPreprocessorNames(self) -> List[str]:
+        """
+        Returns a list of the currently selected preprocessor names. Used for storing
+        """
+        return [lbl.text() for lbl in self._selected]
 
     def _recreateLayout(self) -> None:
         self._layout.addWidget(QtWidgets.QLabel("Avalable"), 0, 0, QtCore.Qt.AlignCenter)
