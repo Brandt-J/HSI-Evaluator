@@ -1,15 +1,34 @@
+"""
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program, see COPYING.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
 import numba
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pickle
 import os
-from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union, cast
+from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
 import numpy as np
-import hashlib
 
 from logger import getLogger
 from projectPaths import getAppFolder
 from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
+from dataObjects import Sample
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -50,24 +69,28 @@ class MultiSampleView(QtWidgets.QScrollArea):
         """Loads the sample configuration from the file and creates a sampleview accordingly"""
         with open(fpath, "rb") as fp:
             sampleData: 'Sample' = pickle.load(fp)
+        self._createNewSampleFromSampleData(sampleData)
+        
+    def createListOfSamples(self, sampleList: List['Sample']) -> None:
+        """Creates a list of given samples and replaces the currently opened with that."""
+        self._logger.info("Closing all samples, opening the following new ones..")
+        for sample in self._sampleviews:
+            sample.close()
+        for sample in sampleList:
+            self._createNewSampleFromSampleData(sample)
+            self._logger.info(f"Creating sample {sample.name}")
+        self._recreateLayout()
+
+    def _createNewSampleFromSampleData(self, sampleData: Sample) -> None:
+        """
+        Creates a new sample and configures it according to the provided sample data object
+        """
         newView: SampleView = self.addSampleView()
         newView.setSampleData(sampleData)
         newView.setupFromSampleData()
 
         classes: List[str] = list(sampleData.classes2Indices.keys())
         self._mainWinParent.checkForRequiredClasses(classes)
-
-    def saveView(self, savePath: str) -> None:
-        """
-        Saves the current view (aggregation of all currently opened samples and the preprocessing stack)
-        into a specified file.
-        :param savePath: The full path to where save the view object.
-        """
-        viewObj: View = View()
-        viewObj.samples = [sample.getSampleData() for sample in self._sampleviews]
-        viewObj.processStack = self._mainWinParent.getProcessingStack()
-        with open(savePath, "wb") as fp:
-            pickle.dump(viewObj, fp)
 
     def saveSamples(self) -> None:
         """
@@ -204,14 +227,6 @@ def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
         x = ind % cube.shape[2]
         spectra[i, :] = cube[:, y, x]
     return spectra
-
-
-def getFilePathHash(fpath: str) -> str:
-    """
-    Function for hashing a filePath. Needs to be accessible as standalone as well for checking for saved samples
-    before actually creating them..
-    """
-    return hashlib.sha1(fpath.encode()).hexdigest()
 
 
 class SampleView(QtWidgets.QMainWindow):
@@ -479,7 +494,8 @@ class SampleView(QtWidgets.QMainWindow):
         If confirmed, all pixels are deselected
         """
         ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to deselect all pixels?",
-                                             QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes)
+                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                                             QtWidgets.QMessageBox.Yes)
         if ret == QtWidgets.QMessageBox.Yes:
             self._classes2Indices = {}
             self._graphView.deselectAll()
@@ -558,38 +574,3 @@ class ActivateToggleButton(QtWidgets.QPushButton):
             self.setEnabled(True)
             self.setText("Inactive")
             self.setStyleSheet("QPushButton{background-color: lightgrey; border: 1px solid black; border-radius: 7}")
-
-
-class Sample:
-    """Data Container for a sample view"""
-    def __init__(self):
-        self.filePath: str = ''  # Path to the spectra cube (.npy file)
-        self.classes2Indices: Dict[str, Set[int]] = {}
-        self.name: str = ''
-
-    def setDefaultName(self) -> None:
-        if len(self.filePath) > 0:
-            _name: str = os.path.basename(self.filePath.split('.npy')[0])
-        else:
-            _name: str = 'NoNameDefined'
-        self.name = _name
-
-    def getFileHash(self) -> str:
-        """Used for saving the files"""
-        return getFilePathHash(self.filePath)
-
-    def __eq__(self, other) -> bool:
-        isEqual: bool = False
-        if type(other) == Sample:
-            other: Sample = cast(Sample, other)
-            if other.name == self.name and other.filePath == self.filePath and other.classes2Indices == self.classes2Indices:
-                isEqual = True
-
-        return isEqual
-
-
-class View:
-    """Data container for an entire view, including multiple samples and a processing stack"""
-    def __init__(self):
-        self.samples: List['Sample'] = []
-        self.processStack: List[str] = []

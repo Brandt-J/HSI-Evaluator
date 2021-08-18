@@ -1,7 +1,6 @@
 """
-GEPARD - Gepard-Enabled PARticle Detection
-Copyright (C) 2018  Lars Bittrich and Josef Brandt, Leibniz-Institut für
-Polymerforschung Dresden e. V. <bittrich-lars@ipfdd.de>
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -69,6 +68,21 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         Returns a list of the currently selected preprocessor names. Used for storing
         """
         return [lbl.text() for lbl in self._selected]
+
+    def selectPreprocessors(self, processorNames: List[str]) -> None:
+        """
+        Takes a list of processor names and sets the current selection to that.
+        :param processorNames: List of processor Names
+        """
+        self._selected = []
+        self._available = self._getPreprocessorLabels()
+        for name in processorNames:
+            for label in self._available:
+                if label.text() == name:
+                    self._selected.append(label)
+                    self._available.remove(label)
+                    break
+        self._recreateLayout()
 
     def _recreateLayout(self) -> None:
         self._layout.addWidget(QtWidgets.QLabel("Avalable"), 0, 0, QtCore.Qt.AlignCenter)

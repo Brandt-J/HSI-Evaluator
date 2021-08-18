@@ -1,3 +1,22 @@
+"""
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program, see COPYING.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
 import os.path
 import tempfile
 from unittest import TestCase
@@ -15,8 +34,8 @@ from spectraObject import SpectraObject
 
 if TYPE_CHECKING:
     from gui.classification import ClassCreator
-    from gui.sampleview import View
-    from gui.preprocessEditor import PreprocessingSelector, Preprocessor, SelectableLabel
+    from dataObjects import View
+    from gui.preprocessEditor import PreprocessingSelector
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -149,7 +168,7 @@ class TestSampleView(TestCase):
 
     def test_saveSample(self) -> None:
         imgClf: MainWindow = MainWindow()
-
+        imgClf._resultPlots.updatePlots = lambda: print("Fake updating plots")
         classesSample1: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4},
                                                'class2': {5, 6, 7, 8}}
         classesSample2: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4, 5, 7},
@@ -157,7 +176,7 @@ class TestSampleView(TestCase):
                                                'class3': {12, 13, 14}}
 
         # Create MultiView and two SampleViews.
-        multiView: MultiSampleView = MultiSampleView(imgClf)
+        multiView: MultiSampleView = imgClf._multiSampleView
         sample1: SampleView = multiView.addSampleView()
         sample1._name = 'Sample1'
         sample1._sampleData.filePath = os.path.join(r'FakeDir/Sample1.npy')
@@ -193,11 +212,18 @@ class TestSampleView(TestCase):
         # Set a preprocessing stack
         preprocSelector: 'PreprocessingSelector' = imgClf._preprocSelector
         preprocSelector._selected = preprocSelector._available  # just select them all
+        selectedNames: List[str] = [lbl.text() for lbl in preprocSelector._selected]
 
         with tempfile.TemporaryDirectory() as tmpdirname:
             multiView.getViewSaveDirectory = lambda: tmpdirname
+            sample1.getSampleData().filePath = os.path.join(tmpdirname, "cube1.npy")
+            sample2.getSampleData().filePath = os.path.join(tmpdirname, "cube2.npy")
+            # create fake datacubes
+            np.save(sample1.getSampleData().filePath, np.random.rand(3, 5, 5))
+            np.save(sample2.getSampleData().filePath, np.random.rand(3, 5, 5))
+
             viewPath: str = os.path.join(tmpdirname, "NewView.view")
-            multiView.saveView(viewPath)
+            imgClf._saveView(viewPath)
             self.assertTrue(os.path.exists(viewPath))
 
             with open(viewPath, "rb") as fp:
@@ -210,6 +236,15 @@ class TestSampleView(TestCase):
             for i in range(len(savedView.processStack)):
                 processorName: str = savedView.processStack[i]
                 self.assertEqual(processorName, preprocSelector._selected[i].text())
+
+            # reset preprocessing selector and multiview, then load the view
+            preprocSelector._selected = []
+            multiView._sampleviews = []
+            imgClf._loadView(viewPath)
+            self.assertEqual(len(multiView._sampleviews), 2)
+            self.assertEqual(multiView._sampleviews[0].getSampleData(), savedView.samples[0])
+            self.assertEqual(multiView._sampleviews[1].getSampleData(), savedView.samples[1])
+            self.assertEqual([lbl.text() for lbl in preprocSelector._selected], selectedNames)
 
     def test_loadFromSample(self) -> None:
         imgClf: MainWindow = MainWindow()

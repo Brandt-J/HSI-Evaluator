@@ -1,10 +1,31 @@
+"""
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program, see COPYING.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
 import os
 from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
 from typing import *
+import pickle
 
 from logger import getLogger
-from gui.sampleview import MultiSampleView, getFilePathHash
+from dataObjects import View, getFilePathHash
+from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
@@ -29,14 +50,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._resultPlots: ResultPlots = ResultPlots()
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassifierWidget = ClassifierWidget(self)
-        self._loadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
-        self._exportBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Export")
-        self._saveViewBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Save View")
+        self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
+        # self._loadAct: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
+        # self._exportAct: QtWidgets.QPushButton = QtWidgets.QPushButton("Export")
+        # self._promptSaveViewBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Save View")
 
-        self._toolbar: QtWidgets.QToolBar = QtWidgets.QToolBar()
-        self.addToolBar(QtCore.Qt.TopToolBarArea, self._toolbar)
+        # self._toolbar: QtWidgets.QToolBar = QtWidgets.QToolBar()
+        # self.addToolBar(QtCore.Qt.TopToolBarArea, self._toolbar)
+
+        # self._menubar: QtWidgets.QMenuBar = QtWidgets.QMenuBar()
+        # self.setMenuBar(self._menubar)
 
         self._configureWidgets()
+        self._createMenuBar()
         self._createLayout()
         self.disableWidgets()
 
@@ -107,7 +133,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def getCurrentClass(self) -> str:
         return self._clsCreator.getCurrentClass()
 
-    def _getFileAndOpen(self) -> None:
+    def _promptLoadNPYSample(self) -> None:
+        """Prompts for a npy file to open as sample"""
         fnames, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Select Files",
                                                            r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI", filter="*.npy")
         for fname in fnames:
@@ -133,26 +160,56 @@ class MainWindow(QtWidgets.QMainWindow):
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
         return self._resultPlots.getDecsriptorLibrary()
 
-    def getProcessingStack(self) -> List[str]:
-        """Gets a list of the names of the currently selected processing stack"""
-        return self._preprocSelector.getPreprocessorNames()
+    def _promptLoadView(self) -> None:
+        """Prompts for a view file to open"""
+        directory: str = self._multiSampleView.getViewSaveDirectory()
+        loadPath, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select File", directory, "*.view")
+        if loadPath:
+            self._loadView(loadPath)
 
-    def _saveView(self) -> None:
+    def _promptSaveView(self) -> None:
         """Prompts for saving the current view. See method in multisampleview for details."""
         directory: str = self._multiSampleView.getViewSaveDirectory()
         savePath, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select File", directory, "*.view")
         if savePath:
-            self._multiSampleView.saveView(savePath)
+            self._saveView(savePath)
+            QtWidgets.QMessageBox.about(self, "Done", "Saved the current view.")
+
+    def _saveView(self, savePath: str) -> None:
+        """
+        Saves the current view (all open samples, the preprocessor and the notepad into a file.
+        :param savePath: the full path to where to save the view
+        """
+        viewObj: View = View()
+        viewObj.samples = [sample.getSampleData() for sample in self._multiSampleView.getSampleViews()]
+        viewObj.processStack = self._preprocSelector.getPreprocessorNames()
+        viewObj.title = os.path.basename(savePath.split(".")[0])
+        with open(savePath, "wb") as fp:
+            pickle.dump(viewObj, fp)
+
+    def _loadView(self, fname: str) -> None:
+        """
+        Loads a view.
+        :fname: full path to the file to load.
+        """
+        with open(fname, "rb") as fp:
+            view: View = pickle.load(fp)
+        if view.title != '':
+            self.setWindowTitle(f"HSI Evaluator - {view.title}")
+        self._multiSampleView.createListOfSamples(view.samples)
+        self._preprocSelector.selectPreprocessors(view.processStack)
+        self.enableWidgets()
+        self._resultPlots.updatePlots()
 
     def _export(self) -> None:
         raise NotImplementedError
 
     def enableWidgets(self) -> None:
-        for widget in self._getUIWidgets():
+        for widget in self._getUIWidgetsForSelectiveEnabling():
             widget.setDisabled(False)
 
     def disableWidgets(self) -> None:
-        for widget in self._getUIWidgets():
+        for widget in self._getUIWidgetsForSelectiveEnabling():
             widget.setDisabled(True)
 
     def _configureWidgets(self) -> None:
@@ -171,16 +228,35 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._clfWidget.setMaximumWidth(300)
 
-        self._loadBtn.released.connect(self._getFileAndOpen)
-        self._saveViewBtn.released.connect(self._saveView)
+        # self._loadBtn.released.connect(self._promptLoadNPYSample)
+        # self._promptSaveViewBtn.released.connect(self._promptSaveView)
         # self._exportBtn.released.connect(self._export)
 
-        self._toolbar.addWidget(self._loadBtn)
-        self._toolbar.addSeparator()
-        self._toolbar.addWidget(self._saveViewBtn)
+        # self._toolbar.addWidget(self._loadBtn)
+        # self._toolbar.addSeparator()
+        # self._toolbar.addWidget(self._promptSaveViewBtn)
         # self._toolbar.addWidget(self._exportBtn)
 
         self._resultPlots.setMainWinRef(self)
+
+    def _createMenuBar(self) -> None:
+        """Creates the Menu bar"""
+        filemenu: QtWidgets.QMenu = QtWidgets.QMenu("&File", self)
+        openAct: QtWidgets.QAction = QtWidgets.QAction("&Open Sample(s)", self)
+        openAct.setShortcut("Ctrl+O")
+        openAct.triggered.connect(self._promptLoadNPYSample)
+        loadViewAct: QtWidgets.QAction = QtWidgets.QAction("Open &View", self)
+        loadViewAct.triggered.connect(self._promptLoadView)
+        loadViewAct.setShortcut("Ctrl+Shift+O")
+        self._saveViewAct.triggered.connect(self._promptSaveView)
+        self._saveViewAct.setShortcut("Ctrl+S")
+
+        filemenu.addAction(openAct)
+        filemenu.addSeparator()
+        filemenu.addAction(loadViewAct)
+        filemenu.addAction(self._saveViewAct)
+
+        self.menuBar().addMenu(filemenu)
 
     def _createLayout(self) -> None:
         """
@@ -205,8 +281,11 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(self._multiSampleView)
         layout.addLayout(specLayout)
 
-    def _getUIWidgets(self) -> List[QtWidgets.QWidget]:
-        widgetList = [self._saveViewBtn, self._multiSampleView, self._exportBtn, self._resultPlots, self._clfWidget, self._clsCreator]
+    def _getUIWidgetsForSelectiveEnabling(self) -> List[QtWidgets.QWidget]:
+        """
+        Returns a list of ui widgets that can be disabled and enabled, depedning on current ui context
+        """
+        widgetList = [self._saveViewAct, self._multiSampleView, self._resultPlots, self._clfWidget, self._clsCreator]
         return widgetList
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
