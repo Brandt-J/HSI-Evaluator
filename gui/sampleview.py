@@ -29,6 +29,7 @@ from projectPaths import getAppFolder
 from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
 from dataObjects import Sample
+from loadNumpyCube import loadNumpyCube
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -298,7 +299,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._setupWidgetsFromSampleData()
 
     def setupFromSampleData(self) -> None:
-        cube: np.ndarray = np.load(self._sampleData.filePath)
+        cube: np.ndarray = loadNumpyCube(self._sampleData.filePath)
         self.setCube(cube)
         self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
         self._setupWidgetsFromSampleData()

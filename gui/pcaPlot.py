@@ -87,7 +87,10 @@ class PCAPlot(FigureCanvas):
                 self._ax.set_ylabel("Scores on PC2")
                 self._drawLegend()
                 self._drawConfidenceEllipses(princComps)
-                self.draw()
+                try:
+                    self.draw()
+                except ValueError as e:
+                    self._logger.warning(f"Could not update PCA plot: {e}")
 
     def _drawLegend(self) -> None:
         """

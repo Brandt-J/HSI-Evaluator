@@ -154,14 +154,13 @@ class ResultPlots(QtWidgets.QWidget):
         self._numSpecSpinner.setMinimum(0)
         self._numSpecSpinner.setMaximum(1000)
         self._numSpecSpinner.setValue(100)
+        self._numSpecSpinner.setMaximumWidth(50)
+        self._numSpecSpinner.valueChanged.connect(self.updatePlots)
 
         self._seedSpinner.setMinimum(0)
         self._seedSpinner.setMaximum(100)
         self._seedSpinner.setValue(42)
         self._seedSpinner.valueChanged.connect(self.updatePlots)
-
-        self._numSpecSpinner.setMaximumWidth(50)
-        self._numSpecSpinner.valueChanged.connect(self.updatePlots)
 
         self._showAllCheckBox.setChecked(True)
         self._showAllCheckBox.stateChanged.connect(self.updatePlots)
@@ -308,7 +307,7 @@ class SpecPlot(QtWidgets.QWidget):
         #     cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
         #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavenumbers(), cursorSpec, color='gray')[0]
 
-        self._specAx.set_xlabel("Wavenumbers (cm-1)")
+        self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")
         self._specAx.legend(self._legendItems)
         self._plotDescriptors()

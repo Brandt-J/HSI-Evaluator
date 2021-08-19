@@ -25,6 +25,7 @@ import pickle
 
 from logger import getLogger
 from dataObjects import View, getFilePathHash
+from loadNumpyCube import loadNumpyCube
 from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
@@ -149,7 +150,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multiSampleView.loadSampleViewFromFile(savedSamplePath)
             self._logger.info(f"Loading saved status for sample {name}")
         else:
-            cube: np.ndarray = np.load(fname)
+            cube: np.ndarray = loadNumpyCube(fname)
             newView: 'SampleView' = self._multiSampleView.addSampleView()
             newView.setUp(fname, cube)
             self._logger.info(f"Creating new sample from: {name}")
