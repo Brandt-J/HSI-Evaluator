@@ -22,7 +22,7 @@ from typing import List
 import sys
 import os
 sys.path.append(os.getcwd())
-from SpectraProcessing.Preprocessing.processing import *
+from preprocessing.processing import *
 
 
 class Preprocessor(ABC):
@@ -65,6 +65,27 @@ class SNV(Preprocessor):
         return snv(spectra)
 
 
+class Smooth(Preprocessor):
+    label = 'Smooth'
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return deriv_smooth(spectra, derivative=0)
+
+
+class Derivative1(Preprocessor):
+    label = '1st Derivative (smooth)'
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return deriv_smooth(spectra, derivative=1)
+
+
+class Derivative2(Preprocessor):
+    label = '2nd Derivative (smooth)'
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return deriv_smooth(spectra, derivative=2)
+
+
 class Background(Preprocessor):
     label = 'Subtract Background'
 
@@ -89,4 +110,4 @@ class Background(Preprocessor):
 
 
 def getPreprocessors() -> List[Preprocessor]:
-    return [Background(), Normalize(), MeanCentering(), SNV(), Detrend()]
+    return [Background(), Normalize(), MeanCentering(), SNV(), Detrend(), Smooth(), Derivative1(), Derivative2()]

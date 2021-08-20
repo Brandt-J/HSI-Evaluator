@@ -24,13 +24,11 @@ import time
 from matplotlib.colors import to_rgb
 from matplotlib.pyplot import rcParams
 
-from SpectraProcessing.classification import NeuralNetClassifier, RandomDecisionForest
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
-    from SpectraProcessing.classification import BaseClassifier
     from gui.graphOverlays import GraphView
     from spectraObject import SpectraObject
     from logging import Logger

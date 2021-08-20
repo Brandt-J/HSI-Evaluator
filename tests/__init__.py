@@ -17,16 +17,7 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-import numpy as np
 
-
-def loadNumpyCube(fname: str, errorPixelThreshold: float = 1000) -> np.ndarray:
-    """
-    Loads a numpy cube and sets "defect" pixels to zero. They usually contain very large values (1e34) and thereby hamper
-    further evaluation.
-    :param fname: Path to .npy file
-    :param errorPixelThreshold: The threshold used to detet erroneous pixels.
-    """
-    cube: np.ndarray = np.load(fname)
-    cube[cube > errorPixelThreshold] = 0
-    return cube
+"""
+Init file to make the tests directory importable. Otherwise unittesting the entire test folder fails..
+"""

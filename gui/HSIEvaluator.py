@@ -36,7 +36,6 @@ from gui.classification import ClassCreator, ClassifierWidget
 if TYPE_CHECKING:
     from logging import Logger
     from preprocessors import Preprocessor
-    from SpectraProcessing.descriptors import DescriptorLibrary
     from gui.sampleview import SampleView
 
 
@@ -52,15 +51,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassifierWidget = ClassifierWidget(self)
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
-        # self._loadAct: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
-        # self._exportAct: QtWidgets.QPushButton = QtWidgets.QPushButton("Export")
-        # self._promptSaveViewBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Save View")
-
-        # self._toolbar: QtWidgets.QToolBar = QtWidgets.QToolBar()
-        # self.addToolBar(QtCore.Qt.TopToolBarArea, self._toolbar)
-
-        # self._menubar: QtWidgets.QMenuBar = QtWidgets.QMenuBar()
-        # self.setMenuBar(self._menubar)
 
         self._configureWidgets()
         self._createMenuBar()
@@ -228,16 +218,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)
-
-        # self._loadBtn.released.connect(self._promptLoadNPYSample)
-        # self._promptSaveViewBtn.released.connect(self._promptSaveView)
-        # self._exportBtn.released.connect(self._export)
-
-        # self._toolbar.addWidget(self._loadBtn)
-        # self._toolbar.addSeparator()
-        # self._toolbar.addWidget(self._promptSaveViewBtn)
-        # self._toolbar.addWidget(self._exportBtn)
-
         self._resultPlots.setMainWinRef(self)
 
     def _createMenuBar(self) -> None:
