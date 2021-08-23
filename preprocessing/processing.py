@@ -180,7 +180,10 @@ def deriv_smooth(input_data: np.ndarray, derivative: int = 0, windowSize: int = 
         cumsum_vec = np.cumsum(np.insert(input_data[i, :], 0, 0))  # this cumsum version is a very fast smoother
         ma_vec = (cumsum_vec[windowSize:] - cumsum_vec[:-windowSize]) / windowSize
         smoothed = np.zeros(input_data.shape[1])
-        smoothed[startInd:startInd + len(ma_vec)] = ma_vec
+        endInd = startInd + len(ma_vec)
+        smoothed[startInd:endInd] = ma_vec  # put smoothed version in the middle of the zeros array
+        smoothed[:startInd] = smoothed[startInd]  # fill up the values at the beginning
+        smoothed[endInd:] = smoothed[endInd-1]  # fill up the values at the end
 
         if derivative == 0:
             output_data[i, :] = smoothed
