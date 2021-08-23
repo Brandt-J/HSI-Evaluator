@@ -18,7 +18,7 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import os
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtGui
 import numpy as np
 from typing import *
 import pickle
@@ -30,12 +30,12 @@ from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
-from gui.classification import ClassCreator, ClassifierWidget
+from gui.classification import ClassCreator, ClassificationUI
 
 
 if TYPE_CHECKING:
     from logging import Logger
-    from preprocessors import Preprocessor
+    from preprocessing.preprocessors import Preprocessor
     from gui.sampleview import SampleView
 
 
@@ -49,7 +49,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._preprocSelector: PreprocessingSelector = PreprocessingSelector()
         self._resultPlots: ResultPlots = ResultPlots()
         self._clsCreator: ClassCreator = ClassCreator()
-        self._clfWidget: ClassifierWidget = ClassifierWidget(self)
+        self._clfWidget: ClassificationUI = ClassificationUI(self)
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
 
         self._configureWidgets()
@@ -83,6 +83,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         return self._clsCreator.getColorOfClassName(className)
 
+    def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
+        """
+        Gets a dictionary containing the colors of all present classes.
+        """
+        return self._clsCreator.getClassColorDict()
+
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
@@ -111,6 +117,18 @@ class MainWindow(QtWidgets.QMainWindow):
         Returns the averaged backgounds of all samples.
         """
         return self._multiSampleView.getBackgroundsOfAllSamples()
+
+    def getAllSamples(self) -> List['SampleView']:
+        """
+        Returns a list of the opened samples.
+        """
+        return self._multiSampleView.getSampleViews()
+
+    def getActiveSample(self) -> 'SampleView':
+        """
+        Returns the currently active sampleview.
+        """
+        return self._multiSampleView.getActiveSample()
 
     def getPreprocessors(self) -> List['Preprocessor']:
         return self._preprocSelector.getPreprocessors()
@@ -147,6 +165,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.enableWidgets()
         self.showMaximized()
+        self._clfWidget.updateSampleSelectorComboBoxes()
 
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
         return self._resultPlots.getDecsriptorLibrary()
@@ -172,7 +191,7 @@ class MainWindow(QtWidgets.QMainWindow):
         :param savePath: the full path to where to save the view
         """
         viewObj: View = View()
-        viewObj.samples = [sample.getSampleData() for sample in self._multiSampleView.getSampleViews()]
+        viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
         viewObj.processStack = self._preprocSelector.getPreprocessorNames()
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
@@ -185,12 +204,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         with open(fname, "rb") as fp:
             view: View = pickle.load(fp)
+            view.legacyConvert()
+
         if view.title != '':
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
         self._multiSampleView.createListOfSamples(view.samples)
         self._preprocSelector.selectPreprocessors(view.processStack)
         self.enableWidgets()
         self._resultPlots.updatePlots()
+        self._clfWidget.updateSampleSelectorComboBoxes()
 
     def _export(self) -> None:
         raise NotImplementedError

@@ -23,6 +23,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
 from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
+from dataObjects import Rect
 
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
@@ -55,7 +56,10 @@ class GraphView(QtWidgets.QGraphicsView):
         self._sampleView = _sampleViewRef
         self._mainWin = mainWinRef
 
-    def setCube(self, cube: np.ndarray) -> None:
+    def setUpToCube(self, cube: np.ndarray) -> None:
+        """
+        Sets references to the cube and initiates the selection overlay to the correct shape.
+        """
         self._origCube = cube
         img = cube2RGB(cube)
         self._selectionOverlay.initOverlay(img.shape)
@@ -67,8 +71,9 @@ class GraphView(QtWidgets.QGraphicsView):
             self._selectionOverlay.addPixelsToSelection(indices, color)
         self.SelectionChanged.emit()
 
-    def getCurrentViewBounds(self) -> QtCore.QRectF:
-        return self.mapToScene(self.rect()).boundingRect()
+    def getCurrentViewBounds(self) -> Rect:
+        brect: QtCore.QRectF = self.mapToScene(self.rect()).boundingRect()
+        return Rect(brect.top(), brect.bottom(), brect.left(), brect.right())
 
     def setClassOverlay(self, img: np.ndarray) -> None:
         self._classOverlay.updateImage(img)

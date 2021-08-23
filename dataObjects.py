@@ -20,14 +20,21 @@ If not, see <https://www.gnu.org/licenses/>.
 from typing import *
 import hashlib
 import os
+import numpy as np
+import numba
+from dataclasses import dataclass
+
+from spectraObject import SpectraObject
 
 
 class Sample:
     """Data Container for a sample view"""
     def __init__(self):
+        self.name: str = ''  # Sample Name
         self.filePath: str = ''  # Path to the spectra cube (.npy file)
-        self.classes2Indices: Dict[str, Set[int]] = {}
-        self.name: str = ''
+        self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
+        self.specObj: SpectraObject = SpectraObject()  # Spectra Object
+        self.classOverlay: Union[None, np.ndarray] = None  # RGBA Overlay used for displaying predicted class labels
 
     def setDefaultName(self) -> None:
         if len(self.filePath) > 0:
@@ -49,6 +56,19 @@ class Sample:
 
         return isEqual
 
+    def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
+        """
+        Gets the labelled Spectra, in form of a dictionary.
+        :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
+        """
+        spectra: Dict[str, np.ndarray] = {}
+        for name, indices in self.classes2Indices.items():
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getNotPreprocessedCube())
+        return spectra
+
+    def setClassOverlay(self, classImage: np.ndarray) -> None:
+        self.classOverlay = classImage
+
 
 class View:
     """Data container for an entire view, including multiple samples and a processing stack"""
@@ -57,6 +77,24 @@ class View:
         self.samples: List['Sample'] = []
         self.processStack: List[str] = []
 
+    def legacyConvert(self) -> None:
+        """Convenience method for converting from older versions"""
+        samples: List['Sample'] = []
+        for sample in self.samples:
+            newSample: Sample = Sample()
+            newSample.__dict__.update(sample.__dict__)
+            samples.append(newSample)
+        self.samples = samples
+
+
+@dataclass
+class Rect:
+    """Holds information about a bounding rectangle. Similar to QtCore.QRectF, but fully pickleable..ö'ö"""
+    top: float = 0.0
+    bottom: float = 0.0
+    left: float = 0.0
+    right: float = 0.0
+
 
 def getFilePathHash(fpath: str) -> str:
     """
@@ -64,3 +102,19 @@ def getFilePathHash(fpath: str) -> str:
     before actually creating them..
     """
     return hashlib.sha1(fpath.encode()).hexdigest()
+
+
+@numba.njit()
+def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
+    """
+    Retrieves the indices from the cube and returns an NxM array
+    :param indices: length N array of flattened indices
+    :param cube: XxYxZ spectral cube
+    :return: (NxX) array of spectra
+    """
+    spectra: np.ndarray = np.zeros((len(indices), cube.shape[0]))
+    for i, ind in enumerate(indices):
+        y = ind // cube.shape[2]
+        x = ind % cube.shape[2]
+        spectra[i, :] = cube[:, y, x]
+    return spectra

@@ -17,18 +17,18 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-import numba
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pickle
 import os
 from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
 import numpy as np
+from copy import deepcopy
 
 from logger import getLogger
 from projectPaths import getAppFolder
 from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
-from dataObjects import Sample
+from dataObjects import Sample, getSpectraFromIndices
 from loadNumpyCube import loadNumpyCube
 
 if TYPE_CHECKING:
@@ -68,9 +68,11 @@ class MultiSampleView(QtWidgets.QScrollArea):
 
     def loadSampleViewFromFile(self, fpath: str) -> None:
         """Loads the sample configuration from the file and creates a sampleview accordingly"""
+        newSampleData: 'Sample' = Sample()
         with open(fpath, "rb") as fp:
-            sampleData: 'Sample' = pickle.load(fp)
-        self._createNewSampleFromSampleData(sampleData)
+            loadedSampleData: 'Sample' = pickle.load(fp)
+        newSampleData.__dict__.update(loadedSampleData.__dict__)
+        self._createNewSampleFromSampleData(newSampleData)
         
     def createListOfSamples(self, sampleList: List['Sample']) -> None:
         """Creates a list of given samples and replaces the currently opened with that."""
@@ -101,7 +103,20 @@ class MultiSampleView(QtWidgets.QScrollArea):
             self._saveSampleView(sample)
 
     def getSampleViews(self) -> List['SampleView']:
-        return self._sampleviews
+        """Returns a list of all samples"""
+        return self._sampleviews.copy()
+
+    def getActiveSample(self) -> 'SampleView':
+        """
+        Returns the currently active sample.
+        """
+        activeSample: Union[None, 'SampleView'] = None
+        for sample in self._sampleviews:
+            if sample.isActive():
+                activeSample = sample
+                break
+        assert activeSample is not None
+        return activeSample
 
     def getWavenumbers(self) -> np.ndarray:
         return self._sampleviews[0].getWavenumbers()
@@ -114,7 +129,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         spectra: Dict[str, np.ndarray] = {}
         for view in self._sampleviews:
             if view.isActive():
-                spectra = view.getLabelledSpectra()
+                spectra = view.getVisibleLabelledSpectra()
                 break
         return spectra
 
@@ -125,7 +140,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         """
         spectra: Dict[str, Dict[str, np.ndarray]] = {}
         for view in self._sampleviews:
-            spectra[view.getName()] = view.getLabelledSpectra()
+            spectra[view.getName()] = view.getVisibleLabelledSpectra()
         return spectra
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
@@ -165,7 +180,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         """
         directory: str = self.getSampleSaveDirectory()
         savePath: str = os.path.join(directory, sampleview.getSaveFileName())
-        sampleData: 'Sample' = sampleview.getSampleData()
+        sampleData: 'Sample' = sampleview.getSampleDataToSave()
         with open(savePath, "wb") as fp:
             pickle.dump(sampleData, fp)
 
@@ -214,22 +229,6 @@ class MultiSampleView(QtWidgets.QScrollArea):
         return path
 
 
-@numba.njit()
-def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
-    """
-    Retrieves the indices from the cube and returns an NxM array
-    :param indices: length N array of flattened indices
-    :param cube: XxYxZ spectral cube
-    :return: (NxX) array of spectra
-    """
-    spectra: np.ndarray = np.zeros((len(indices), cube.shape[0]))
-    for i, ind in enumerate(indices):
-        y = ind // cube.shape[2]
-        x = ind % cube.shape[2]
-        spectra[i, :] = cube[:, y, x]
-    return spectra
-
-
 class SampleView(QtWidgets.QMainWindow):
     SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
@@ -242,7 +241,6 @@ class SampleView(QtWidgets.QMainWindow):
         self._sampleData: Sample = Sample()
 
         self._mainWindow: Union[None, 'MainWindow'] = None
-        self._specObj: SpectraObject = SpectraObject()
         self._graphView: 'GraphView' = GraphView()
         self._logger: 'Logger' = getLogger('SampleView')
 
@@ -311,8 +309,14 @@ class SampleView(QtWidgets.QMainWindow):
 
     def setCube(self, cube: np.ndarray) -> None:
         """Sets references to the spec cube."""
-        self._graphView.setCube(cube)
-        self._specObj.setCube(cube)
+        self._sampleData.specObj.setCube(cube)
+        self._graphView.setUpToCube(cube)
+
+    def getSpecObj(self) -> 'SpectraObject':
+        """
+        Returns the spectra object.
+        """
+        return self._sampleData.specObj
 
     def getName(self) -> str:
         return self._name
@@ -321,14 +325,14 @@ class SampleView(QtWidgets.QMainWindow):
         return self._graphView
 
     def getWavenumbers(self) -> np.ndarray:
-        return self._specObj.getWavenumbers()
+        return self._sampleData.specObj.getWavenumbers()
 
     def getAveragedBackground(self) -> np.ndarray:
         """
         Returns the averaged background spectrum of the sample. If no background was selected, a np.zeros array is returned.
         :return: np.ndarray of background spectrum
         """
-        cube: np.ndarray = self._specObj.getNotPreprocessedCube()
+        cube: np.ndarray = self._sampleData.specObj.getNotPreprocessedCube()
         background: np.ndarray = np.zeros(cube.shape[0])
         backgroundFound: bool = False
         for cls_name in self._classes2Indices:
@@ -348,7 +352,16 @@ class SampleView(QtWidgets.QMainWindow):
     def getSampleData(self) -> 'Sample':
         return self._sampleData
 
-    def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
+    def getSampleDataToSave(self) -> 'Sample':
+        """
+        Returns the sample data that is required for saving the sample to file.
+        """
+        saveSample: Sample = deepcopy(self._sampleData)
+        saveSample.specObj = None
+        saveSample.classOverlay = None
+        return saveSample
+
+    def getVisibleLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
         :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
@@ -356,7 +369,7 @@ class SampleView(QtWidgets.QMainWindow):
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             if self._mainWindow.classIsVisible(name):
-                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._specObj.getNotPreprocessedCube())
+                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getNotPreprocessedCube())
         return spectra
 
     def getSelectedMaxBrightness(self) -> float:

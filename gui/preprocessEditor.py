@@ -19,9 +19,9 @@ If not, see <https://www.gnu.org/licenses/>.
 from PyQt5 import QtWidgets, QtGui, QtCore
 from typing import List, TYPE_CHECKING
 
-from preprocessors import getPreprocessors
+from preprocessing.preprocessors import getPreprocessors
 if TYPE_CHECKING:
-    from preprocessors import Preprocessor
+    from preprocessing.preprocessors import Preprocessor
 
 
 class PreprocessingSelector(QtWidgets.QGroupBox):
@@ -106,7 +106,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
             if label.isSelected():
                 self._selected.append(label)
                 selected.append(label)
-                
+
         for label in selected:
             self._available.remove(label)
         

@@ -17,25 +17,28 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-
+from PyQt5 import QtCore
 import numpy as np
-from typing import List, Dict, Tuple, TYPE_CHECKING, cast, Union
+from typing import List, Dict, Tuple, TYPE_CHECKING, Union, cast
 import random
 import time
 
 from logger import getLogger
-from preprocessors import Background
+from preprocessing.preprocessors import Background
 
 if TYPE_CHECKING:
-    from PyQt5 import QtCore
+    from dataObjects import Rect
     from logging import Logger
-    from preprocessors import Preprocessor
+    from preprocessing.preprocessors import Preprocessor
 
 
 class SpectraObject:
     def __init__(self):
         self._wavenumbers: Union[None, np.ndarray] = None
         self._cube: Union[None, np.ndarray] = None
+        self._preprocQueue: List['Preprocessor'] = []
+        self._imgLimits: Union[None, 'Rect'] = None
+        self._background: Union[None, np.ndarray] = None
         self._preprocessedCube: Union[None, np.ndarray] = None
         self._classes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}  # classname, (y-coordinages, x-coordinates)
         self._logger: 'Logger' = getLogger("SpectraObject")
@@ -45,28 +48,49 @@ class SpectraObject:
         if self._wavenumbers is None:
             self._setDefaultWavenumbers(cube)
 
-    # TODO: REFACTOR TO DIRECTLY ACCEPT THE PROCESSING QUEUE
-    # def applyPreprocessing(self, imgLimits: 'QtCore.QRectF') -> None:
-    #     """
-    #     Applies the specified preprocessing, if any queue was previously set using "setPreprocessors"
-    #     :return:
-    #     """
-    #     if len(self._preprocessingQueue) > 0:
-    #         t0 = time.time()
-    #         specArr = self._cube2SpecArr(imgLimits)
-    #
-    #         for preprocessor in self._preprocessingQueue:
-    #             if type(preprocessor) == Background:
-    #                 preprocessor: Background = cast(Background, preprocessor)
-    #                 preprocessor.setBackground(self.getMeanBackgroundSpec())
-    #             specArr = preprocessor.applyToSpectra(specArr)
-    #
-    #         self._preprocessedCube = self._specArr2cube(specArr, imgLimits)
-    #         print(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
-    #     else:
-    #         self._preprocessedCube = self._cube.copy()
+    def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], imgLimits: 'Rect',
+                             background: np.ndarray):
+        """
+        Sets the preprocessing parameters
+        :param preprocessingQueue: List of Preprocessors
+        :param imgLimits: QRectF of image limits to process
+        :param background: np.ndarray of background spectrum
+        """
+        self._preprocQueue = preprocessingQueue
+        self._imgLimits = imgLimits
+        self._background = background
 
-    def _specArr2cube(self, specArr: np.ndarray, imgLimits: 'QtCore.QRectF') -> np.ndarray:
+    def applyPreprocessing(self) -> None:
+        """
+        Applies the specified preprocessing.
+
+        :return:
+        """
+        if len(self._preprocQueue) > 0:
+            t0 = time.time()
+            specArr = self._cube2SpecArr(self._imgLimits)
+
+            for preprocessor in self._preprocQueue:
+                if type(preprocessor) == Background:
+                    preprocessor: Background = cast(Background, preprocessor)
+                    preprocessor.setBackground(self._background)
+
+                specArr = preprocessor.applyToSpectra(specArr)
+
+            self._preprocessedCube = self._specArr2cube(specArr, self._imgLimits)
+            print(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
+        else:
+            self._logger.warning("Received empty preprocessingQueue, just returning the original cube.")
+            self._preprocessedCube = self._cube.copy()
+
+        self._resetPreprocessing()
+
+    def _resetPreprocessing(self) -> None:
+        self._preprocQueue = []
+        self._imgLimits = QtCore.QRectF()
+        self._background = None
+
+    def _specArr2cube(self, specArr: np.ndarray, imgLimits: 'Rect') -> np.ndarray:
         """
         Takes an (MxN) spec array and reformats into cube layout
         :param specArr: (MxN) array of M spectra with N wavenumbers
@@ -75,24 +99,24 @@ class SpectraObject:
         cube = self._cube.copy()
         i = 0
         for y in range(self._cube.shape[1]):
-            if imgLimits.top() <= y < imgLimits.bottom():
+            if imgLimits.top <= y < imgLimits.bottom:
                 for x in range(self._cube.shape[2]):
-                    if imgLimits.left() <= x < imgLimits.right():
+                    if imgLimits.left <= x < imgLimits.right:
                         cube[:, y, x] = specArr[i, :]
                         i += 1
 
         return cube
 
-    def _cube2SpecArr(self, imgLimits: 'QtCore.QRectF') -> np.ndarray:
+    def _cube2SpecArr(self, imgLimits: 'Rect') -> np.ndarray:
         """
         Reformats the cube into an MxN spectra matrix of M spectra with N wavenumbers
         :return: (MxN) spec array of M spectra of N wavenumbers
         """
         specArr: List[np.ndarray] = []
         for y in range(self._cube.shape[1]):
-            if imgLimits.top() <= y < imgLimits.bottom():
+            if imgLimits.top <= y < imgLimits.bottom:
                 for x in range(self._cube.shape[2]):
-                    if imgLimits.left() <= x < imgLimits.right():
+                    if imgLimits.left <= x < imgLimits.right:
                         specArr.append(self._cube[:, y, x])
         specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavenumbers
         assert specArr.shape[1] == self._cube.shape[0]

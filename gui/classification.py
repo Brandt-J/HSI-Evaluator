@@ -18,23 +18,32 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, Tuple, Dict, cast, Union, TYPE_CHECKING
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING
 import numpy as np
 import time
 from matplotlib.colors import to_rgb
 from matplotlib.pyplot import rcParams
+from multiprocessing import Process, Queue
+from sklearn.model_selection import train_test_split
 
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
+from classifiers import BaseClassifier, getClassifiers
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
+    from gui.sampleview import SampleView
     from gui.graphOverlays import GraphView
+    from preprocessing.preprocessors import Preprocessor
     from spectraObject import SpectraObject
+    from dataObjects import Sample, Rect
     from logging import Logger
 
 
 class ClassObject:
+    """
+    Container to store information about a selectable class.
+    """
     def __init__(self, classname: str):
         self.name: str = classname
         self._visible: bool = True
@@ -67,6 +76,9 @@ class ClassObject:
 
 
 class ClassCreator(QtWidgets.QGroupBox):
+    """
+    UI Element for creating and deleting classes, and for toggling their visibility.
+    """
     ClassCreated: QtCore.pyqtSignal = QtCore.pyqtSignal()
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassActivated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
@@ -121,9 +133,14 @@ class ClassCreator(QtWidgets.QGroupBox):
                 break
         return name
 
-    # def getClassNamesAndColors(self) -> Tuple[List[str], List[Tuple[int, int, int]]]:
-    #     colors = [self.getColorOfClassName(cls) for cls in self._classes]
-    #     return self._classes.copy(), colors
+    def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
+        """
+        Returns a dictionary containing rgb colors for all present classes.
+        """
+        colorDict: Dict[str, Tuple[int, int, int]] = {}
+        for cls in self._classes:
+            colorDict[cls.name] = self._colorHandler.getColorOfClassName(cls.name)
+        return colorDict
 
     def getColorOfClassName(self, className: str) -> Tuple[int, int, int]:
         return self._colorHandler.getColorOfClassName(className)
@@ -258,128 +275,268 @@ class ColorHandler:
         color = colorCycle[newIndex]
         color = tuple([int(round(v * 255)) for v in to_rgb(color)])
         self._name2color[name] = color
-        
 
-class ClassifierWidget(QtWidgets.QGroupBox):
+
+class ClassificationUI(QtWidgets.QGroupBox):
+    """
+    UI Element for Classification of the current graph view(s).
+    """
     ClassTransparencyUpdated: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
 
     def __init__(self, parent: 'MainWindow'):
-        super(ClassifierWidget, self).__init__()
+        super(ClassificationUI, self).__init__()
         self._parent: 'MainWindow' = parent
-    #     self._specObj: 'SpectraObject' =
-    #     self._clf: Union[None, 'BaseClassifier'] = None
-    #     # self._graphView: 'GraphView' = parent.getGraphView()
-    #     self._logger: 'Logger' = getLogger("ClassifierWidget")
-    #
-    #     self._rdfBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton('Random Decision Forest')
-    #     self._rdfBtn.setChecked(True)
-    #     self._nnBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton('Neural Net')
-    #
-    #     updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Update Image")
-    #     updateBtn.released.connect(self._classifyImage)
-    #
-    #     self._transpSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-    #     self._transpSlider.setMinimum(0)
-    #     self._transpSlider.setValue(80)
-    #     self._transpSlider.setMaximum(100)
-    #     self._transpSlider.valueChanged.connect(self._emitUpdate)
-    #
-    #     btnGroup = QtWidgets.QGroupBox('Select Classifier:')
-    #     btnLayout = QtWidgets.QVBoxLayout()
-    #     btnLayout.addWidget(self._rdfBtn)
-    #     btnLayout.addWidget(self._nnBtn)
-    #     btnGroup.setLayout(btnLayout)
-    #
-    #     layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-    #     self.setLayout(layout)
-    #     layout.addWidget(btnGroup)
-    #     layout.addWidget(updateBtn)
-    #     layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
-    #     layout.addWidget(self._transpSlider)
-    #
-    # def getClassifier(self) -> 'BaseClassifier':
-    #     return self._clf
-    #
-    # def _classifyImage(self) -> None:
-    #     """
-    #     Classifies the current image based on the selected pixels and their classes
-    #     :return:
-    #     """
-    #     self._parent.disableWidgets()
-    #     time.sleep(0.1)
-    #     imgLimits: QtCore.QRectF = self._graphView.getCurrentViewBounds()
-    #     self._specObj.applyPreprocessing(imgLimits)
-    #
-    #     if self._rdfBtn.isChecked():
-    #         self._clf = RandomDecisionForest(self._parent.getDescriptorLibrary())
-    #     elif self._nnBtn.isChecked():
-    #         self._clf = NeuralNetClassifier(self._specObj.getNumberOfFeatures(), self._specObj.getNumberOfClasses())
-    #
-    #     try:
-    #         self._trainClassifier()
-    #         assignments: List[str] = self._getClassesForPixels(imgLimits)
-    #
-    #         clfImg: np.ndarray = self._createClassImg(assignments, imgLimits)
-    #         self._graphView.setClassOverlay(clfImg)
-    #     except Exception as e:
-    #         QtWidgets.QMessageBox.critical(self, "Error", f"Application of classifier failed:\n{e}")
-    #     self._parent.enableWidgets()
-    #
-    # def _trainClassifier(self) -> None:
-    #     """
-    #     Trains the classifier
-    #     :return:
-    #     """
-    #     cubeSpectra: Dict[str, np.ndarray] = self._specObj.getClassSpectra(maxSpecPerClas=np.inf)
-    #     assigmnents: List[str] = []
-    #     spectra: List[np.ndarray] = []  # Wavenumbers in first column
-    #     for cls_name, specs in cubeSpectra.items():
-    #         for i in range(specs.shape[0]):
-    #             spectra.append(specs[i, :])
-    #             assigmnents.append(cls_name)
-    #     if type(self._clf) == RandomDecisionForest:
-    #         self._clf = cast(RandomDecisionForest, self._clf)
-    #         self._clf.setWavenumbers(self._specObj.getWavenumbers())
-    #
-    #     self._clf.trainWithSpectra(np.array(spectra), assigmnents)
-    #
-    # def _getClassesForPixels(self, imgLimits: QtCore.QRectF) -> List[str]:
-    #     """
-    #     Estimates the classes for each pixel
-    #     :param imgLimits: QtCore.QRectF Image boundaries to consider
-    #     :return:
-    #     """
-    #     t0 = time.time()
-    #     specList: List[np.ndarray] = []
-    #     cube: np.ndarray = self._specObj.getCube()
-    #     for y in range(cube.shape[1]):
-    #         if imgLimits.top() <= y < imgLimits.bottom():
-    #             for x in range(cube.shape[2]):
-    #                 if imgLimits.left() <= x < imgLimits.right():
-    #                     specList.append(cube[:, y, x])
-    #
-    #     result = self._clf.evaluateSpectra(np.array(specList))
-    #     self._logger.debug(f'classification took {round(time.time() - t0, 2)} seconds')
-    #     return result
-    #
-    # def _createClassImg(self, assignments: List[str], imgLimits: QtCore.QRectF) -> np.ndarray:
-    #     colorCodes: Dict[str, Tuple[int, int, int]] = {}
-    #     for cls_name in np.unique(assignments):
-    #         colorCodes[cls_name] = self._parent.getColorOfClass(cls_name)
-    #
-    #     shape = self._specObj.getCube().shape
-    #     clfImg: np.ndarray = np.zeros((shape[1], shape[2], 4), dtype=np.uint8)
-    #     i: int = 0
-    #     for y in range(shape[1]):
-    #         for x in range(shape[2]):
-    #             if imgLimits.top() <= y < imgLimits.bottom() and imgLimits.left() <= x < imgLimits.right():
-    #                 clfImg[y, x, :3] = colorCodes[assignments[i]]
-    #                 clfImg[y, x, 3] = 255
-    #                 i += 1
-    #             else:
-    #                 clfImg[y, x, :] = (0, 0, 0, 0)
-    #
-    #     return clfImg
-    #
-    # def _emitUpdate(self) -> None:
-    #     self.ClassTransparencyUpdated.emit(self._transpSlider.value() / 100)
+        self._logger: 'Logger' = getLogger("ClassificationUI")
+        self._classifiers: List['BaseClassifier'] = getClassifiers()  # all available classifiers
+        self._activeClf: Union[None, 'BaseClassifier'] = None  # the currently selected classifier
+        self._samplesToClassify: List['SampleView'] = []  # List for keeping track of opened samples to classify
+        self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
+
+        self._trainSampleSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._applySampleSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Update Classification")
+        self._transpSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
+        self._progressbar.setWindowTitle("Classification in Progress")
+
+        self._process: Process = Process()
+        self._queue: Queue = Queue()
+        self._timer: QtCore.QTimer = QtCore.QTimer()
+        self._timer.setSingleShot(False)
+        self._timer.timeout.connect(self._checkOnComputation)
+
+        self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(self._layout)
+        self._configureWidgets()
+        self._createLayout()
+        self._selectFirstClassifier()
+
+    def _classifyImage(self) -> None:
+        """
+        Classifies the current image based on the selected pixels and their classes
+        :return:
+        """
+        self._parent.disableWidgets()
+        preprocessors: List['Preprocessor'] = self._parent.getPreprocessors()
+        if self._allSamplesCheckBox.isChecked():
+            self._samplesToClassify = self._parent.getAllSamples()
+            backgrounds: Dict[str, np.ndarray] = self._parent.getBackgroundsOfAllSamples()
+        else:
+            activeSample: 'SampleView' = self._parent.getActiveSample()
+            self._samplesToClassify = [activeSample]
+            backgrounds: Dict[str, np.ndarray] = {activeSample.getName(): self._parent.getBackgroundOfActiveSample()}
+
+        imageLimitList: List['Rect'] = []
+        sampleDataList: List['Sample'] = []
+        for i, sample in enumerate(self._samplesToClassify):
+            specObj: 'SpectraObject' = sample.getSpecObj()
+            graphView: 'GraphView' = sample.getGraphView()
+            imgLimits: Rect = graphView.getCurrentViewBounds()
+            imageLimitList.append(imgLimits)
+            sampleDataList.append(sample.getSampleData())
+
+            specObj.preparePreprocessing(preprocessors, imgLimits, backgrounds[sample.getName()])
+
+        self._progressbar.show()
+        self._progressbar.setValue(0)
+        self._progressbar.setMaximum(len(self._samplesToClassify))
+        self._activeClf.makePickleable()
+        self._process = Process(target=trainAndClassify, args=(sampleDataList,
+                                                               imageLimitList,
+                                                               self._activeClf,
+                                                               self._testFracSpinBox.value(),
+                                                               self._parent.getClassColorDict(),
+                                                               self._queue))
+        self._process.start()
+        self._timer.start()
+        self._activeClf.restoreNotPickleable()
+
+    def _emitTransparencyUpdate(self) -> None:
+        self.ClassTransparencyUpdated.emit(self._transpSlider.value() / 100)
+
+    @QtCore.pyqtSlot(str)
+    def _activateClassifier(self, clfName: str) -> None:
+        """
+        Executed when a new classifier is selected. Sets up the UI accordingly.
+        """
+        clfActivated: bool = False
+        for clf in self._classifiers:
+            if clf.title == clfName:
+                self._activeClf = clf
+                self._activeClfControls = clf.getControls()
+                clfActivated = True
+                break
+        assert clfActivated, f'Classifier {clfName} was not found in available classifiers...'
+        self._placeClfControlsToLayout()
+
+    def _selectFirstClassifier(self) -> None:
+        """
+        To select the first classifier.
+        """
+        if len(self._classifiers) > 0:
+            self._activateClassifier(self._classifiers[0].title)
+
+    def _configureWidgets(self) -> None:
+        self._transpSlider.setMinimum(0)
+        self._transpSlider.setValue(80)
+        self._transpSlider.setMaximum(100)
+        self._transpSlider.valueChanged.connect(self._emitTransparencyUpdate)
+
+        self._testFracSpinBox.setMinimum(0.01)
+        self._testFracSpinBox.setMaximum(0.99)
+        self._testFracSpinBox.setValue(0.1)
+
+        self._updateBtn.released.connect(self._classifyImage)
+
+        self._clfCombo.addItems([clf.title for clf in self._classifiers])
+        self._clfCombo.currentTextChanged.connect(self._activateClassifier)
+        self.updateSampleSelectorComboBoxes()
+
+    def updateSampleSelectorComboBoxes(self) -> None:
+        for combobox in [self._trainSampleSelector, self._applySampleSelector]:
+            combobox.clear()
+            combobox.addItem("All Samples")
+            for sample in self._parent.getAllSamples():
+                combobox.addItem(sample.getName())
+
+    def _createLayout(self) -> None:
+        self._layout.addWidget(QtWidgets.QLabel("Select Classifier:"))
+        self._layout.addWidget(self._clfCombo)
+        self._layout.addWidget(self._activeClfControls)
+        self._layout.addStretch()
+
+        optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        optnLayout.addRow("Train on", self._trainSampleSelector)
+        optnLayout.addRow("Apply to", self._applySampleSelector)
+        optnLayout.addRow("Test Fraction", self._testFracSpinBox)
+        optnLayout.addRow(self._updateBtn)
+        self._layout.addLayout(optnLayout)
+
+        self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
+        self._layout.addWidget(self._transpSlider)
+
+    def _placeClfControlsToLayout(self) -> None:
+        """Places the controls of the currently selected classifier into the layout."""
+        indexOfControlElement: int = 2  # has to be matched with the layout contruction in the _createLayout method.
+        item = self._layout.itemAt(indexOfControlElement)
+        self._layout.removeWidget(item.widget())
+        self._layout.insertWidget(indexOfControlElement, self._activeClfControls)
+
+    def _checkOnComputation(self) -> None:
+        """
+        Checks the state of computation and updates the interface accordingly.
+        """
+        if not self._queue.empty():
+            finishedData: 'Sample' = self._queue.get()
+            for sample in self._samplesToClassify:
+                if sample.getName() == finishedData.name:
+                    graphView: 'GraphView' = sample.getGraphView()
+                    graphView.updateClassImage(finishedData.classOverlay)
+                    self._samplesToClassify.remove(sample)
+                    break
+
+            self._progressbar.setValue(self._progressbar.value()+1)
+
+            if len(self._samplesToClassify) == 0:
+                self._finishComputation()
+
+    def _finishComputation(self) -> None:
+        self._progressbar.hide()
+        self._parent.enableWidgets()
+        self._process.join()
+        self._timer.stop()
+
+
+def trainAndClassify(sampleList: List['Sample'], imgLimitList: List['Rect'],
+                     classifier: 'BaseClassifier', testSize: float,
+                     colorDict: Dict[str, Tuple[int, int, int]], dataQueue: Queue) -> None:
+
+    for i, sample in enumerate(sampleList):
+        specObj: 'SpectraObject' = sample.specObj
+        specObj.applyPreprocessing()
+
+        imgLimits: 'Rect' = imgLimitList[i]
+
+        classifier.setWavenumbers(specObj.getWavenumbers())
+        xrain, xtest, ytrain, ytest = getTestTrainSpectraFromSample(sample, testSize)
+        t0 = time.time()
+        classifier.train(xrain, xtest, ytrain, ytest)
+        print('training took', round(time.time() - t0, 2), 'seconds')
+
+        assignments: List[str] = getClassesForPixels(specObj, imgLimits, classifier)
+        cubeShape = specObj.getCube().shape
+        clfImg: np.ndarray = createClassImg(cubeShape, assignments, imgLimits, colorDict)
+        sample.setClassOverlay(clfImg)
+        print('finished sample', sample.name)
+        dataQueue.put(sample)
+
+
+def getClassesForPixels(specObject: 'SpectraObject', imgLimits: 'Rect', classifier: 'BaseClassifier') -> List[str]:
+    """
+    Estimates the classes for each pixel
+    :param specObject: The spectraObject to use
+    :param imgLimits: Rect Image boundaries to consider
+    :param classifier: The classifier to use
+    :return:
+    """
+    t0 = time.time()
+    specList: List[np.ndarray] = []
+    cube: np.ndarray = specObject.getCube()
+    for y in range(cube.shape[1]):
+        if imgLimits.top <= y < imgLimits.bottom:
+            for x in range(cube.shape[2]):
+                if imgLimits.left <= x < imgLimits.right:
+                    specList.append(cube[:, y, x])
+
+    result: np.ndarray = classifier.predict(np.array(specList))
+    print(f'classification took {round(time.time() - t0, 2)} seconds')
+    return list(result)
+
+
+def getTestTrainSpectraFromSample(sample: 'Sample', testSize: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
+    :param sample: The sampleview to use
+    :param testSize: Fraction of the data to use as test size
+    :return: Tuple[Xtrain, Xtest, ytrain, ytest]
+    """
+    spectraDict: Dict[str, np.ndarray] = sample.getLabelledSpectra()
+    labels: List[str] = []
+    spectra: Union[None, np.ndarray] = None
+    for name, specs in spectraDict.items():
+        numSpecs = specs.shape[0]
+        labels += [name]*numSpecs
+        if spectra is None:
+            spectra = specs
+        else:
+            spectra = np.vstack((spectra, specs))
+
+    labels: np.ndarray = np.array(labels)
+    return train_test_split(spectra, labels, test_size=testSize, random_state=42)
+
+
+def createClassImg(cubeShape: tuple, assignments: List[str], imgLimits: 'Rect',
+                   colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
+    """
+    Creates an overlay image of the current classification
+    :param cubeShape: Shape of the cube array
+    :param assignments: List of class names for each pixel
+    :param imgLimits: Rect of image limits of class labels
+    :param colorCodes: Dictionary mapping class names to rgb values
+    :return: np.ndarray of RGBA image as classification overlay
+    """
+    clfImg: np.ndarray = np.zeros((cubeShape[1], cubeShape[2], 4), dtype=np.uint8)
+    i: int = 0
+    t0 = time.time()
+    for y in range(cubeShape[1]):
+        for x in range(cubeShape[2]):
+            if imgLimits.top <= y < imgLimits.bottom and imgLimits.left <= x < imgLimits.right:
+                clfImg[y, x, :3] = colorCodes[assignments[i]]
+                clfImg[y, x, 3] = 255
+                i += 1
+            else:
+                clfImg[y, x, :] = (0, 0, 0, 0)
+    print('generating class image', round(time.time()-t0, 2))
+    return clfImg

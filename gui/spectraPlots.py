@@ -23,16 +23,16 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backend_bases import MouseEvent, MouseButton, PickEvent
 import numpy as np
-from typing import List, Dict, TYPE_CHECKING, cast, Union, Tuple
+from typing import List, Dict, TYPE_CHECKING, cast, Union
 
 from logger import getLogger
-from preprocessors import Background
+from preprocessing.preprocessors import Background
 from gui.pcaPlot import PCAPlot
 from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
-    from preprocessors import Preprocessor
+    from preprocessing.preprocessors import Preprocessor
     from logging import Logger
 
 
