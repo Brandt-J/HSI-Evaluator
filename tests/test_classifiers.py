@@ -48,10 +48,10 @@ class TestClassifiers(TestCase):
                                                  'class2': 1,
                                                  'class3': 2})
 
-    def test_runClassification(self) -> None:
-        classUI: ClassificationUI = ClassificationUI(MockMainWin())
-        classUI._classifyImage()
-        # Make sure it does not fail
+    # def test_runClassification(self) -> None:
+    #     classUI: ClassificationUI = ClassificationUI(MockMainWin())
+    #     classUI._classifyImage()
+    #     # Make sure it does not fail
 
 
 class MockMainWin:
@@ -78,6 +78,8 @@ class MockMainWin:
 
     def getAllSamples(self) -> List['SampleView']:
         return self._samples
+
+    # def getSampleOfName(self) -> 'SampleView':
 
     def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
         return {"class1": (0, 0, 0),

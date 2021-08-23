@@ -110,4 +110,6 @@ class Background(Preprocessor):
 
 
 def getPreprocessors() -> List[Preprocessor]:
-    return [Background(), Normalize(), MeanCentering(), SNV(), Detrend(), Smooth(), Derivative1(), Derivative2()]
+    return [Background(), Normalize(), MeanCentering(), SNV(), Detrend(), Derivative1(), Derivative2()]
+    # return [Derivative1(), Derivative2()]
+    # return [Background(), Normalize(), MeanCentering(), SNV(), Detrend()]

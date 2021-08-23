@@ -16,18 +16,19 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import dataclasses
 
 from PyQt5 import QtCore
 import numpy as np
 from typing import List, Dict, Tuple, TYPE_CHECKING, Union, cast
 import random
 import time
+from concurrent.futures import ProcessPoolExecutor
 
 from logger import getLogger
 from preprocessing.preprocessors import Background
 
 if TYPE_CHECKING:
-    from dataObjects import Rect
     from logging import Logger
     from preprocessing.preprocessors import Preprocessor
 
@@ -37,7 +38,6 @@ class SpectraObject:
         self._wavenumbers: Union[None, np.ndarray] = None
         self._cube: Union[None, np.ndarray] = None
         self._preprocQueue: List['Preprocessor'] = []
-        self._imgLimits: Union[None, 'Rect'] = None
         self._background: Union[None, np.ndarray] = None
         self._preprocessedCube: Union[None, np.ndarray] = None
         self._classes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}  # classname, (y-coordinages, x-coordinates)
@@ -48,16 +48,13 @@ class SpectraObject:
         if self._wavenumbers is None:
             self._setDefaultWavenumbers(cube)
 
-    def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], imgLimits: 'Rect',
-                             background: np.ndarray):
+    def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray):
         """
         Sets the preprocessing parameters
         :param preprocessingQueue: List of Preprocessors
-        :param imgLimits: QRectF of image limits to process
         :param background: np.ndarray of background spectrum
         """
         self._preprocQueue = preprocessingQueue
-        self._imgLimits = imgLimits
         self._background = background
 
     def applyPreprocessing(self) -> None:
@@ -67,17 +64,14 @@ class SpectraObject:
         :return:
         """
         if len(self._preprocQueue) > 0:
+            specArr = self._cube2SpecArr()
             t0 = time.time()
-            specArr = self._cube2SpecArr(self._imgLimits)
+            if len(specArr) < 1000:
+                specArr = self._preprocessSpectaSingleProcess(specArr)
+            else:
+                specArr = self._preprocessSpectraMultiProcessing(specArr)
 
-            for preprocessor in self._preprocQueue:
-                if type(preprocessor) == Background:
-                    preprocessor: Background = cast(Background, preprocessor)
-                    preprocessor.setBackground(self._background)
-
-                specArr = preprocessor.applyToSpectra(specArr)
-
-            self._preprocessedCube = self._specArr2cube(specArr, self._imgLimits)
+            self._preprocessedCube = self._specArr2cube(specArr)
             print(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
         else:
             self._logger.warning("Received empty preprocessingQueue, just returning the original cube.")
@@ -85,12 +79,43 @@ class SpectraObject:
 
         self._resetPreprocessing()
 
+    def _preprocessSpectraMultiProcessing(self, specArr: np.ndarray) -> np.ndarray:
+        """
+        Preprocesses the given spectra array using a Process Pool Executor.
+        :param specArr: (NxM) array of N spectra with M wavenumbers
+        :return: processed (NxM) array
+        """
+        self._logger.debug(f"Preprocessing {len(specArr)} spectra with pool process executor.")
+        preprocDatas: List[PreprocessData] = []
+        splitArrays: List[np.ndarray] = splitUpArray(specArr, numParts=10)
+        for partArray in splitArrays:
+            preprocDatas.append(PreprocessData(partArray, self._preprocQueue, self._background))
+        maxWorkers: int = 6
+        with ProcessPoolExecutor(max_workers=maxWorkers) as executor:
+            result: List[np.ndarray] = list(executor.map(applyPreprocessing, preprocDatas))
+
+        return recombineSpecArrays(result)
+
+    def _preprocessSpectaSingleProcess(self, specArr: np.ndarray) -> np.ndarray:
+        """
+        Preprocesses the given spectra array without doing multiprocessing.
+        :param specArr: (NxM) array of N spectra with M wavenumbers
+        :return: processed (NxM) array
+        """
+        self._logger.debug(f"Preprocessing {len(specArr)} spectra in single process.")
+        for preprocessor in self._preprocQueue:
+            if type(preprocessor) == Background:
+                preprocessor: Background = cast(Background, preprocessor)
+                preprocessor.setBackground(self._background)
+            specArr = preprocessor.applyToSpectra(specArr)
+        return specArr
+
     def _resetPreprocessing(self) -> None:
         self._preprocQueue = []
         self._imgLimits = QtCore.QRectF()
         self._background = None
 
-    def _specArr2cube(self, specArr: np.ndarray, imgLimits: 'Rect') -> np.ndarray:
+    def _specArr2cube(self, specArr: np.ndarray) -> np.ndarray:
         """
         Takes an (MxN) spec array and reformats into cube layout
         :param specArr: (MxN) array of M spectra with N wavenumbers
@@ -99,25 +124,22 @@ class SpectraObject:
         cube = self._cube.copy()
         i = 0
         for y in range(self._cube.shape[1]):
-            if imgLimits.top <= y < imgLimits.bottom:
-                for x in range(self._cube.shape[2]):
-                    if imgLimits.left <= x < imgLimits.right:
-                        cube[:, y, x] = specArr[i, :]
-                        i += 1
+            for x in range(self._cube.shape[2]):
+                cube[:, y, x] = specArr[i, :]
+                i += 1
 
         return cube
 
-    def _cube2SpecArr(self, imgLimits: 'Rect') -> np.ndarray:
+    def _cube2SpecArr(self) -> np.ndarray:
         """
         Reformats the cube into an MxN spectra matrix of M spectra with N wavenumbers
         :return: (MxN) spec array of M spectra of N wavenumbers
         """
         specArr: List[np.ndarray] = []
         for y in range(self._cube.shape[1]):
-            if imgLimits.top <= y < imgLimits.bottom:
-                for x in range(self._cube.shape[2]):
-                    if imgLimits.left <= x < imgLimits.right:
-                        specArr.append(self._cube[:, y, x])
+            for x in range(self._cube.shape[2]):
+                specArr.append(self._cube[:, y, x])
+
         specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavenumbers
         assert specArr.shape[1] == self._cube.shape[0]
         return specArr
@@ -206,3 +228,48 @@ class SpectraObject:
         for i in range(specArr.shape[0]):
             specArr[i, :] = cube[:, indices[i][0], indices[i][1]]
         return specArr
+
+
+def splitUpArray(specArr: np.ndarray, numParts: int = 8) -> List[np.ndarray]:
+    """
+    Splits up the given array into a list of arrays.
+    :param specArr: (NxM) shape array of N spectra with w wavelenghts.
+    :param numParts: number of parts
+    :param: List with numParts arrays.
+    """
+    arrList: List[np.ndarray] = []
+    stepSize: int = specArr.shape[0] // numParts + 1
+    for i in range(numParts):
+        start = i*stepSize
+        end = min([(i+1)*stepSize, specArr.shape[0]])
+        arrList.append(specArr[start:end, :])
+    return arrList
+
+
+@dataclasses.dataclass
+class PreprocessData:
+    specArr: np.ndarray
+    preprocQueue: List['Preprocessor']
+    background: np.ndarray
+
+
+def applyPreprocessing(preprocData: 'PreprocessData') -> np.ndarray:
+    for preprocessor in preprocData.preprocQueue:
+        if type(preprocessor) == Background:
+            preprocessor: Background = cast(Background, preprocessor)
+            preprocessor.setBackground(preprocData.background)
+        specArr = preprocessor.applyToSpectra(preprocData.specArr)
+    return specArr
+
+
+def recombineSpecArrays(specArrs: List[np.ndarray]) -> np.ndarray:
+    """
+    Recombines the arrays in the list by vertically stacking them.
+    """
+    newArr: Union[None, np.ndarray] = None
+    for arr in specArrs:
+        if newArr is None:
+            newArr = arr
+        else:
+            newArr = np.vstack((newArr, arr))
+    return newArr

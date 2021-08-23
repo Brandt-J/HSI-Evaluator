@@ -23,7 +23,6 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import numpy as np
 from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
-from dataObjects import Rect
 
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
@@ -70,10 +69,6 @@ class GraphView(QtWidgets.QGraphicsView):
             color: Tuple[int, int, int] = self._mainWin.getColorOfClass(cls)
             self._selectionOverlay.addPixelsToSelection(indices, color)
         self.SelectionChanged.emit()
-
-    def getCurrentViewBounds(self) -> Rect:
-        brect: QtCore.QRectF = self.mapToScene(self.rect()).boundingRect()
-        return Rect(brect.top(), brect.bottom(), brect.left(), brect.right())
 
     def setClassOverlay(self, img: np.ndarray) -> None:
         self._classOverlay.updateImage(img)

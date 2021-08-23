@@ -22,7 +22,6 @@ import hashlib
 import os
 import numpy as np
 import numba
-from dataclasses import dataclass
 
 from spectraObject import SpectraObject
 
@@ -85,15 +84,6 @@ class View:
             newSample.__dict__.update(sample.__dict__)
             samples.append(newSample)
         self.samples = samples
-
-
-@dataclass
-class Rect:
-    """Holds information about a bounding rectangle. Similar to QtCore.QRectF, but fully pickleable..ö'ö"""
-    top: float = 0.0
-    bottom: float = 0.0
-    left: float = 0.0
-    right: float = 0.0
 
 
 def getFilePathHash(fpath: str) -> str:

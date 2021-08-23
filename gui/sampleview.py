@@ -357,7 +357,7 @@ class SampleView(QtWidgets.QMainWindow):
         Returns the sample data that is required for saving the sample to file.
         """
         saveSample: Sample = deepcopy(self._sampleData)
-        saveSample.specObj = None
+        saveSample.specObj = SpectraObject()
         saveSample.classOverlay = None
         return saveSample
 

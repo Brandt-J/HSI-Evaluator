@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+import numba
 from PyQt5 import QtWidgets, QtCore
 from typing import List, Tuple, Dict, Union, TYPE_CHECKING
 import numpy as np
@@ -320,31 +320,26 @@ class ClassificationUI(QtWidgets.QGroupBox):
         """
         self._parent.disableWidgets()
         preprocessors: List['Preprocessor'] = self._parent.getPreprocessors()
-        if self._allSamplesCheckBox.isChecked():
-            self._samplesToClassify = self._parent.getAllSamples()
-            backgrounds: Dict[str, np.ndarray] = self._parent.getBackgroundsOfAllSamples()
-        else:
-            activeSample: 'SampleView' = self._parent.getActiveSample()
-            self._samplesToClassify = [activeSample]
-            backgrounds: Dict[str, np.ndarray] = {activeSample.getName(): self._parent.getBackgroundOfActiveSample()}
+        # if self._allSamplesCheckBox.isChecked():
+        #     self._samplesToClassify = self._parent.getAllSamples()
+        #     backgrounds: Dict[str, np.ndarray] = self._parent.getBackgroundsOfAllSamples()
+        # else:
+        activeSample: 'SampleView' = self._parent.getActiveSample()
+        self._samplesToClassify = [activeSample]
+        backgrounds: Dict[str, np.ndarray] = {activeSample.getName(): self._parent.getBackgroundOfActiveSample()}
 
-        imageLimitList: List['Rect'] = []
         sampleDataList: List['Sample'] = []
         for i, sample in enumerate(self._samplesToClassify):
             specObj: 'SpectraObject' = sample.getSpecObj()
-            graphView: 'GraphView' = sample.getGraphView()
-            imgLimits: Rect = graphView.getCurrentViewBounds()
-            imageLimitList.append(imgLimits)
             sampleDataList.append(sample.getSampleData())
 
-            specObj.preparePreprocessing(preprocessors, imgLimits, backgrounds[sample.getName()])
+            specObj.preparePreprocessing(preprocessors, backgrounds[sample.getName()])
 
         self._progressbar.show()
         self._progressbar.setValue(0)
         self._progressbar.setMaximum(len(self._samplesToClassify))
         self._activeClf.makePickleable()
         self._process = Process(target=trainAndClassify, args=(sampleDataList,
-                                                               imageLimitList,
                                                                self._activeClf,
                                                                self._testFracSpinBox.value(),
                                                                self._parent.getClassColorDict(),
@@ -449,15 +444,12 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._timer.stop()
 
 
-def trainAndClassify(sampleList: List['Sample'], imgLimitList: List['Rect'],
-                     classifier: 'BaseClassifier', testSize: float,
+def trainAndClassify(sampleList: List['Sample'], classifier: 'BaseClassifier', testSize: float,
                      colorDict: Dict[str, Tuple[int, int, int]], dataQueue: Queue) -> None:
 
     for i, sample in enumerate(sampleList):
         specObj: 'SpectraObject' = sample.specObj
         specObj.applyPreprocessing()
-
-        imgLimits: 'Rect' = imgLimitList[i]
 
         classifier.setWavenumbers(specObj.getWavenumbers())
         xrain, xtest, ytrain, ytest = getTestTrainSpectraFromSample(sample, testSize)
@@ -465,19 +457,18 @@ def trainAndClassify(sampleList: List['Sample'], imgLimitList: List['Rect'],
         classifier.train(xrain, xtest, ytrain, ytest)
         print('training took', round(time.time() - t0, 2), 'seconds')
 
-        assignments: List[str] = getClassesForPixels(specObj, imgLimits, classifier)
+        assignments: List[str] = getClassesForPixels(specObj, classifier)
         cubeShape = specObj.getCube().shape
-        clfImg: np.ndarray = createClassImg(cubeShape, assignments, imgLimits, colorDict)
+        clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
         sample.setClassOverlay(clfImg)
         print('finished sample', sample.name)
         dataQueue.put(sample)
 
 
-def getClassesForPixels(specObject: 'SpectraObject', imgLimits: 'Rect', classifier: 'BaseClassifier') -> List[str]:
+def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier') -> List[str]:
     """
     Estimates the classes for each pixel
     :param specObject: The spectraObject to use
-    :param imgLimits: Rect Image boundaries to consider
     :param classifier: The classifier to use
     :return:
     """
@@ -485,10 +476,8 @@ def getClassesForPixels(specObject: 'SpectraObject', imgLimits: 'Rect', classifi
     specList: List[np.ndarray] = []
     cube: np.ndarray = specObject.getCube()
     for y in range(cube.shape[1]):
-        if imgLimits.top <= y < imgLimits.bottom:
-            for x in range(cube.shape[2]):
-                if imgLimits.left <= x < imgLimits.right:
-                    specList.append(cube[:, y, x])
+        for x in range(cube.shape[2]):
+            specList.append(cube[:, y, x])
 
     result: np.ndarray = classifier.predict(np.array(specList))
     print(f'classification took {round(time.time() - t0, 2)} seconds')
@@ -517,13 +506,12 @@ def getTestTrainSpectraFromSample(sample: 'Sample', testSize: float) -> Tuple[np
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 
-def createClassImg(cubeShape: tuple, assignments: List[str], imgLimits: 'Rect',
-                   colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
+@numba.njit()
+def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
     """
     Creates an overlay image of the current classification
     :param cubeShape: Shape of the cube array
     :param assignments: List of class names for each pixel
-    :param imgLimits: Rect of image limits of class labels
     :param colorCodes: Dictionary mapping class names to rgb values
     :return: np.ndarray of RGBA image as classification overlay
     """
@@ -532,11 +520,9 @@ def createClassImg(cubeShape: tuple, assignments: List[str], imgLimits: 'Rect',
     t0 = time.time()
     for y in range(cubeShape[1]):
         for x in range(cubeShape[2]):
-            if imgLimits.top <= y < imgLimits.bottom and imgLimits.left <= x < imgLimits.right:
-                clfImg[y, x, :3] = colorCodes[assignments[i]]
-                clfImg[y, x, 3] = 255
-                i += 1
-            else:
-                clfImg[y, x, :] = (0, 0, 0, 0)
+            clfImg[y, x, :3] = colorCodes[assignments[i]]
+            clfImg[y, x, 3] = 255
+            i += 1
+
     print('generating class image', round(time.time()-t0, 2))
     return clfImg

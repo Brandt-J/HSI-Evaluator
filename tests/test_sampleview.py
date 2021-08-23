@@ -86,7 +86,7 @@ class TestSampleView(TestCase):
 
         self.assertEqual(sampleView._name, fname.split('.npy')[0])
         self.assertTrue(sampleView.getGraphView()._origCube is cube)
-        self.assertTrue(sampleView._specObj.getCube() is cube)
+        self.assertTrue(sampleView.getSampleData().specObj.getCube() is cube)
 
     def testGetSpectra(self) -> None:
         imgClf: MainWindow = MainWindow()
@@ -94,14 +94,14 @@ class TestSampleView(TestCase):
 
         sample1: SampleView = multiView.addSampleView()
         sample1._name = 'Sample1'
-        specObj1: SpectraObject = sample1._specObj
+        specObj1: SpectraObject = sample1._sampleData.specObj
         specObj1.setCube(np.zeros((3, 10, 10)))
         sample1._classes2Indices = {"class1": set(np.arange(5)),
                                     "class2": set(np.arange(7))}  # the indices overlap here, but we only check that the amount is correct..
 
         sample2: SampleView = multiView.addSampleView()
         sample2._name = 'Sample2'
-        specObj2: SpectraObject = sample2._specObj
+        specObj2: SpectraObject = sample2._sampleData.specObj
         specObj2.setCube(np.ones((3, 10, 10)))
         sample2._classes2Indices = {"class1": set(np.arange(5)),
                                     "class2": set(np.arange(3)),
@@ -267,12 +267,16 @@ class TestSampleView(TestCase):
 
         self.assertTrue(len(multiView._sampleviews) == 1)
         createdSample: SampleView = multiView._sampleviews[0]
+        self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getCube(), testCube))
+        self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
+
+        createdSample._sampleData.specObj = None  # We now se these specObjs to None. These are at different memory locations...
+        sample.specObj = None
         self.assertDictEqual(sample.__dict__, createdSample.getSampleData().__dict__)
         classCreator: ClassCreator = imgClf._clsCreator
         presentClasses: List[str] = [cls.name for cls in classCreator._classes]
         for cls in sample.classes2Indices.keys():
             self.assertTrue(cls in presentClasses)
 
-        self.assertTrue(np.array_equal(createdSample._specObj.getCube(), testCube))
-        self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
+
 

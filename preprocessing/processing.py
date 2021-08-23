@@ -166,23 +166,25 @@ def detrend(input_data: np.ndarray) -> np.ndarray:
     return output_data
 
 
-def deriv_smooth(input_data: np.ndarray, derivative: int = 0, windowSize: int = 5, polyorder: int = 2) -> np.ndarray:
+def deriv_smooth(input_data: np.ndarray, derivative: int = 0, windowSize: int = 5) -> np.ndarray:
     """
     Applies Savitzky Golay smoothing to all given data, if desired with derivative.
     :param input_data: Shape (NxM) array of N samples with M features
     :param derivative: Which derivative to calculate.
-    :param windowSize: integer, the window size for smoothing. Has to be an odd number
-    :param polyorder: integer, the polynomial order. Has to be smaller than window size.
+    :param windowSize: integer, the window size for smoothing.
     :return: corrected data in same shape
     """
     output_data: np.ndarray = np.zeros_like(input_data)
-    if windowSize < polyorder:
-        windowSize = polyorder + 1
-
-    if windowSize % 2 == 0:
-        windowSize += 1  # has to be an odd number!
-
+    startInd = (windowSize - 1) // 2
     for i in range(input_data.shape[0]):
-        output_data[i, :] = savgol_filter(input_data[i, :], windowSize, deriv=derivative, polyorder=polyorder)
-    return output_data
+        cumsum_vec = np.cumsum(np.insert(input_data[i, :], 0, 0))  # this cumsum version is a very fast smoother
+        ma_vec = (cumsum_vec[windowSize:] - cumsum_vec[:-windowSize]) / windowSize
+        smoothed = np.zeros(input_data.shape[1])
+        smoothed[startInd:startInd + len(ma_vec)] = ma_vec
 
+        if derivative == 0:
+            output_data[i, :] = smoothed
+        else:
+            output_data[i, derivative:] = np.diff(smoothed, n=derivative)
+
+    return output_data
