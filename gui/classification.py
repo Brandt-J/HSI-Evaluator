@@ -16,9 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+from copy import copy
+
 import numba
 from PyQt5 import QtWidgets, QtCore
-from typing import List, Tuple, Dict, Union, TYPE_CHECKING
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Set
 import numpy as np
 import time
 from matplotlib.colors import to_rgb
@@ -320,26 +322,29 @@ class ClassificationUI(QtWidgets.QGroupBox):
         """
         self._parent.disableWidgets()
         preprocessors: List['Preprocessor'] = self._parent.getPreprocessors()
-        # if self._allSamplesCheckBox.isChecked():
-        #     self._samplesToClassify = self._parent.getAllSamples()
-        #     backgrounds: Dict[str, np.ndarray] = self._parent.getBackgroundsOfAllSamples()
-        # else:
-        activeSample: 'SampleView' = self._parent.getActiveSample()
-        self._samplesToClassify = [activeSample]
-        backgrounds: Dict[str, np.ndarray] = {activeSample.getName(): self._parent.getBackgroundOfActiveSample()}
+        trainingSamples: List['SampleView'] = self._getTrainSamples()
+        self._samplesToClassify = self._getInferenceSamples()
+        allBackgrounds: Dict[str, np.ndarray] = self._parent.getBackgroundsOfAllSamples()
 
-        sampleDataList: List['Sample'] = []
-        for i, sample in enumerate(self._samplesToClassify):
+        trainSampleDataList: List['Sample'] = []
+        inferenceSampleDataList: List['Sample'] = []
+        for i, sample in enumerate(set(self._samplesToClassify + trainingSamples)):
+            if sample in trainingSamples:
+                trainSampleDataList.append(sample.getSampleData())
+            if sample in self._samplesToClassify:
+                inferenceSampleDataList.append(sample.getSampleData())
+
             specObj: 'SpectraObject' = sample.getSpecObj()
-            sampleDataList.append(sample.getSampleData())
+            specObj.preparePreprocessing(preprocessors, allBackgrounds[sample.getName()])
 
-            specObj.preparePreprocessing(preprocessors, backgrounds[sample.getName()])
+        assert len(trainSampleDataList) > 0 and len(self._samplesToClassify) > 0, 'Either no training or no inference data..'
 
         self._progressbar.show()
         self._progressbar.setValue(0)
         self._progressbar.setMaximum(len(self._samplesToClassify))
         self._activeClf.makePickleable()
-        self._process = Process(target=trainAndClassify, args=(sampleDataList,
+        self._process = Process(target=trainAndClassify, args=(trainSampleDataList,
+                                                               inferenceSampleDataList,
                                                                self._activeClf,
                                                                self._testFracSpinBox.value(),
                                                                self._parent.getClassColorDict(),
@@ -412,6 +417,32 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
         self._layout.addWidget(self._transpSlider)
 
+    def _getTrainSamples(self) -> List['SampleView']:
+        """Gets a list of the samples that shall be used for classifier training."""
+        return self._getSamplesAccordingSelector(self._trainSampleSelector)
+
+    def _getInferenceSamples(self) -> List['SampleView']:
+        """Gets a list of the samples that shall be used for classifier inference."""
+        return self._getSamplesAccordingSelector(self._applySampleSelector)
+
+    def _getSamplesAccordingSelector(self, selector: QtWidgets.QComboBox) -> List['SampleView']:
+        """
+        Gets a list of samples according the indicated combobox
+        :param selector: The QComboBox to use as sample indicator.
+        """
+        allSamples: List['SampleView'] = self._parent.getAllSamples()
+        samples: List['SampleView'] = []
+        sampleName: str = selector.currentText()
+        if sampleName == "All Samples":
+            samples = allSamples
+        else:
+            for sample in allSamples:
+                if sample.getName() == sampleName:
+                    samples = [sample]
+                    break
+
+        return samples
+
     def _placeClfControlsToLayout(self) -> None:
         """Places the controls of the currently selected classifier into the layout."""
         indexOfControlElement: int = 2  # has to be matched with the layout contruction in the _createLayout method.
@@ -440,28 +471,44 @@ class ClassificationUI(QtWidgets.QGroupBox):
     def _finishComputation(self) -> None:
         self._progressbar.hide()
         self._parent.enableWidgets()
-        self._process.join()
         self._timer.stop()
+        self._process.join()
 
 
-def trainAndClassify(sampleList: List['Sample'], classifier: 'BaseClassifier', testSize: float,
-                     colorDict: Dict[str, Tuple[int, int, int]], dataQueue: Queue) -> None:
+def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List['Sample'],
+                     classifier: 'BaseClassifier', testSize: float, colorDict: Dict[str, Tuple[int, int, int]],
+                     dataQueue: Queue) -> None:
+    logger: 'Logger' = getLogger("TrainingProcess")
 
-    for i, sample in enumerate(sampleList):
+    # preprocessing
+    allSamples: List['Sample'] = copy(trainSampleList)
+    for sample in inferenceSampleList:
+        if sample not in allSamples:
+            allSamples.append(sample)
+
+    numSamplesTotal = len(allSamples)
+    for i, sample in enumerate(allSamples):
+        t0 = time.time()
         specObj: 'SpectraObject' = sample.specObj
         specObj.applyPreprocessing()
+        classifier.setWavenumbers(specObj.getWavenumbers())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
+        logger.debug(f"Preprocessing sample {sample.name} took {round(time.time()-t0, 2)} seconds ({i+1} of {numSamplesTotal} samples finished)")
 
-        classifier.setWavenumbers(specObj.getWavenumbers())
-        xrain, xtest, ytrain, ytest = getTestTrainSpectraFromSample(sample, testSize)
-        t0 = time.time()
-        classifier.train(xrain, xtest, ytrain, ytest)
-        print('training took', round(time.time() - t0, 2), 'seconds')
+    # training
+    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize)
+    t0 = time.time()
+    classifier.train(xtrain, xtest, ytrain, ytest)
+    logger.debug(f'Training {classifier.title} on {xtrain.shape[0]} spectra took {round(time.time() - t0, 2)} seconds')
 
+    # inference
+    for i, sample in enumerate(inferenceSampleList):
+        logger.debug(f"Starting classifcation on {sample.name}")
+        specObj = sample.specObj
         assignments: List[str] = getClassesForPixels(specObj, classifier)
         cubeShape = specObj.getCube().shape
         clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
         sample.setClassOverlay(clfImg)
-        print('finished sample', sample.name)
+        logger.debug(f'Finished classification on sample {sample.name} ({i+1} of {len(inferenceSampleList)} samples done)')
         dataQueue.put(sample)
 
 
@@ -484,29 +531,29 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
     return list(result)
 
 
-def getTestTrainSpectraFromSample(sample: 'Sample', testSize: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
-    :param sample: The sampleview to use
+    :param sampleList: List of sampleviews to use
     :param testSize: Fraction of the data to use as test size
     :return: Tuple[Xtrain, Xtest, ytrain, ytest]
     """
-    spectraDict: Dict[str, np.ndarray] = sample.getLabelledSpectra()
     labels: List[str] = []
     spectra: Union[None, np.ndarray] = None
-    for name, specs in spectraDict.items():
-        numSpecs = specs.shape[0]
-        labels += [name]*numSpecs
-        if spectra is None:
-            spectra = specs
-        else:
-            spectra = np.vstack((spectra, specs))
+    for sample in sampleList:
+        spectraDict: Dict[str, np.ndarray] = sample.getLabelledSpectra()
+        for name, specs in spectraDict.items():
+            numSpecs = specs.shape[0]
+            labels += [name]*numSpecs
+            if spectra is None:
+                spectra = specs
+            else:
+                spectra = np.vstack((spectra, specs))
 
     labels: np.ndarray = np.array(labels)
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 
-@numba.njit()
 def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
     """
     Creates an overlay image of the current classification
