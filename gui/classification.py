@@ -18,9 +18,8 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 from copy import copy
 
-import numba
 from PyQt5 import QtWidgets, QtCore
-from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Set
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING, cast
 import numpy as np
 import time
 from matplotlib.colors import to_rgb
@@ -30,7 +29,7 @@ from sklearn.model_selection import train_test_split
 
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
-from classifiers import BaseClassifier, getClassifiers
+from classifiers import BaseClassifier, getClassifiers, ClassificationError
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -343,6 +342,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._progressbar.setValue(0)
         self._progressbar.setMaximum(len(self._samplesToClassify))
         self._activeClf.makePickleable()
+        self._queue = Queue()  # recreate queue object, it could have been closed previously.
         self._process = Process(target=trainAndClassify, args=(trainSampleDataList,
                                                                inferenceSampleDataList,
                                                                self._activeClf,
@@ -455,29 +455,52 @@ class ClassificationUI(QtWidgets.QGroupBox):
         Checks the state of computation and updates the interface accordingly.
         """
         if not self._queue.empty():
-            finishedData: 'Sample' = self._queue.get()
-            for sample in self._samplesToClassify:
-                if sample.getName() == finishedData.name:
-                    graphView: 'GraphView' = sample.getGraphView()
-                    graphView.updateClassImage(finishedData.classOverlay)
-                    self._samplesToClassify.remove(sample)
-                    break
+            queueContent = self._queue.get()
+            errorOccured: bool = False
+            if type(queueContent) is ClassificationError:
+                error: ClassificationError = cast(ClassificationError, queueContent)
+                QtWidgets.QMessageBox.critical(self, "Error in classification", f"The following error occured:\n"
+                                                                                f"{error.errorText}")
+                errorOccured = True
+            else:
+                finishedData: 'Sample' = cast('Sample', queueContent)
+                self._updateClassifiedSample(finishedData)
+                self._progressbar.setValue(self._progressbar.value()+1)
 
-            self._progressbar.setValue(self._progressbar.value()+1)
-
-            if len(self._samplesToClassify) == 0:
+            if len(self._samplesToClassify) == 0 or errorOccured:
                 self._finishComputation()
+
+    def _updateClassifiedSample(self, finishedData: 'Sample') -> None:
+        """
+        Takes Sample data from finished classification and updates the according sampleView.
+        """
+        for sample in self._samplesToClassify:
+            if sample.getName() == finishedData.name:
+                graphView: 'GraphView' = sample.getGraphView()
+                graphView.updateClassImage(finishedData.classOverlay)
+                self._samplesToClassify.remove(sample)
+                break
 
     def _finishComputation(self) -> None:
         self._progressbar.hide()
         self._parent.enableWidgets()
         self._timer.stop()
+        self._queue.close()
         self._process.join()
 
 
 def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List['Sample'],
                      classifier: 'BaseClassifier', testSize: float, colorDict: Dict[str, Tuple[int, int, int]],
-                     dataQueue: Queue) -> None:
+                     queue: Queue) -> None:
+    """
+    Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
+    :param trainSampleList: List of Sample objects used for classifier training
+    :param inferenceSampleList: List of Samples on which we want to run classification.
+    :param classifier: The Classifier to use
+    :param testSize: Fraction of the data used for testing
+    :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
+    :param queue: Dataqueue for communication between processes.
+    """
     logger: 'Logger' = getLogger("TrainingProcess")
 
     # preprocessing
@@ -497,19 +520,29 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
     # training
     xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize)
     t0 = time.time()
-    classifier.train(xtrain, xtest, ytrain, ytest)
+    try:
+        classifier.train(xtrain, xtest, ytrain, ytest)
+    except Exception as e:
+        queue.put(ClassificationError(f"Error during classifier Trining: {e}"))
+        raise ClassificationError(f"Error during classifier Trining: {e}")
     logger.debug(f'Training {classifier.title} on {xtrain.shape[0]} spectra took {round(time.time() - t0, 2)} seconds')
 
     # inference
     for i, sample in enumerate(inferenceSampleList):
+        t0 = time.time()
         logger.debug(f"Starting classifcation on {sample.name}")
         specObj = sample.specObj
-        assignments: List[str] = getClassesForPixels(specObj, classifier)
+        try:
+            assignments: List[str] = getClassesForPixels(specObj, classifier)
+        except Exception as e:
+            queue.put(ClassificationError(e))
+            ClassificationError(e)
         cubeShape = specObj.getCube().shape
         clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
         sample.setClassOverlay(clfImg)
-        logger.debug(f'Finished classification on sample {sample.name} ({i+1} of {len(inferenceSampleList)} samples done)')
-        dataQueue.put(sample)
+        logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
+                     f' ({i+1} of {len(inferenceSampleList)} samples done)')
+        queue.put(sample)
 
 
 def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier') -> List[str]:
@@ -526,8 +559,10 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
         for x in range(cube.shape[2]):
             specList.append(cube[:, y, x])
 
-    result: np.ndarray = classifier.predict(np.array(specList))
-    print(f'classification took {round(time.time() - t0, 2)} seconds')
+    try:
+        result: np.ndarray = classifier.predict(np.array(specList))
+    except Exception as e:
+        raise ClassificationError("Error during classifier inference: {e}")
     return list(result)
 
 

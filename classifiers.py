@@ -28,6 +28,17 @@ def getClassifiers() -> List['BaseClassifier']:
     return [SVM()]
 
 
+class ClassificationError(Exception):
+    """
+    Custom Error class for errors occuring during classification.
+    """
+    def __init__(self, errorText):
+        self.errorText = errorText
+
+    def __str__(self):
+        return repr(self.errorText)
+
+
 class BaseClassifier:
     """
     Base class for a classifier
