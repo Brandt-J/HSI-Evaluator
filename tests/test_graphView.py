@@ -23,7 +23,7 @@ from typing import Set
 from PyQt5.QtCore import QPoint
 import numpy as np
 
-from gui.graphOverlays import SelectionOverlay, getBrightIndices
+from gui.graphOverlays import SelectionOverlay, getBrightOrDarkIndices
 
 
 class TestSelectionView(TestCase):
@@ -47,19 +47,25 @@ class TestSelectionView(TestCase):
 
 
 class TestGraphView(TestCase):
-    def test_selectAll(self) -> None:
+    def test_selectBrightOrDark(self) -> None:
         width, height, channel = 10, 10, 5
         cube: np.ndarray = np.zeros((channel, width, height))
         np.random.seed(42)
         brightPixelIndices: Set[int] = set()
+        darkPixelsIndices: Set[int] = set()
         i: int = 0
         for y in range(height):
             for x in range(width):
                 if np.random.rand() > 0.5:
                     cube[:, y, x] = 1
                     brightPixelIndices.add(i)
+                else:
+                    darkPixelsIndices.add(i)
                 i += 1
 
-        foundIndices: Set[int] = getBrightIndices(cube)
-        self.assertEqual(brightPixelIndices, foundIndices)
+        foundBrightIndices: Set[int] = getBrightOrDarkIndices(cube)
+        self.assertEqual(brightPixelIndices, foundBrightIndices)
+
+        foundDarkIndices: Set[int] = getBrightOrDarkIndices(cube, bright=False)
+        self.assertEqual(darkPixelsIndices, foundDarkIndices)
 

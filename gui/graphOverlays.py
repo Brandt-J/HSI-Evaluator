@@ -145,7 +145,15 @@ class GraphView(QtWidgets.QGraphicsView):
         """
         Convienience function to automatically get all bright pixels and assign them to the currently selected class!
         """
-        indices: Set[int] = getBrightIndices(self._origCube, self._sampleView.getSelectedMaxBrightness())
+        indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(), bright=True)
+        self._emitNewSelection(indices)
+        self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
+
+    def selectAllDarkPixels(self) -> None:
+        """
+        Convienience function to automatically get all bright pixels and assign them to the currently selected class!
+        """
+        indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(), bright=False)
         self._emitNewSelection(indices)
         self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
 
@@ -326,9 +334,12 @@ def getIndices(x0: int, x1: int, y0: int, y1: int, shape: np.ndarray) -> List[in
     return indices
 
 
-def getBrightIndices(cube: np.ndarray, maxBrightness: float = 1.5) -> Set[int]:
+def getBrightOrDarkIndices(cube: np.ndarray, maxBrightness: float = 1.5, bright: bool = True) -> Set[int]:
     avgImg: np.ndarray = cube2RGB(cube, maxBrightness)[:, :, 0]
-    thresh, binImg = cv2.threshold(avgImg, 0, 255, cv2.THRESH_OTSU)
+    if bright:
+        thresh, binImg = cv2.threshold(avgImg, 0, 255, cv2.THRESH_OTSU)
+    else:
+        thresh, binImg = cv2.threshold(avgImg, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
     return set(np.where(binImg.flatten())[0])
 
 

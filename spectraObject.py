@@ -20,7 +20,7 @@ import dataclasses
 
 from PyQt5 import QtCore
 import numpy as np
-from typing import List, Dict, Tuple, TYPE_CHECKING, Union, cast
+from typing import List, Dict, Tuple, TYPE_CHECKING, Union, cast, Set
 import random
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -39,6 +39,7 @@ class SpectraObject:
         self._cube: Union[None, np.ndarray] = None
         self._preprocQueue: List['Preprocessor'] = []
         self._background: Union[None, np.ndarray] = None
+        self._backgroundIndices: Set[int] = set()
         self._preprocessedCube: Union[None, np.ndarray] = None
         self._classes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}  # classname, (y-coordinages, x-coordinates)
         self._logger: 'Logger' = getLogger("SpectraObject")
@@ -48,30 +49,32 @@ class SpectraObject:
         if self._wavenumbers is None:
             self._setDefaultWavenumbers(cube)
 
-    def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray):
+    def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray, backgroundIndices: Set[int] = set()):
         """
         Sets the preprocessing parameters
         :param preprocessingQueue: List of Preprocessors
         :param background: np.ndarray of background spectrum
+        :param backgroundIndices: Set of indices of pixels of background class. These will be ignored during processing, if required.
         """
         self._preprocQueue = preprocessingQueue
         self._background = background
+        self._backgroundIndices = backgroundIndices
 
-    def applyPreprocessing(self) -> None:
+    def applyPreprocessing(self, ignoreBackground: bool = False) -> None:
         """
         Applies the specified preprocessing.
 
         :return:
         """
         if len(self._preprocQueue) > 0:
-            specArr = self._cube2SpecArr()
+            specArr = self._cube2SpecArr(ignoreBackground)
             t0 = time.time()
             if len(specArr) < 1000:
                 specArr = self._preprocessSpectaSingleProcess(specArr)
             else:
                 specArr = self._preprocessSpectraMultiProcessing(specArr)
 
-            self._preprocessedCube = self._specArr2cube(specArr)
+            self._preprocessedCube = self._specArr2cube(specArr, ignoreBackground)
             print(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
         else:
             self._logger.info("Received empty preprocessingQueue, just returning the original cube.")
@@ -114,30 +117,41 @@ class SpectraObject:
         self._preprocQueue = []
         self._background = None
 
-    def _specArr2cube(self, specArr: np.ndarray) -> np.ndarray:
+    def _specArr2cube(self, specArr: np.ndarray, ignoreBackground: bool) -> np.ndarray:
         """
         Takes an (MxN) spec array and reformats into cube layout
         :param specArr: (MxN) array of M spectra with N wavenumbers
+        :param ignoreBackground: Whether or not the background pixels where ignored
         :return: (NxXxY) cube array of X*Y spectra of N wavenumbers (M = X*Y)
         """
         cube = self._cube.copy()
-        i = 0
+        i: int = 0  # counter for cube index
+        j: int = 0  # counter for spec Array
         for y in range(self._cube.shape[1]):
             for x in range(self._cube.shape[2]):
-                cube[:, y, x] = specArr[i, :]
+                if not ignoreBackground or (ignoreBackground and i not in self._backgroundIndices):
+                    cube[:, y, x] = specArr[j, :]
+                    j += 1
+
                 i += 1
 
         return cube
 
-    def _cube2SpecArr(self) -> np.ndarray:
+    def _cube2SpecArr(self, ignoreBackground: bool) -> np.ndarray:
         """
         Reformats the cube into an MxN spectra matrix of M spectra with N wavenumbers
+        :param ignoreBackground: If True, background spectra will be skipped
         :return: (MxN) spec array of M spectra of N wavenumbers
         """
+        i: int = 0
         specArr: List[np.ndarray] = []
         for y in range(self._cube.shape[1]):
             for x in range(self._cube.shape[2]):
-                specArr.append(self._cube[:, y, x])
+                if not ignoreBackground:
+                    specArr.append(self._cube[:, y, x])
+                elif i not in self._backgroundIndices:
+                    specArr.append(self._cube[:, y, x])
+                i += 1
 
         specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavenumbers
         assert specArr.shape[1] == self._cube.shape[0]
@@ -173,6 +187,10 @@ class SpectraObject:
     def getWavenumbers(self) -> np.ndarray:
         assert self._wavenumbers is not None, 'Wavenumbers have not yet been set! Cannot return them!'
         return self._wavenumbers
+
+    def getBackgroundIndices(self) -> Set[int]:
+        """Returns pixel indices of background pixels"""
+        return self._backgroundIndices
 
     def getAverageSpectra(self) -> Dict[str, np.ndarray]:
         specs: Dict[str, np.ndarray] = self.getClassSpectra(maxSpecPerClas=np.inf)

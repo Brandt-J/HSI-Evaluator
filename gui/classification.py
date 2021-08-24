@@ -19,7 +19,7 @@ If not, see <https://www.gnu.org/licenses/>.
 from copy import copy
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, Tuple, Dict, Union, TYPE_CHECKING, cast
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING, cast, Set
 import numpy as np
 import time
 from matplotlib.colors import to_rgb
@@ -296,6 +296,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._trainSampleSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._applySampleSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Update Classification")
         self._transpSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
@@ -336,7 +337,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
                 sample.resetClassificationOverlay()
 
             specObj: 'SpectraObject' = sample.getSpecObj()
-            specObj.preparePreprocessing(preprocessors, allBackgrounds[sample.getName()])
+            specObj.preparePreprocessing(preprocessors, allBackgrounds[sample.getName()], sample.getBackgroundPixelIndices())
 
         assert len(trainSampleDataList) > 0 and len(self._samplesToClassify) > 0, 'Either no training or no inference data..'
 
@@ -349,6 +350,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._process = Process(target=trainAndClassify, args=(trainSampleDataList,
                                                                inferenceSampleDataList,
                                                                self._preprocessingRequired,
+                                                               self._excludeBackgroundCheckbox.isChecked(),
                                                                self._activeClf,
                                                                self._testFracSpinBox.value(),
                                                                self._parent.getClassColorDict(),
@@ -394,6 +396,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._updateBtn.released.connect(self._classifyImage)
 
+        self._excludeBackgroundCheckbox.setChecked(True)
+
         self._clfCombo.addItems([clf.title for clf in self._classifiers])
         self._clfCombo.currentTextChanged.connect(self._activateClassifier)
         self.updateSampleSelectorComboBoxes()
@@ -422,6 +426,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         optnLayout.addRow("Train on", self._trainSampleSelector)
         optnLayout.addRow("Apply to", self._applySampleSelector)
         optnLayout.addRow("Test Fraction", self._testFracSpinBox)
+        optnLayout.addRow("Exlude Background", self._excludeBackgroundCheckbox)
         optnLayout.addRow(self._updateBtn)
         self._layout.addLayout(optnLayout)
 
@@ -502,13 +507,14 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
 
 def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List['Sample'], preprocessingRequired: bool,
-                     classifier: 'BaseClassifier', testSize: float, colorDict: Dict[str, Tuple[int, int, int]],
-                     queue: Queue) -> None:
+                     ignoreBackground: bool, classifier: 'BaseClassifier', testSize: float,
+                     colorDict: Dict[str, Tuple[int, int, int]], queue: Queue) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param trainSampleList: List of Sample objects used for classifier training
     :param inferenceSampleList: List of Samples on which we want to run classification.
     :param preprocessingRequired: Whether or not preprocessing needs to be done.
+    :param ignoreBackground: Whether or not background pixels shall be processed
     :param classifier: The Classifier to use
     :param testSize: Fraction of the data used for testing
     :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
@@ -527,14 +533,14 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
         for i, sample in enumerate(allSamples):
             t0 = time.time()
             specObj: 'SpectraObject' = sample.specObj
-            specObj.applyPreprocessing()
+            specObj.applyPreprocessing(ignoreBackground=ignoreBackground)
             classifier.setWavenumbers(specObj.getWavenumbers())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
             logger.debug(f"Preprocessing sample {sample.name} took {round(time.time()-t0, 2)} seconds ({i+1} of {numSamplesTotal} samples finished)")
     else:
         logger.debug("No Preprocessing required, skipping it.")
 
     # training
-    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize)
+    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize, ignoreBackground)
     t0 = time.time()
     try:
         classifier.train(xtrain, xtest, ytrain, ytest)
@@ -549,31 +555,36 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
         logger.debug(f"Starting classifcation on {sample.name}")
         specObj = sample.specObj
         try:
-            assignments: List[str] = getClassesForPixels(specObj, classifier)
+            assignments: List[str] = getClassesForPixels(specObj, classifier, ignoreBackground)
         except Exception as e:
             queue.put(ClassificationError(e))
             ClassificationError(e)
         cubeShape = specObj.getCube().shape
-        clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
+        skipIndices: Set[int] = specObj.getBackgroundIndices() if ignoreBackground else set([])
+        clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict, skipIndices)
         sample.setClassOverlay(clfImg)
         logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
                      f' ({i+1} of {len(inferenceSampleList)} samples done)')
         queue.put(sample)
 
 
-def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier') -> List[str]:
+def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier', ignoreBackground: bool) -> List[str]:
     """
     Estimates the classes for each pixel
     :param specObject: The spectraObject to use
     :param classifier: The classifier to use
-    :return:
+    :param ignoreBackground: Whether or not to ignore background pixels
+    :return: List of class names per spectrum
     """
-    t0 = time.time()
     specList: List[np.ndarray] = []
     cube: np.ndarray = specObject.getCube()
+    backgroundIndices: Set[int] = specObject.getBackgroundIndices()
+    i: int = 0
     for y in range(cube.shape[1]):
         for x in range(cube.shape[2]):
-            specList.append(cube[:, y, x])
+            if not ignoreBackground or (ignoreBackground and i not in backgroundIndices):
+                specList.append(cube[:, y, x])
+            i += 1
 
     try:
         result: np.ndarray = classifier.predict(np.array(specList))
@@ -582,11 +593,13 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
     return list(result)
 
 
-def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float,
+                                   ignoreBackground: bool) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
     :param sampleList: List of sampleviews to use
     :param testSize: Fraction of the data to use as test size
+    :param ignoreBackground: Whether or not to skip background pixels
     :return: Tuple[Xtrain, Xtest, ytrain, ytest]
     """
     labels: List[str] = []
@@ -594,6 +607,9 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float) 
     for sample in sampleList:
         spectraDict: Dict[str, np.ndarray] = sample.getLabelledSpectra()
         for name, specs in spectraDict.items():
+            if ignoreBackground and name.lower() == "background":
+                continue
+
             numSpecs = specs.shape[0]
             labels += [name]*numSpecs
             if spectra is None:
@@ -605,21 +621,26 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float) 
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 
-def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
+def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]],
+                   ignoreIndices: Set[int]) -> np.ndarray:
     """
     Creates an overlay image of the current classification
     :param cubeShape: Shape of the cube array
     :param assignments: List of class names for each pixel
     :param colorCodes: Dictionary mapping class names to rgb values
+    :param ignoreIndices: Set of pixel indices to ignore (i.e., background pixels)
     :return: np.ndarray of RGBA image as classification overlay
     """
     clfImg: np.ndarray = np.zeros((cubeShape[1], cubeShape[2], 4), dtype=np.uint8)
-    i: int = 0
+    i: int = 0  # counter for cube
+    j: int = 0  # counter for assignment List
     t0 = time.time()
     for y in range(cubeShape[1]):
         for x in range(cubeShape[2]):
-            clfImg[y, x, :3] = colorCodes[assignments[i]]
-            clfImg[y, x, 3] = 255
+            if i not in ignoreIndices:
+                clfImg[y, x, :3] = colorCodes[assignments[j]]
+                clfImg[y, x, 3] = 255
+                j += 1
             i += 1
 
     print('generating class image', round(time.time()-t0, 2))

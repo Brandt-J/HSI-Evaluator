@@ -24,7 +24,6 @@ import numpy as np
 from typing import *
 
 from classifiers import SVM
-from spectraObject import SpectraObject
 from dataObjects import Sample
 from gui.classification import ClassificationUI
 from gui.sampleview import SampleView

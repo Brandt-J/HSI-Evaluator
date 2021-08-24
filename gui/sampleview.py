@@ -259,7 +259,8 @@ class SampleView(QtWidgets.QMainWindow):
         self._activeBtn: ActivateToggleButton = ActivateToggleButton()
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._selectAllBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select All")
+        self._selectBrightBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Bright")
+        self._selectDarkBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Dark")
         self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
 
         self._toolbar = QtWidgets.QToolBar()
@@ -350,6 +351,17 @@ class SampleView(QtWidgets.QMainWindow):
 
         return background
 
+    def getBackgroundPixelIndices(self) -> Set[int]:
+        """
+        Returns a list of pixels in the background class
+        """
+        backgroundIndices: Set[int] = set()
+        for cls, pixelIndices in self._classes2Indices.items():
+            if cls.lower() == "background":
+                backgroundIndices = pixelIndices
+                break
+        return backgroundIndices
+
     def getSampleData(self) -> 'Sample':
         return self._sampleData
 
@@ -433,8 +445,9 @@ class SampleView(QtWidgets.QMainWindow):
         adjustLayout.addWidget(self._contrastSlider, 1, 1)
         adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
         adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
-        adjustLayout.addWidget(self._selectAllBtn, 3, 0, 1, 2)
-        adjustLayout.addWidget(self._selectNoneBtn, 4, 0, 1, 2)
+        adjustLayout.addWidget(self._selectBrightBtn, 3, 0, 1, 2)
+        adjustLayout.addWidget(self._selectDarkBtn, 4, 0, 1, 2)
+        adjustLayout.addWidget(self._selectNoneBtn, 5, 0, 1, 2)
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
@@ -470,7 +483,8 @@ class SampleView(QtWidgets.QMainWindow):
         self._closeBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogDiscardButton')))
         self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
 
-        self._selectAllBtn.released.connect(self._selectAllFromSample)
+        self._selectBrightBtn.released.connect(self._selectBrightPixels)
+        self._selectDarkBtn.released.connect(self._selectDarkPixels)
         self._selectNoneBtn.released.connect(self._selectNone)
 
         self._toolbar.addWidget(self._activeBtn)
@@ -502,15 +516,25 @@ class SampleView(QtWidgets.QMainWindow):
         if selectedClass.lower() == 'background':
             self.BackgroundSelectionChanged.emit()
 
-    def _selectAllFromSample(self) -> None:
+    def _selectBrightPixels(self) -> None:
         """
-        If confirmed, all "bright" pixles will be assigned to the current class.
+        If confirmed, all "bright" pixles will be assigned to the current class (as obtained by Otsu thresholding).
         """
         ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all bright pixels?",
                                              QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                                              QtWidgets.QMessageBox.Yes)
         if ret == QtWidgets.QMessageBox.Yes:
             self._graphView.selectAllBrightPixels()
+
+    def _selectDarkPixels(self) -> None:
+        """
+        If confirmed, all "dark" pixles will be assigned to the current class (as obtained by Otsu thresholding).
+        """
+        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all dark pixels?",
+                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                                             QtWidgets.QMessageBox.Yes)
+        if ret == QtWidgets.QMessageBox.Yes:
+            self._graphView.selectAllDarkPixels()
 
     def _selectNone(self) -> None:
         """

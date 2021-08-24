@@ -34,7 +34,7 @@ class TestSpecObject(TestCase):
         specObj.applyPreprocessing()  # Make sure all preprocessors run nicely. Here we do single process
 
         specObj: SpectraObject = SpectraObject()
-        cubeShape: Tuple[int, int, int] = (100, 20, 20)
+        cubeShape: Tuple[int, int, int] = (100, 50, 50)
         specObj.setCube(np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2]))
         specObj.preparePreprocessing(getPreprocessors(), np.zeros(cubeShape[0]))
         specObj.applyPreprocessing()  # Make sure all preprocessors run nicely. Now we run multiprocessing
@@ -46,3 +46,33 @@ class TestSpecObject(TestCase):
             self.assertEqual(len(arrList), num)
             self.assertTrue(np.array_equal(specArr[0, :], arrList[0][0, :]))  # first entry is identical
             self.assertTrue(np.array_equal(specArr[-1, :], arrList[-1][-1, :]))  # last entry is identical
+
+    def test_IgnoreBackground(self):
+        specObj: SpectraObject = SpectraObject()
+        cubeShape: Tuple[int, int, int] = (100, 20, 20)
+        testCube: np.ndarray = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
+
+        numPixels: int = cubeShape[1] * cubeShape[2]
+        backgroundIndices: Set[int] = set(np.random.randint(0, 100, 15))
+        for ind in backgroundIndices:
+            y, x = np.unravel_index(ind, cubeShape[1:])
+            testCube[:, y, x] = 100.0  # This value is not present in the cube before (np.random procudes values between 0 and 1)
+
+        specObj.setCube(testCube)
+        numBackgroundIndices: int = len(backgroundIndices)
+        specObj._backgroundIndices = backgroundIndices
+
+        specArr: np.ndarray = specObj._cube2SpecArr(ignoreBackground=False)
+        numHundreds = len(np.where(specArr == 100)[0])
+        self.assertEqual(len(specArr), numPixels)
+        self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
+
+        specArr = specObj._cube2SpecArr(ignoreBackground=True)
+        self.assertEqual(len(specArr), numPixels-numBackgroundIndices)
+        numHundreds = len(np.where(specArr == 100)[0])
+        self.assertEqual(numHundreds, 0)
+
+        reconstructedCube: np.ndarray = specObj._specArr2cube(specArr, ignoreBackground=True)
+        numHundreds = len(np.where(reconstructedCube == 100)[0])
+        self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
+        self.assertTrue(np.array_equal(reconstructedCube, testCube))
