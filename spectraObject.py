@@ -74,7 +74,7 @@ class SpectraObject:
             self._preprocessedCube = self._specArr2cube(specArr)
             print(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
         else:
-            self._logger.warning("Received empty preprocessingQueue, just returning the original cube.")
+            self._logger.info("Received empty preprocessingQueue, just returning the original cube.")
             self._preprocessedCube = self._cube.copy()
 
         self._resetPreprocessing()
@@ -112,7 +112,6 @@ class SpectraObject:
 
     def _resetPreprocessing(self) -> None:
         self._preprocQueue = []
-        self._imgLimits = QtCore.QRectF()
         self._background = None
 
     def _specArr2cube(self, specArr: np.ndarray) -> np.ndarray:

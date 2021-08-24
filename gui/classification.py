@@ -288,6 +288,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         super(ClassificationUI, self).__init__()
         self._parent: 'MainWindow' = parent
         self._logger: 'Logger' = getLogger("ClassificationUI")
+        self._preprocessingRequired: bool = True
         self._classifiers: List['BaseClassifier'] = getClassifiers()  # all available classifiers
         self._activeClf: Union[None, 'BaseClassifier'] = None  # the currently selected classifier
         self._samplesToClassify: List['SampleView'] = []  # List for keeping track of opened samples to classify
@@ -340,11 +341,13 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._progressbar.show()
         self._progressbar.setValue(0)
-        self._progressbar.setMaximum(len(self._samplesToClassify))
+        self._progressbar.setMaximum(0)  # TODO: Implement a more fine-grained monitoring
+        # self._progressbar.setMaximum(len(self._samplesToClassify))
         self._activeClf.makePickleable()
         self._queue = Queue()  # recreate queue object, it could have been closed previously.
         self._process = Process(target=trainAndClassify, args=(trainSampleDataList,
                                                                inferenceSampleDataList,
+                                                               self._preprocessingRequired,
                                                                self._activeClf,
                                                                self._testFracSpinBox.value(),
                                                                self._parent.getClassColorDict(),
@@ -393,6 +396,13 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._clfCombo.addItems([clf.title for clf in self._classifiers])
         self._clfCombo.currentTextChanged.connect(self._activateClassifier)
         self.updateSampleSelectorComboBoxes()
+
+    @QtCore.pyqtSlot()
+    def forcePreprocessing(self) -> None:
+        """
+        Called when the preprocessing stack was updated or the background selection has changed...
+        """
+        self._preprocessingRequired = True
 
     def updateSampleSelectorComboBoxes(self) -> None:
         for combobox in [self._trainSampleSelector, self._applySampleSelector]:
@@ -465,7 +475,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
             else:
                 finishedData: 'Sample' = cast('Sample', queueContent)
                 self._updateClassifiedSample(finishedData)
-                self._progressbar.setValue(self._progressbar.value()+1)
+                # self._progressbar.setValue(self._progressbar.value()+1)  # TODO: Implement a more fine-grained monitoring...
 
             if len(self._samplesToClassify) == 0 or errorOccured:
                 self._finishComputation()
@@ -482,6 +492,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
                 break
 
     def _finishComputation(self) -> None:
+        self._preprocessingRequired = False
         self._progressbar.hide()
         self._parent.enableWidgets()
         self._timer.stop()
@@ -489,13 +500,14 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._process.join()
 
 
-def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List['Sample'],
+def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List['Sample'], preprocessingRequired: bool,
                      classifier: 'BaseClassifier', testSize: float, colorDict: Dict[str, Tuple[int, int, int]],
                      queue: Queue) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param trainSampleList: List of Sample objects used for classifier training
     :param inferenceSampleList: List of Samples on which we want to run classification.
+    :param preprocessingRequired: Whether or not preprocessing needs to be done.
     :param classifier: The Classifier to use
     :param testSize: Fraction of the data used for testing
     :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
@@ -503,19 +515,22 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
     """
     logger: 'Logger' = getLogger("TrainingProcess")
 
-    # preprocessing
-    allSamples: List['Sample'] = copy(trainSampleList)
-    for sample in inferenceSampleList:
-        if sample not in allSamples:
-            allSamples.append(sample)
+    if preprocessingRequired:
+        # preprocessing
+        allSamples: List['Sample'] = copy(trainSampleList)
+        for sample in inferenceSampleList:
+            if sample not in allSamples:
+                allSamples.append(sample)
 
-    numSamplesTotal = len(allSamples)
-    for i, sample in enumerate(allSamples):
-        t0 = time.time()
-        specObj: 'SpectraObject' = sample.specObj
-        specObj.applyPreprocessing()
-        classifier.setWavenumbers(specObj.getWavenumbers())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
-        logger.debug(f"Preprocessing sample {sample.name} took {round(time.time()-t0, 2)} seconds ({i+1} of {numSamplesTotal} samples finished)")
+        numSamplesTotal = len(allSamples)
+        for i, sample in enumerate(allSamples):
+            t0 = time.time()
+            specObj: 'SpectraObject' = sample.specObj
+            specObj.applyPreprocessing()
+            classifier.setWavenumbers(specObj.getWavenumbers())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
+            logger.debug(f"Preprocessing sample {sample.name} took {round(time.time()-t0, 2)} seconds ({i+1} of {numSamplesTotal} samples finished)")
+    else:
+        logger.debug("No Preprocessing required, skipping it.")
 
     # training
     xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize)

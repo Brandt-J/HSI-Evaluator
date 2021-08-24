@@ -235,6 +235,7 @@ class SampleView(QtWidgets.QMainWindow):
     Renamed: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Closed: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    BackgroundSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         super(SampleView, self).__init__()
@@ -492,6 +493,8 @@ class SampleView(QtWidgets.QMainWindow):
             self._sampleData.classes2Indices[selectedClass].update(selectedIndices)
         else:
             self._sampleData.classes2Indices[selectedClass] = selectedIndices
+        if selectedClass.lower() == 'background':
+            self.BackgroundSelectionChanged.emit()
 
     def _selectAllFromSample(self) -> None:
         """

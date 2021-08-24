@@ -60,6 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._resultPlots.updatePlots)
         sampleView.Renamed.connect(self._resultPlots.updatePlots)
+        sampleView.BackgroundSelectionChanged.connect(self._clfWidget.forcePreprocessing)
 
         graphView: 'GraphView' = sampleView.getGraphView()
         graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
@@ -166,6 +167,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.enableWidgets()
         self.showMaximized()
         self._clfWidget.updateSampleSelectorComboBoxes()
+        self._clfWidget.forcePreprocessing()
 
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
         return self._resultPlots.getDecsriptorLibrary()
@@ -213,6 +215,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.enableWidgets()
         self._resultPlots.updatePlots()
         self._clfWidget.updateSampleSelectorComboBoxes()
+        self._clfWidget.forcePreprocessing()
 
     def _export(self) -> None:
         raise NotImplementedError
@@ -233,6 +236,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._multiSampleView.SampleClosed.connect(self._resultPlots.updatePlots)
 
         self._preprocSelector.ProcessorStackUpdated.connect(self._resultPlots.updatePlots)
+        self._preprocSelector.ProcessorStackUpdated.connect(self._clfWidget.forcePreprocessing)
 
         self._clsCreator.ClassDeleted.connect(self._resultPlots.updatePlots)
         self._clsCreator.ClassActivated.connect(self._resultPlots.switchToDescriptorSet)
