@@ -333,6 +333,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
                 trainSampleDataList.append(sample.getSampleData())
             if sample in self._samplesToClassify:
                 inferenceSampleDataList.append(sample.getSampleData())
+                sample.resetClassificationOverlay()
 
             specObj: 'SpectraObject' = sample.getSpecObj()
             specObj.preparePreprocessing(preprocessors, allBackgrounds[sample.getName()])

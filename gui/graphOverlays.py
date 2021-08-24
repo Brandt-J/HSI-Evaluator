@@ -65,13 +65,14 @@ class GraphView(QtWidgets.QGraphicsView):
         self._item.setPixmap(npy2Pixmap(img))
 
     def setCurrentlyPresentSelection(self, classes2Ind: Dict[str, Set[int]]) -> None:
+        """
+        Sets the current selection according to the provided classes2Ind dictionary.
+        :param classes2Ind: Dict[classname: PixelIndices]
+        """
         for cls, indices in classes2Ind.items():
             color: Tuple[int, int, int] = self._mainWin.getColorOfClass(cls)
             self._selectionOverlay.addPixelsToSelection(indices, color)
         self.SelectionChanged.emit()
-
-    def setClassOverlay(self, img: np.ndarray) -> None:
-        self._classOverlay.updateImage(img)
 
     def deselectAll(self) -> None:
         """Removes all selection"""
@@ -101,19 +102,28 @@ class GraphView(QtWidgets.QGraphicsView):
         self.scene().update()
 
     def updateClassImage(self, classImage: np.ndarray) -> None:
+        """
+        Updates the graph representation of the current classification to the given RGBA image.
+        """
         self._classOverlay.updateImage(classImage)
+
+    def resetClassImage(self) -> None:
+        """
+        Resets the current graph representation of a previous classfication
+        """
+        self._classOverlay.resetOverlay()
 
     def updateClassImgTransp(self, newAlpha: float) -> None:
         self._classOverlay.setAlpha(np.clip(newAlpha, 0.0, 1.0))
         self.scene().update()
-
-    def showClassImage(self) -> None:
-        self._classOverlay.show()
-        self._selectionOverlay.hide()
-
-    def hideClassImage(self) -> None:
-        self._classOverlay.hide()
-        self._selectionOverlay.show()
+    #
+    # def showClassImage(self) -> None:
+    #     self._classOverlay.show()
+    #     self._selectionOverlay.hide()
+    #
+    # def hideClassImage(self) -> None:
+    #     self._classOverlay.hide()
+    #     self._selectionOverlay.show()
 
     def getPixelsOfColor(self, rgb: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -335,6 +345,12 @@ class ClassificationOverlay(QtWidgets.QGraphicsObject):
         if self._overlayArr is not None:
             brect = QtCore.QRectF(0, 0, self._overlayArr.shape[0], self._overlayArr.shape[1])
         return brect
+
+    def resetOverlay(self) -> None:
+        """Sets a blank overlay"""
+        if self._overlayArr is not None:
+            blank: np.ndarray = np.zeros_like(self._overlayArr)
+            self.updateImage(blank)
 
     def setAlpha(self, newAlpha: float) -> None:
         self._alpha = newAlpha

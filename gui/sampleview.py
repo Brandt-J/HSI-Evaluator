@@ -385,6 +385,12 @@ class SampleView(QtWidgets.QMainWindow):
     def getSaveFileName(self) -> str:
         return self._sampleData.getFileHash() + '.pkl'
 
+    def resetClassificationOverlay(self) -> None:
+        """
+        Resets the current classification overlay.
+        """
+        self._graphView.resetClassImage()
+
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()
 

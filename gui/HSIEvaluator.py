@@ -60,6 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._resultPlots.updatePlots)
         sampleView.Renamed.connect(self._resultPlots.updatePlots)
+        sampleView.Renamed.connect(self._clfWidget.updateSampleSelectorComboBoxes)
         sampleView.BackgroundSelectionChanged.connect(self._clfWidget.forcePreprocessing)
 
         graphView: 'GraphView' = sampleView.getGraphView()
