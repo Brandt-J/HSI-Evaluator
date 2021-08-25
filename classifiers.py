@@ -21,11 +21,12 @@ import numpy as np
 from PyQt5 import QtWidgets
 from typing import *
 from sklearn import svm
+from sklearn.neighbors import KNeighborsClassifier
 
 
 def getClassifiers() -> List['BaseClassifier']:
     # return [NeuralNet(), SVM(), RDF()]
-    return [SVM()]
+    return [SVM(), KNN()]
 
 
 class ClassificationError(Exception):
@@ -134,6 +135,50 @@ class BaseClassifier:
 #     def predict(self, spectra: np.ndarray) -> np.ndarray:
 #         return np.zeros(spectra.shape[0])
 
+class KNN(BaseClassifier):
+    title = "k-Nearest Neighbors"
+
+    def __init__(self):
+        super(KNN, self).__init__()
+        self._clf: Union[None, KNeighborsClassifier] = None
+        self._k: int = 5
+        self._kSpinBox: Union[None, QtWidgets.QSpinBox] = None
+        self._recreateSpinBox()
+
+    def getControls(self) -> QtWidgets.QGroupBox:
+        self._recreateSpinBox()
+        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("KNN Options")
+        optnGroup.setLayout(QtWidgets.QFormLayout())
+        optnGroup.layout().addRow("Num. Neighbors:", self._kSpinBox)
+        return optnGroup
+
+    def makePickleable(self) -> None:
+        self._kSpinBox.valueChanged.disconnect()
+        self._kSpinBox = None
+
+    def restoreNotPickleable(self) -> None:
+        self._recreateSpinBox()
+
+    def _recreateSpinBox(self) -> None:
+        self._kSpinBox = QtWidgets.QSpinBox()
+        self._kSpinBox.setMinimum(2)
+        self._kSpinBox.setMaximum(20)
+        self._kSpinBox.setValue(self._k)
+        self._kSpinBox.valueChanged.connect(self._update_k)
+
+    def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
+        self._clf = KNeighborsClassifier(n_neighbors=self._k)
+        self._setUniqueLabels(y_test, y_train)
+        self._clf.fit(x_train, self._convertLabelsToNumbers(y_train))
+
+    def predict(self, spectra: np.ndarray) -> np.ndarray:
+        assert self._clf is not None, "Classifier was not yet created!!"
+        labels: np.ndarray = self._clf.predict(spectra)
+        return self._convertNumbersToLabels(labels)
+
+    def _update_k(self) -> None:
+        self._k = self._kSpinBox.value()
+
 
 class SVM(BaseClassifier):
     title = "Support Vector Machine"
@@ -145,16 +190,8 @@ class SVM(BaseClassifier):
         self._kernelSelector: Union[None, QtWidgets.QComboBox] = None
         self._recreateComboBox()
 
-    def _recreateComboBox(self) -> None:
-        self._kernelSelector = QtWidgets.QComboBox()
-        self._kernelSelector.addItems(["linear", "poly", "rbf", "sigmoid", "precomputed"])
-        self._kernelSelector.setCurrentText(self._kernel)
-        self._kernelSelector.currentTextChanged.connect(self._updateClassifier)
-
-    def _updateClassifier(self) -> None:
-        self._kernel = self._kernelSelector.currentText()
-
     def getControls(self) -> QtWidgets.QGroupBox:
+        self._recreateComboBox()
         group: QtWidgets.QGroupBox = QtWidgets.QGroupBox("SVM Options")
         layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         layout.addRow("Kernel", self._kernelSelector)
@@ -162,6 +199,7 @@ class SVM(BaseClassifier):
         return group
 
     def makePickleable(self) -> None:
+        self._kernelSelector.currentTextChanged.disconnect()
         self._kernelSelector = None
 
     def restoreNotPickleable(self) -> None:
@@ -176,3 +214,12 @@ class SVM(BaseClassifier):
         assert self._clf is not None, "Classifier was not yet created!!"
         labels: np.ndarray = self._clf.predict(spectra)
         return self._convertNumbersToLabels(labels)
+
+    def _recreateComboBox(self) -> None:
+        self._kernelSelector = QtWidgets.QComboBox()
+        self._kernelSelector.addItems(["linear", "poly", "rbf", "sigmoid", "precomputed"])
+        self._kernelSelector.setCurrentText(self._kernel)
+        self._kernelSelector.currentTextChanged.connect(self._updateClassifier)
+
+    def _updateClassifier(self) -> None:
+        self._kernel = self._kernelSelector.currentText()
