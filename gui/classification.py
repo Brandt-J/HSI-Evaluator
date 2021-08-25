@@ -26,9 +26,11 @@ from matplotlib.colors import to_rgb
 from matplotlib.pyplot import rcParams
 from multiprocessing import Process, Queue
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
 
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
+from dataObjects import Sample
 from classifiers import BaseClassifier, getClassifiers, ClassificationError
 
 if TYPE_CHECKING:
@@ -37,7 +39,6 @@ if TYPE_CHECKING:
     from gui.graphOverlays import GraphView
     from preprocessing.preprocessors import Preprocessor
     from spectraObject import SpectraObject
-    from dataObjects import Sample, Rect
     from logging import Logger
 
 
@@ -303,6 +304,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
         self._progressbar.setWindowTitle("Classification in Progress")
+        self._validationLabel: QtWidgets.QLabel = QtWidgets.QLabel()
 
         self._process: Process = Process()
         self._queue: Queue = Queue()
@@ -384,24 +386,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         if len(self._classifiers) > 0:
             self._activateClassifier(self._classifiers[0].title)
 
-    def _configureWidgets(self) -> None:
-        self._transpSlider.setMinimum(0)
-        self._transpSlider.setValue(80)
-        self._transpSlider.setMaximum(100)
-        self._transpSlider.valueChanged.connect(self._emitTransparencyUpdate)
-
-        self._testFracSpinBox.setMinimum(0.01)
-        self._testFracSpinBox.setMaximum(0.99)
-        self._testFracSpinBox.setValue(0.1)
-
-        self._updateBtn.released.connect(self._classifyImage)
-
-        self._excludeBackgroundCheckbox.setChecked(True)
-
-        self._clfCombo.addItems([clf.title for clf in self._classifiers])
-        self._clfCombo.currentTextChanged.connect(self._activateClassifier)
-        self.updateSampleSelectorComboBoxes()
-
     @QtCore.pyqtSlot()
     def forcePreprocessing(self) -> None:
         """
@@ -416,20 +400,45 @@ class ClassificationUI(QtWidgets.QGroupBox):
             for sample in self._parent.getAllSamples():
                 combobox.addItem(sample.getName())
 
+    def _configureWidgets(self) -> None:
+        self._transpSlider.setMinimum(0)
+        self._transpSlider.setValue(80)
+        self._transpSlider.setMaximum(100)
+        self._transpSlider.valueChanged.connect(self._emitTransparencyUpdate)
+
+        self._testFracSpinBox.setMinimum(0.01)
+        self._testFracSpinBox.setMaximum(0.99)
+        self._testFracSpinBox.setValue(0.1)
+
+        self._updateBtn.released.connect(self._classifyImage)
+
+        self._excludeBackgroundCheckbox.setChecked(True)
+        self._validationLabel.setText("Not yet validated.")
+
+        self._clfCombo.addItems([clf.title for clf in self._classifiers])
+        self._clfCombo.currentTextChanged.connect(self._activateClassifier)
+        self.updateSampleSelectorComboBoxes()
+
     def _createLayout(self) -> None:
         self._layout.addWidget(QtWidgets.QLabel("Select Classifier:"))
         self._layout.addWidget(self._clfCombo)
         self._layout.addWidget(self._activeClfControls)
         self._layout.addStretch()
 
+        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Options:")
         optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        optnGroup.setLayout(optnLayout)
         optnLayout.addRow("Train on", self._trainSampleSelector)
         optnLayout.addRow("Apply to", self._applySampleSelector)
         optnLayout.addRow("Test Fraction", self._testFracSpinBox)
         optnLayout.addRow("Exlude Background", self._excludeBackgroundCheckbox)
         optnLayout.addRow(self._updateBtn)
-        self._layout.addLayout(optnLayout)
-
+        self._layout.addWidget(optnGroup)
+        self._layout.addStretch()
+        validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Result")
+        validationGroup.setLayout(QtWidgets.QHBoxLayout())
+        validationGroup.layout().addWidget(self._validationLabel)
+        self._layout.addWidget(validationGroup)
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
         self._layout.addWidget(self._transpSlider)
 
@@ -478,7 +487,10 @@ class ClassificationUI(QtWidgets.QGroupBox):
                 QtWidgets.QMessageBox.critical(self, "Error in classification", f"The following error occured:\n"
                                                                                 f"{error.errorText}")
                 errorOccured = True
-            else:
+            elif type(queueContent) == str:
+                self._setValidationResult(cast(str, queueContent))
+
+            elif type(queueContent) == Sample:
                 finishedData: 'Sample' = cast('Sample', queueContent)
                 self._updateClassifiedSample(finishedData)
                 # self._progressbar.setValue(self._progressbar.value()+1)  # TODO: Implement a more fine-grained monitoring...
@@ -496,6 +508,12 @@ class ClassificationUI(QtWidgets.QGroupBox):
                 graphView.updateClassImage(finishedData.classOverlay)
                 self._samplesToClassify.remove(sample)
                 break
+
+    def _setValidationResult(self, report: str) -> None:
+        """
+        Adjusts the validation lable with the latest classification report.
+        """
+        self._validationLabel.setText(report)
 
     def _finishComputation(self) -> None:
         self._preprocessingRequired = False
@@ -548,6 +566,12 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
         queue.put(ClassificationError(f"Error during classifier Trining: {e}"))
         raise ClassificationError(f"Error during classifier Trining: {e}")
     logger.debug(f'Training {classifier.title} on {xtrain.shape[0]} spectra took {round(time.time() - t0, 2)} seconds')
+
+    # validation
+    ypredicted = classifier.predict(xtest)
+    report = classification_report(ytest, ypredicted)
+    logger.info(report)
+    queue.put(report)
 
     # inference
     for i, sample in enumerate(inferenceSampleList):
