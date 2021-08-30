@@ -17,24 +17,20 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from unittest import TestCase
-import mysql.connector
+
+from PyQt5 import QtWidgets, QtGui
+
 from database.database import DBConnection
 
 
-def testRaiseFunc():
-    raise FileNotFoundError("Config not found")
+class DBWindow(QtWidgets.QWidget):
+    def __init__(self):
+        self.setWindowTitle("Upload to SQL")
+        self._conn: DBConnection = DBConnection()
+
+    def _createLayout(self) -> None:
 
 
-class TestDatabase(TestCase):
-
-    def testConnection(self):
-        conn: DBConnection = DBConnection()
-        self.assertTrue(conn._connection is None)
-        conn.connect()
-        self.assertEqual(type(conn._connection), mysql.connector.connection.MySQLConnection)
-        conn.disconnect()
-        self.assertTrue(conn._connection is None)
-
-        conn._getConfigDict = testRaiseFunc
-        self.assertRaises(ConnectionError, conn.connect)
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        self._conn.disconnect()
+        event.accept()
