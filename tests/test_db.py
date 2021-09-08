@@ -84,6 +84,8 @@ class TestDatabase(TestCase):
         cursor = connection._getCursor()
         cursor.execute(f"DELETE FROM spectra WHERE sample='{details.sampleName}'")
         cursor.execute(f"DELETE FROM samples WHERE sample_name='{details.sampleName}'")
+        cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls1}'")
+        cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls2}'")
         connection._connection.commit()
         self.assertTrue(details.sampleName not in connection.getSampleNames())
         self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), 0)
@@ -105,10 +107,10 @@ class TestDBUI(TestCase):
             entriesInComboBox.append(clsEntry._typeCombo.itemText(i))
 
         self.assertEqual(entriesInComboBox, sqlClasses)
-        self.assertEqual(clsEntry.getTargetName(), "class1")  # that's the default
+        self.assertTrue(clsEntry.getTargetName() in sqlClasses)
 
         clsEntry._newNameRadioBtn.setChecked(True)
-        self.assertRaises(AssertionError, clsEntry.getTargetName) # No new name indicated..
+        self.assertRaises(AssertionError, clsEntry.getTargetName)  # No new name indicated..
         clsEntry._lineEdit.setText("newClass")
         self.assertEqual(clsEntry.getTargetName(), "newClass")
 
