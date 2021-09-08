@@ -116,7 +116,7 @@ def autoscale(input_data: np.ndarray) -> np.ndarray:
     Autoscales all the variables, so they have the same importance for subsequent analysis
     and same chance to be picked up.
     Might not be reasonable for spectral data, here the relative intensities do have an importance: Close-to-zero
-    wavenumbers also indicate less relevant data than wavenumbers with high intensities.
+    wavelengths also indicate less relevant data than wavelengths with high intensities.
     :param input_data: (MxN) array of M samples with N features.
     :return:
     """

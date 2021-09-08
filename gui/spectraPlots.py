@@ -117,7 +117,7 @@ class ResultPlots(QtWidgets.QWidget):
                          linestyle: [Union[str, tuple]] = "solid") -> None:
         """
         Plots the given spectra dictionary from the currently active sample.
-        :param specs: The spectr dictionaty (key: classname, value: spectra (NxM) array of N spectra with M wavenumbers
+        :param specs: The spectr dictionaty (key: classname, value: spectra (NxM) array of N spectra with M wavelengths
         :param backgroundSpec: Averaged background spectrum of the corresponding sample.
         :param sampleName: optional samplename to include in legend
         :param linestyle: optional linestyle for the sample spectra
@@ -145,7 +145,7 @@ class ResultPlots(QtWidgets.QWidget):
         pass  # TODO: REFACTOR to directly take spectrum as input
         # spec: np.ndarray = self._specObj.getSpectrumaAtXY(x, y)
         # if self._cursorSpec is None:
-        #     self._cursorSpec = self._specAx.plot(self._specObj.getWavenumbers(), spec, color='gray')[0]
+        #     self._cursorSpec = self._specAx.plot(self._specObj.getWavelengths(), spec, color='gray')[0]
         # else:
         #     self._cursorSpec.set_ydata(spec)
         # self._canvas.draw()
@@ -188,9 +188,9 @@ class ResultPlots(QtWidgets.QWidget):
     def _preprocessSpectra(self, specArr: np.ndarray, preprocessors: List['Preprocessor'],
                              backgroundSpec: np.ndarray) -> np.ndarray:
         """
-        Prepares the spec (NxM) array of N spec with M wavenums for plotting.
+        Prepares the spec (NxM) array of N spec with M wavelengths for plotting.
         Performs averating (if desired) and transpose.
-        :param specArr: (NxM) array of N spec with M wavenums
+        :param specArr: (NxM) array of N spec with M wavelengths
         :param preprocessors: The preprocessors to use
         :param backgroundSpec: Averaged spectrum of background
         :return: spec array in (MxN) shape, as required for plt batch plotting
@@ -211,8 +211,8 @@ class ResultPlots(QtWidgets.QWidget):
     def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
         """
         Limits number of given specSet to not exceed the value given with numSpecSpinner.
-        :param specSet: (NxM) set of N spectra with M wavenumbers
-        :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavenumbers
+        :param specSet: (NxM) set of N spectra with M wavelengths
+        :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavelengths
         """
         random.seed(self._seedSpinner.value())
         numSpecs: int = specSet.shape[0]
@@ -287,14 +287,14 @@ class SpecPlot(QtWidgets.QWidget):
                      color: List[float], legendName: str) -> None:
         """
         Plots the spectra array.
-        :param spectra: (NxM) array of N spectra with M wavenumbers
+        :param spectra: (NxM) array of N spectra with M wavelengths
         :param index: index of specset, used for optional offset.
         :param linestyle: the linestyle code to use
         :param color: The rgb color to use (or rgba)
         :param legendName: The legendname of the given spec set.
         """
         spectra: np.ndarray = self._prepareSpecsForPlot(spectra)
-        self._specAx.plot(self._mainWin.getWavenumbers(), spectra - index * self._stackSpinner.value(),
+        self._specAx.plot(self._mainWin.getWavelengths(), spectra - index * self._stackSpinner.value(),
                           linestyle=linestyle, color=color)
 
         self._legendItems.append(legendName)
@@ -305,7 +305,7 @@ class SpecPlot(QtWidgets.QWidget):
         """
         # if self._cursorSpec is not None:
         #     cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
-        #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavenumbers(), cursorSpec, color='gray')[0]
+        #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavelengths(), cursorSpec, color='gray')[0]
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")

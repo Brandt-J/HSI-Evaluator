@@ -31,7 +31,7 @@ class Preprocessor(ABC):
     @abstractmethod
     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
         """
-        Takes (N, M) array of N spectra with M wavenumbers and applies the processing
+        Takes (N, M) array of N spectra with M wavelengths and applies the processing
         :param spectra:
         :return:
         """

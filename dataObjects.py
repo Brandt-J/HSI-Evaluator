@@ -24,11 +24,13 @@ import numpy as np
 import numba
 
 from spectraObject import SpectraObject
+from legacyConvert import currentSampleVersion, currentViewVersion
 
 
 class Sample:
     """Data Container for a sample view"""
     def __init__(self):
+        self.currentSampleVersion: int = currentSampleVersion  # tracker for updating versions
         self.name: str = ''  # Sample Name
         self.filePath: str = ''  # Path to the spectra cube (.npy file)
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
@@ -58,7 +60,7 @@ class Sample:
     def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
-        :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
+        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self.classes2Indices.items():
@@ -72,18 +74,10 @@ class Sample:
 class View:
     """Data container for an entire view, including multiple samples and a processing stack"""
     def __init__(self):
+        self.version: int = currentViewVersion  # counter for tracking older versions
         self.title: str = ''
         self.samples: List['Sample'] = []
         self.processStack: List[str] = []
-
-    def legacyConvert(self) -> None:
-        """Convenience method for converting from older versions"""
-        samples: List['Sample'] = []
-        for sample in self.samples:
-            newSample: Sample = Sample()
-            newSample.__dict__.update(sample.__dict__)
-            samples.append(newSample)
-        self.samples = samples
 
 
 def getFilePathHash(fpath: str) -> str:

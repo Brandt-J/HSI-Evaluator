@@ -57,7 +57,7 @@ class PCAPlot(FigureCanvas):
     def addSpectraToPCA(self, spectra: np.ndarray, linestyle: Union[str, tuple], color: List[float], legendName: str) -> None:
         """
         Plots the spectra array.
-        :param spectra: (NxM) array of N spectra with M wavenumbers
+        :param spectra: (NxM) array of N spectra with M wavelengths
         :param linestyle: the linestyle code to use
         :param color: The rgb color to use (or rgba)
         :param legendName: The legendname of the given spec set.

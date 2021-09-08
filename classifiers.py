@@ -65,10 +65,10 @@ class BaseClassifier:
     def restoreNotPickleable(self) -> None:
         """Restores the originale version, see comment to makePickleable method"""
 
-    def setWavenumbers(self, wavenums: np.ndarray) -> None:
+    def setWavelengths(self, wavelengths: np.ndarray) -> None:
         """
-        Overload, if the classifier needs to be configured to the wavenumbers.
-        :param wavenums: 1d array of wavenumbers
+        Overload, if the classifier needs to be configured to the wavelengths.
+        :param wavelengths: 1d array of wavelengths
         """
         pass
 
@@ -110,7 +110,7 @@ class BaseClassifier:
     def predict(self, spectra: np.ndarray) -> np.ndarray:
         """
         Predict labels for the given spectra
-        :param spectra: (NxM) array of N spectra with M wavenumbers.
+        :param spectra: (NxM) array of N spectra with M wavelengths.
         :return
         """
         raise NotImplementedError

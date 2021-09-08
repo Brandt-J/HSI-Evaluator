@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 class SpectraObject:
     def __init__(self):
-        self._wavenumbers: Union[None, np.ndarray] = None
+        self._wavelengths: Union[None, np.ndarray] = None
         self._cube: Union[None, np.ndarray] = None
         self._preprocQueue: List['Preprocessor'] = []
         self._background: Union[None, np.ndarray] = None
@@ -46,8 +46,8 @@ class SpectraObject:
 
     def setCube(self, cube: np.ndarray) -> None:
         self._cube = cube
-        if self._wavenumbers is None:
-            self._setDefaultWavenumbers(cube)
+        if self._wavelengths is None:
+            self._setDefaultWavelengths(cube)
 
     def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray, backgroundIndices: Set[int] = set()):
         """
@@ -85,7 +85,7 @@ class SpectraObject:
     def _preprocessSpectraMultiProcessing(self, specArr: np.ndarray) -> np.ndarray:
         """
         Preprocesses the given spectra array using a Process Pool Executor.
-        :param specArr: (NxM) array of N spectra with M wavenumbers
+        :param specArr: (NxM) array of N spectra with M wavelengths
         :return: processed (NxM) array
         """
         self._logger.debug(f"Preprocessing {len(specArr)} spectra with pool process executor.")
@@ -102,7 +102,7 @@ class SpectraObject:
     def _preprocessSpectaSingleProcess(self, specArr: np.ndarray) -> np.ndarray:
         """
         Preprocesses the given spectra array without doing multiprocessing.
-        :param specArr: (NxM) array of N spectra with M wavenumbers
+        :param specArr: (NxM) array of N spectra with M wavelengths
         :return: processed (NxM) array
         """
         self._logger.debug(f"Preprocessing {len(specArr)} spectra in single process.")
@@ -120,9 +120,9 @@ class SpectraObject:
     def _specArr2cube(self, specArr: np.ndarray, ignoreBackground: bool) -> np.ndarray:
         """
         Takes an (MxN) spec array and reformats into cube layout
-        :param specArr: (MxN) array of M spectra with N wavenumbers
+        :param specArr: (MxN) array of M spectra with N wavelengths
         :param ignoreBackground: Whether or not the background pixels where ignored
-        :return: (NxXxY) cube array of X*Y spectra of N wavenumbers (M = X*Y)
+        :return: (NxXxY) cube array of X*Y spectra of N wavelengths (M = X*Y)
         """
         cube = self._cube.copy()
         i: int = 0  # counter for cube index
@@ -139,9 +139,9 @@ class SpectraObject:
 
     def _cube2SpecArr(self, ignoreBackground: bool) -> np.ndarray:
         """
-        Reformats the cube into an MxN spectra matrix of M spectra with N wavenumbers
+        Reformats the cube into an MxN spectra matrix of M spectra with N wavelengths
         :param ignoreBackground: If True, background spectra will be skipped
-        :return: (MxN) spec array of M spectra of N wavenumbers
+        :return: (MxN) spec array of M spectra of N wavelengths
         """
         i: int = 0
         specArr: List[np.ndarray] = []
@@ -153,7 +153,7 @@ class SpectraObject:
                     specArr.append(self._cube[:, y, x])
                 i += 1
 
-        specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavenumbers
+        specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavelengths
         assert specArr.shape[1] == self._cube.shape[0]
         return specArr
 
@@ -184,9 +184,9 @@ class SpectraObject:
     def getNotPreprocessedCube(self) -> np.ndarray:
         return self._cube
 
-    def getWavenumbers(self) -> np.ndarray:
-        assert self._wavenumbers is not None, 'Wavenumbers have not yet been set! Cannot return them!'
-        return self._wavenumbers
+    def getWavelengths(self) -> np.ndarray:
+        assert self._wavelengths is not None, 'Wavenumbers have not yet been set! Cannot return them!'
+        return self._wavelengths
 
     def getBackgroundIndices(self) -> Set[int]:
         """Returns pixel indices of background pixels"""
@@ -212,8 +212,8 @@ class SpectraObject:
     def getNumberOfFeatures(self) -> int:
         return self._cube.shape[0]
 
-    def setWavenumbers(self, wavenumbers: np.ndarray) -> None:
-        self._wavenumbers = wavenumbers
+    def setWavelengths(self, wavelengths: np.ndarray) -> None:
+        self._wavelengths = wavelengths
 
     def setClasses(self, classes: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> None:
         """
@@ -222,19 +222,19 @@ class SpectraObject:
         """
         self._classes = classes
 
-    def _setDefaultWavenumbers(self, cube: np.ndarray) -> None:
+    def _setDefaultWavelengths(self, cube: np.ndarray) -> None:
         """
-        Convenience function to get default wavenumbers if None were set...
+        Convenience function to get default wavelengths if None were set...
         :return:
         """
-        self._wavenumbers = np.linspace(1115, 1671, cube.shape[0])
+        self._wavelengths = np.linspace(1115, 1671, cube.shape[0])
 
     def _getSpecArray(self, indices: List[Tuple[int, int]], preprocessed: bool) -> np.ndarray:
         """
         Gets the spectra at the indicated pixel coordinates
         :param indices: List of N (y, x) coordinate tuples
         :param preprocessed: whether or not to get the preprocessed or raw spectra
-        :return: Shape (N x M) array of N spectra with M wavenumbers
+        :return: Shape (N x M) array of N spectra with M wavelengths
         """
         if preprocessed:
             cube: np.ndarray = self.getCube()

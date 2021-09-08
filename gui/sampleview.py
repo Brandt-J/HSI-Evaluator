@@ -26,10 +26,12 @@ from copy import deepcopy
 
 from logger import getLogger
 from projectPaths import getAppFolder
-from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject
 from dataObjects import Sample, getSpectraFromIndices
 from loadNumpyCube import loadNumpyCube
+from legacyConvert import assertUpToDateSample
+from gui.graphOverlays import GraphView
+from gui.dbWin import DBUploadWin
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -71,6 +73,8 @@ class MultiSampleView(QtWidgets.QScrollArea):
         newSampleData: 'Sample' = Sample()
         with open(fpath, "rb") as fp:
             loadedSampleData: 'Sample' = pickle.load(fp)
+
+        loadedSampleData = assertUpToDateSample(loadedSampleData)
         newSampleData.__dict__.update(loadedSampleData.__dict__)
         self._createNewSampleFromSampleData(newSampleData)
         
@@ -118,13 +122,13 @@ class MultiSampleView(QtWidgets.QScrollArea):
         assert activeSample is not None
         return activeSample
 
-    def getWavenumbers(self) -> np.ndarray:
-        return self._sampleviews[0].getWavenumbers()
+    def getWavelengths(self) -> np.ndarray:
+        return self._sampleviews[0].getWavelengths()
 
     def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary, from the active sampleview
-        :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
+        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for view in self._sampleviews:
@@ -136,7 +140,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
     def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
         """
         Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
-        :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
+        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, Dict[str, np.ndarray]] = {}
         for view in self._sampleviews:
@@ -163,6 +167,14 @@ class MultiSampleView(QtWidgets.QScrollArea):
         for view in self._sampleviews:
             backgrounds[view.getName()] = view.getAveragedBackground()
         return backgrounds
+
+    def closeAllSamples(self) -> None:
+        """
+        Closes all opened sample views.
+        """
+        for sample in self._sampleviews:
+            sample.close()
+        self._recreateLayout()
 
     @QtCore.pyqtSlot(str)
     def _viewClosed(self, samplename: str) -> None:
@@ -243,6 +255,7 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._mainWindow: Union[None, 'MainWindow'] = None
         self._graphView: 'GraphView' = GraphView()
+        self._dbWin: DBUploadWin = DBUploadWin()
         self._logger: 'Logger' = getLogger('SampleView')
 
         self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
@@ -259,6 +272,9 @@ class SampleView(QtWidgets.QMainWindow):
         self._activeBtn: ActivateToggleButton = ActivateToggleButton()
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
+        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
         self._selectBrightBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Bright")
         self._selectDarkBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Dark")
         self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
@@ -326,8 +342,8 @@ class SampleView(QtWidgets.QMainWindow):
     def getGraphView(self) -> 'GraphView':
         return self._graphView
 
-    def getWavenumbers(self) -> np.ndarray:
-        return self._sampleData.specObj.getWavenumbers()
+    def getWavelengths(self) -> np.ndarray:
+        return self._sampleData.specObj.getWavelengths()
 
     def getAveragedBackground(self) -> np.ndarray:
         """
@@ -376,13 +392,24 @@ class SampleView(QtWidgets.QMainWindow):
 
     def getVisibleLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
-        Gets the labelled Spectra, in form of a dictionary.
-        :return: Dictionary [className, NxM array of N spectra with M wavenumbers]
+        Gets the labelled Spectra that are currently set as visible, in form of a dictionary.
+        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             if self._mainWindow.classIsVisible(name):
                 spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getNotPreprocessedCube())
+        return spectra
+
+    def getAllLabelledSpectra(self) -> Dict[str, np.ndarray]:
+        """
+        Gets all the labelled spectra in form of a dictionary.
+        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
+        """
+        spectra: Dict[str, np.ndarray] = {}
+        for name, indices in self._classes2Indices.items():
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)),
+                                                  self._sampleData.specObj.getNotPreprocessedCube())
         return spectra
 
     def getSelectedMaxBrightness(self) -> float:
@@ -406,6 +433,12 @@ class SampleView(QtWidgets.QMainWindow):
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()
 
+    def isSelectedForTraining(self) -> bool:
+        return self._trainCheckBox.isChecked()
+
+    def isSelectedForInference(self) -> bool:
+        return self._inferenceCheckBox.isChecked()
+
     def activate(self) -> None:
         self._activeBtn.setChecked(True)
         self._activeBtn.setEnabled(False)
@@ -425,18 +458,6 @@ class SampleView(QtWidgets.QMainWindow):
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
 
-    def _renameSample(self) -> None:
-        newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
-        if ok and newName != '':
-            self._logger.info(f"Renaming {self._name} into {newName}")
-            self._name = newName
-            self._nameLabel.setText(newName)
-            self.Renamed.emit()
-
-    def _checkActivation(self) -> None:
-        if self._activeBtn.isChecked():
-            self.Activated.emit(self._name)
-
     def createLayout(self) -> None:
         adjustLayout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         adjustLayout.addWidget(VerticalLabel("Brightness"), 0, 0)
@@ -451,7 +472,54 @@ class SampleView(QtWidgets.QMainWindow):
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
+        nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
+        nameGroup.setLayout(QtWidgets.QHBoxLayout())
+        nameGroup.layout().addWidget(self._editNameBtn)
+        nameGroup.layout().addWidget(self._nameLabel)
+
+        clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Usage in classification:")
+        clsGroup.setLayout(QtWidgets.QHBoxLayout())
+        clsGroup.layout().addWidget(self._trainCheckBox)
+        clsGroup.layout().addWidget(self._inferenceCheckBox)
+
+        actionsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Actions")
+        actionsGroup.setLayout(QtWidgets.QHBoxLayout())
+        actionsGroup.layout().addWidget(self._uploadBtn)
+        actionsGroup.layout().addWidget(self._closeBtn)
+
+        toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        toolGroup.setFlat(True)
+        toolGroup.setLayout(QtWidgets.QHBoxLayout())
+        toolGroup.layout().addWidget(self._activeBtn)
+        toolGroup.layout().addStretch()
+        toolGroup.layout().addWidget(nameGroup)
+        toolGroup.layout().addStretch()
+        toolGroup.layout().addWidget(clsGroup)
+        toolGroup.layout().addStretch()
+        toolGroup.layout().addWidget(actionsGroup)
+
+        self._toolbar.addWidget(toolGroup)
+
+    def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
+        self._dbWin.close()
+        a0.accept()
+
+    def _renameSample(self) -> None:
+        newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
+        if ok and newName != '':
+            self._logger.info(f"Renaming {self._name} into {newName}")
+            self._name = newName
+            self._nameLabel.setText(newName)
+            self.Renamed.emit()
+
+    def _checkActivation(self) -> None:
+        if self._activeBtn.isChecked():
+            self.Activated.emit(self._name)
+
     def _configureWidgets(self) -> None:
+        self._dbWin.setSampleView(self)
+        self._dbWin.UploadFinished.connect(self._sqlUploadFinished)
+
         self._brightnessSlider.setMinimum(-255)
         self._brightnessSlider.setMaximum(255)
         self._brightnessSlider.setValue(0)
@@ -479,21 +547,22 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._editNameBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogResetButton')))
         self._editNameBtn.released.connect(self._renameSample)
+        self._editNameBtn.setToolTip("Rename Sample.")
 
         self._closeBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogDiscardButton')))
         self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
+        self._closeBtn.setToolTip("Close Sample.")
+
+        self._uploadBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowUp')))
+        self._uploadBtn.released.connect(self._uploadToSQL)
+        self._uploadBtn.setToolTip("Upload Spectra to SQL Database.")
+
+        self._trainCheckBox.setChecked(True)
+        self._inferenceCheckBox.setChecked(True)
 
         self._selectBrightBtn.released.connect(self._selectBrightPixels)
         self._selectDarkBtn.released.connect(self._selectDarkPixels)
         self._selectNoneBtn.released.connect(self._selectNone)
-
-        self._toolbar.addWidget(self._activeBtn)
-        self._toolbar.addWidget(QtWidgets.QLabel('      '))
-        self._toolbar.addWidget(self._editNameBtn)
-        self._toolbar.addWidget(QtWidgets.QLabel('      '))
-        self._toolbar.addWidget(self._nameLabel)
-        self._toolbar.addWidget(QtWidgets.QLabel('      '))
-        self._toolbar.addWidget(self._closeBtn)
 
     def _establish_connections(self) -> None:
         self._activeBtn.toggled.connect(self._checkActivation)
@@ -546,6 +615,21 @@ class SampleView(QtWidgets.QMainWindow):
         if ret == QtWidgets.QMessageBox.Yes:
             self._classes2Indices = {}
             self._graphView.deselectAll()
+
+    def _uploadToSQL(self) -> None:
+        """
+        Open the window for uploading sample spectra to the SQL database.
+        """
+        self._mainWindow.disableWidgets()
+        self._dbWin.recreateLayout()
+        self._dbWin.show()
+
+    def _sqlUploadFinished(self) -> None:
+        """
+        Triggered when the SQL upload has finished.
+        """
+        self._mainWindow.enableWidgets()
+        self._dbWin.hide()
 
 
 class VerticalLabel(QtWidgets.QLabel):

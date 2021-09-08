@@ -295,8 +295,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._samplesToClassify: List['SampleView'] = []  # List for keeping track of opened samples to classify
         self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
 
-        self._trainSampleSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
-        self._applySampleSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Update Classification")
@@ -393,13 +391,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         """
         self._preprocessingRequired = True
 
-    def updateSampleSelectorComboBoxes(self) -> None:
-        for combobox in [self._trainSampleSelector, self._applySampleSelector]:
-            combobox.clear()
-            combobox.addItem("All Samples")
-            for sample in self._parent.getAllSamples():
-                combobox.addItem(sample.getName())
-
     def _configureWidgets(self) -> None:
         self._transpSlider.setMinimum(0)
         self._transpSlider.setValue(80)
@@ -417,7 +408,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._clfCombo.addItems([clf.title for clf in self._classifiers])
         self._clfCombo.currentTextChanged.connect(self._activateClassifier)
-        self.updateSampleSelectorComboBoxes()
 
     def _createLayout(self) -> None:
         self._layout.addWidget(QtWidgets.QLabel("Select Classifier:"))
@@ -428,8 +418,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Options:")
         optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         optnGroup.setLayout(optnLayout)
-        optnLayout.addRow("Train on", self._trainSampleSelector)
-        optnLayout.addRow("Apply to", self._applySampleSelector)
         optnLayout.addRow("Test Fraction", self._testFracSpinBox)
         optnLayout.addRow("Exlude Background", self._excludeBackgroundCheckbox)
         optnLayout.addRow(self._updateBtn)
@@ -444,29 +432,19 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
     def _getTrainSamples(self) -> List['SampleView']:
         """Gets a list of the samples that shall be used for classifier training."""
-        return self._getSamplesAccordingSelector(self._trainSampleSelector)
+        trainSamples: List['SampleView'] = []
+        for sample in self._parent.getAllSamples():
+            if sample.isSelectedForTraining():
+                trainSamples.append(sample)
+        return trainSamples
 
     def _getInferenceSamples(self) -> List['SampleView']:
         """Gets a list of the samples that shall be used for classifier inference."""
-        return self._getSamplesAccordingSelector(self._applySampleSelector)
-
-    def _getSamplesAccordingSelector(self, selector: QtWidgets.QComboBox) -> List['SampleView']:
-        """
-        Gets a list of samples according the indicated combobox
-        :param selector: The QComboBox to use as sample indicator.
-        """
-        allSamples: List['SampleView'] = self._parent.getAllSamples()
-        samples: List['SampleView'] = []
-        sampleName: str = selector.currentText()
-        if sampleName == "All Samples":
-            samples = allSamples
-        else:
-            for sample in allSamples:
-                if sample.getName() == sampleName:
-                    samples = [sample]
-                    break
-
-        return samples
+        trainSamples: List['SampleView'] = []
+        for sample in self._parent.getAllSamples():
+            if sample.isSelectedForInference():
+                trainSamples.append(sample)
+        return trainSamples
 
     def _placeClfControlsToLayout(self) -> None:
         """Places the controls of the currently selected classifier into the layout."""
@@ -552,7 +530,7 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
             t0 = time.time()
             specObj: 'SpectraObject' = sample.specObj
             specObj.applyPreprocessing(ignoreBackground=ignoreBackground)
-            classifier.setWavenumbers(specObj.getWavenumbers())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
+            classifier.setWavelengths(specObj.getWavelengths())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
             logger.debug(f"Preprocessing sample {sample.name} took {round(time.time()-t0, 2)} seconds ({i+1} of {numSamplesTotal} samples finished)")
     else:
         logger.debug("No Preprocessing required, skipping it.")

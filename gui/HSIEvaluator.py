@@ -26,6 +26,7 @@ import pickle
 from logger import getLogger
 from dataObjects import View, getFilePathHash
 from loadNumpyCube import loadNumpyCube
+from legacyConvert import assertUpToDateView
 from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
@@ -60,7 +61,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._resultPlots.updatePlots)
         sampleView.Renamed.connect(self._resultPlots.updatePlots)
-        sampleView.Renamed.connect(self._clfWidget.updateSampleSelectorComboBoxes)
         sampleView.BackgroundSelectionChanged.connect(self._clfWidget.forcePreprocessing)
 
         graphView: 'GraphView' = sampleView.getGraphView()
@@ -97,7 +97,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
         """
         Gets the currently labelled Spectra from the currently active sampleview.
-        :return: Dictionary[className, (NxM) specArray of N spectra with M wavenumbers
+        :return: Dictionary[className, (NxM) specArray of N spectra with M wavelengths
         """
         return self._multiSampleView.getLabelledSpectraFromActiveView()
 
@@ -135,8 +135,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def getPreprocessors(self) -> List['Preprocessor']:
         return self._preprocSelector.getPreprocessors()
 
-    def getWavenumbers(self) -> np.ndarray:
-        return self._multiSampleView.getWavenumbers()
+    def getWavelengths(self) -> np.ndarray:
+        return self._multiSampleView.getWavelengths()
 
     def getCurrentColor(self) -> Tuple[int, int, int]:
         return self._clsCreator.getCurrentColor()
@@ -167,7 +167,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.enableWidgets()
         self.showMaximized()
-        self._clfWidget.updateSampleSelectorComboBoxes()
         self._clfWidget.forcePreprocessing()
 
     def getDescriptorLibrary(self) -> 'DescriptorLibrary':
@@ -206,8 +205,10 @@ class MainWindow(QtWidgets.QMainWindow):
         :fname: full path to the file to load.
         """
         with open(fname, "rb") as fp:
-            view: View = pickle.load(fp)
-            view.legacyConvert()
+            loadedView: View = pickle.load(fp)
+            loadedView = assertUpToDateView(loadedView)
+        view: View = View()
+        view.__dict__.update(loadedView.__dict__)
 
         if view.title != '':
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
@@ -215,8 +216,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._preprocSelector.selectPreprocessors(view.processStack)
         self.enableWidgets()
         self._resultPlots.updatePlots()
-        self._clfWidget.updateSampleSelectorComboBoxes()
         self._clfWidget.forcePreprocessing()
+        self.showMaximized()
 
     def _export(self) -> None:
         raise NotImplementedError
@@ -298,6 +299,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
         self._multiSampleView.saveSamples()
+        self._multiSampleView.closeAllSamples()
 
 
 def main():

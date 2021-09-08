@@ -28,7 +28,7 @@ for file in os.listdir(folder):
 # plt.imshow(np.mean(imgArray, axis=0), cmap='gray')
 # imgArray = imgOps.halve_imgCube_resolution(imgArray)
 # specPlot: plt.Figure = imgOps.get_random_spectra(imgArray, 40)
-# wavenumbers = np.arange(imgArray.shape[0])
+# wavelengths = np.arange(imgArray.shape[0])
 # mask: np.ndarray = imgOps.get_average_intensity_mask(imgArray, threshold=0.0)
 # # mask = cv2.erode(mask, np.ones((3, 3)), iterations=5)
 # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((7, 7)), iterations=10)
@@ -46,7 +46,7 @@ for file in os.listdir(folder):
 #                      desc.TriangleShape(25, 50, 75)]
 #
 # totalSpecCount: int = numSpectra*len(specsPerLabel)
-# allSpecs: np.ndarray = np.zeros((totalSpecCount, len(wavenumbers)))
+# allSpecs: np.ndarray = np.zeros((totalSpecCount, len(wavelengths)))
 # featureVecs: np.ndarray = np.zeros((totalSpecCount, len(descriptors)))
 # assignments: np.ndarray = np.zeros(totalSpecCount, dtype=np.uint32)
 #

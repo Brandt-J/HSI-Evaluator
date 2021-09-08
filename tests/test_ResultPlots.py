@@ -62,7 +62,7 @@ class TestSpectraPreview(TestCase):
                                           'class2': np.random.rand(numSpecs, numWavenums),
                                           'class3': np.random.rand(numSpecs, numWavenums)}
 
-        self._mainWin.getWavenumbers = lambda: np.arange(numWavenums)
+        self._mainWin.getWavelengths = lambda: np.arange(numWavenums)
         self._mainWin.getBackgroundOfActiveSample = lambda: np.zeros(numWavenums)
         self._mainWin.getBackgroundsOfAllSamples = lambda: {'sample1': np.zeros(numWavenums),
                                                             'sample2': np.zeros(numWavenums),
