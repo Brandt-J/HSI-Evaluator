@@ -1,7 +1,6 @@
 """
-GEPARD - Gepard-Enabled PARticle Detection
-Copyright (C) 2018  Lars Bittrich and Josef Brandt, Leibniz-Institut für
-Polymerforschung Dresden e. V. <bittrich-lars@ipfdd.de>
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +21,8 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from typing import *
 from enum import Enum, auto
 import numpy as np
+
+from gui.nodegraph.gradients import addBlueGradientToPainter
 if TYPE_CHECKING:
     from gui.nodegraph.nodegraph import NodeGraph
     from logging import Logger
@@ -72,9 +73,6 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         inputGroup: QtWidgets.QGroupBox = getGroupBox(QtWidgets.QGridLayout())
         rowOffset = 1 if np.all([inp.isConnected for inp in self._inputs]) else 0
         for i, inp in enumerate(self._inputs):
-            if not inp.isConnected():
-                inputGroup.layout().addWidget(inp.getWidget(), 0, i)
-
             inputGroup.layout().addWidget(inp.getLabelWidget(), rowOffset, i)
 
         bodyGroup: QtWidgets.QGroupBox = getGroupBox(QtWidgets.QVBoxLayout())
@@ -290,7 +288,7 @@ class Input(QtWidgets.QGraphicsObject):
     def __init__(self, name: str, dataTypes: List['DataType']):
         """
         :param name: Name of the input to display
-        :param dataType: Type of the input.
+        :param dataTypes: Type that the input can accept.
         """
         super(Input, self).__init__()
         self.name: str = name
@@ -322,8 +320,21 @@ class Input(QtWidgets.QGraphicsObject):
     def getLabelWidget(self) -> QtWidgets.QLabel:
         return self._qlabel
 
-    def getDataType(self) -> 'DataType':
-        return self._type
+    def isCompatibleToOutput(self, output: 'Output') -> bool:
+        """
+        Checks, whether the input is compatible to the given output.
+        :param output: The output object to check for.
+        """
+        isCompatible: bool = False
+        if output.getDataType() in self._types:
+            isCompatible = True
+        return isCompatible
+
+    def getCompatibleDataTypes(self) -> List['DataType']:
+        """
+        Returns the datatypes this input is compatible to.
+        """
+        return self._types
 
     def getConnectedNode(self) -> 'BaseNode':
         otherNode: 'BaseNode' = None
@@ -338,14 +349,14 @@ class Input(QtWidgets.QGraphicsObject):
         return outID
 
     def acceptOutputConnection(self, otherOutput: 'Output') -> None:
-        assert otherOutput.getVarType() == self._type
+        assert otherOutput.getDataType() in self._types
         self._connectedOutput = otherOutput
 
     def disconnect(self) -> None:
         self._connectedOutput = None
 
     def paint(self, painter: QtGui.QPainter, option, widget) -> None:
-        painter = self._type.formatPainter(painter)
+        painter = addBlueGradientToPainter(painter)
         painter.drawEllipse(self.boundingRect())
 
 
@@ -370,7 +381,7 @@ class Output(QtWidgets.QGraphicsObject):
     def getValue(self) -> object:
         return self._node.getOutput(self.name)
 
-    def getVarType(self) -> 'DataType':
+    def getDataType(self) -> 'DataType':
         return self._type
 
     def getLabelWidget(self) -> QtWidgets.QLabel:
@@ -381,13 +392,13 @@ class Output(QtWidgets.QGraphicsObject):
 
     def connectTo(self, otherInput: 'Input') -> bool:
         success: bool = False
-        if otherInput.getDataType() == self._type:
+        if otherInput.isCompatibleToOutput(self):
             otherInput.acceptOutputConnection(self)
             success = True
         return success
 
     def paint(self, painter: QtGui.QPainter, option, widget) -> None:
-        painter = self._type.formatPainter(painter)
+        painter = addBlueGradientToPainter(painter)
         painter.drawEllipse(self.boundingRect())
 
 

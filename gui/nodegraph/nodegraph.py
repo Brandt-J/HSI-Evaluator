@@ -1,7 +1,6 @@
 """
-GEPARD - Gepard-Enabled PARticle Detection
-Copyright (C) 2018  Lars Bittrich and Josef Brandt, Leibniz-Institut für
-Polymerforschung Dresden e. V. <bittrich-lars@ipfdd.de>
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -24,9 +23,6 @@ import os
 from logger import getLogger
 from gui.nodegraph.nodes import *
 from gui.nodegraph.nodecore import *
-
-nodeTypes: List[Type['BaseNode']] = [val for key, val in locals().items() if key.startswith('Node')]
-nodeTypes: Dict[str, Type['BaseNode']] = {node.label: node for node in nodeTypes}
 
 
 class NodeGraph(QtWidgets.QGraphicsView):
@@ -52,7 +48,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._tempConnection: 'ConnectionWire' = None
         self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
         self._addNodesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Add Node")
-        for nodeClass in nodeTypes.keys():
+        for nodeClass in addableNodeTypes.keys():
             self._addNodesMenu.addAction(nodeClass)
         self._contextMenu.addMenu(self._addNodesMenu)
         self._contextMenu.addSeparator()
@@ -61,20 +57,14 @@ class NodeGraph(QtWidgets.QGraphicsView):
 
         self.verticalScrollBar().valueChanged.connect(self.updateScene)
 
-        self._inputNode: StartNode = StartNode(self, self._logger)
+        self._inputNode: NodeStart = NodeStart(self, self._logger)
         self._inputNode.id = 0
-        self.scene().addItem(self._inputNode)
-        self._resultNode: NodeProcessContours = NodeProcessContours(self, self._logger)
-        self._resultNode.id = 1
-        self.scene().addItem(self._resultNode)
-        if self._detectParent is not None:
-            self._inputNode.detectionState.connect(self._detectParent.updateDetectionState)
-            self._resultNode.detectionState.connect(self._detectParent.updateDetectionState)
+        self._nodeScatterPlot: NodeScatterPlot = NodeScatterPlot(self, self._logger)
+        self._nodeSpecPlot: NodeSpecPlot = NodeSpecPlot(self, self._logger)
+        self._nodeClf: NodeClassification = NodeClassification(self, self._logger)
 
-
-        self._getNeuralNetSetup()
-        # if createWaterShedNodes:
-        #     self._getBasicWatershedSetup()
+        for node in [self._inputNode, self._nodeScatterPlot, self._nodeSpecPlot, self._nodeClf]:
+            self.scene().addItem(node)
 
     def saveConfig(self, path: str) -> None:
         nodeConfig: List[dict] = [node.toDict() for node in self._nodes + [self._inputNode, self._resultNode]]
@@ -82,7 +72,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
             json.dump(nodeConfig, fp)
 
     def loadConfig(self, path: str) -> None:
-        pass
+        raise NotImplementedError
         # self._deleteAllNodesAndConnections()
         # with open(path, "r") as fp:
         #     nodeConfigs: List[dict] = json.load(fp)
@@ -94,12 +84,13 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         Takes a list of nodeconfigs and creates the nodes.
         """
-        for config in nodeConfigs:
-            nodeType: Type['BaseNode'] = nodeTypes[config["label"]]
-            if nodeType not in [NodeRGBInput, NodeProcessContours]:
-                newNode: 'BaseNode' = self._addNode(nodeType)
-                newNode.id = config["id"]
-                newNode.fromDict(config)
+        raise NotImplementedError
+        # for config in nodeConfigs:
+        #     nodeType: Type['BaseNode'] = addableNodeTypes[config["label"]]
+        #     if nodeType not in [NodeRGBInput, NodeProcessContours]:
+        #         newNode: 'BaseNode' = self._addNode(nodeType)
+        #         newNode.id = config["id"]
+        #         newNode.fromDict(config)
 
     def _createConnectionsFromConfig(self, nodeConfigs: List[dict]) -> None:
         """
@@ -116,7 +107,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 connectedNode: 'BaseNode' = self._getNodeOfID(connectedNodeID)
                 output: 'Output' = connectedNode.getOutputs()[outputID]
                 self._addConnection(inp, output)
-
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.RightButton:
@@ -225,8 +215,8 @@ class NodeGraph(QtWidgets.QGraphicsView):
             elif action == "Load Default Neural Net":
                 self._getNeuralNetSetup()
 
-            elif action in nodeTypes:
-                nodeClass: Type['BaseNode'] = nodeTypes[action]
+            elif action in addableNodeTypes:
+                nodeClass: Type['BaseNode'] = addableNodeTypes[action]
                 pos: QtCore.QPointF = self.mapToScene(self.mapFromGlobal(pos))
                 self._addNode(nodeClass, pos)
 
@@ -349,7 +339,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._detectParent.disableAutoUpdateDetection()
 
     def _addNode(self, nodeClass: Type['BaseNode'], pos: QtCore.QPointF = None) -> 'BaseNode':
-        assert nodeClass in nodeTypes.values(), f"Requested nodeType {nodeClass} does not exist."
+        assert nodeClass in addableNodeTypes.values(), f"Requested nodeType {nodeClass} does not exist."
         if pos is None:
             inputHeight: float = self._inputNode.preferredHeight()
             minSpace: float = 50
@@ -461,17 +451,17 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 inp, outp = self._dragFromIn, inOrOut
 
             if inp is not None and outp is not None:
-                if inp.getDataType() == outp.getDataType():
+                if inp.isCompatibleToOutput(outp):
                     if inp.isConnected():
                         self.capConnectionFrom(inp)
                     self._addConnection(inp, outp)
                 else:
                     QtWidgets.QMessageBox.warning(self, "Incompatible Sockets",
-                                                  f"cannot connect {inp.getDataType()} to {outp.getDataType()}")
+                                                  f"cannot connect {inp.getCompatibleDataTypes()} to {outp.getCompatibleDataTypes()}")
 
     def _addConnection(self, inp: 'Input', outp: 'Output') -> None:
         connectSucess: bool = outp.connectTo(inp)
-        assert connectSucess, f'Could not input type {inp.getDataType()} to output type {outp.getVarType()}'
+        assert connectSucess, f'Could not input type {inp.getCompatibleDataTypes()} to output type {outp.getDataType()}'
         newConn: ConnectionWire = ConnectionWire(inp, outp)
         self._connections.append(newConn)
         self.scene().addItem(newConn)

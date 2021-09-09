@@ -1,7 +1,6 @@
 """
-GEPARD - Gepard-Enabled PARticle Detection
-Copyright (C) 2018  Lars Bittrich and Josef Brandt, Leibniz-Institut für
-Polymerforschung Dresden e. V. <bittrich-lars@ipfdd.de>
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,6 +21,9 @@ from PyQt5 import QtGui, QtCore
 
 
 def addBlueGradientToPainter(painter: QtGui.QPainter) -> QtGui.QPainter:
+    """
+    Adds a gradient from darkBlue to blue to the painter and returns it.
+    """
     painter.setPen(QtCore.Qt.darkBlue)
     painter.setBrush(QtCore.Qt.blue)
     return painter

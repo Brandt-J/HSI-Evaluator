@@ -11,8 +11,11 @@ from gui.nodegraph.nodegraph import NodeGraph
 
 
 class TestNodes(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
+
     def setUp(self) -> None:
-        self.app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
         self.logger: logging.Logger = logging.getLogger('TestLogger')
         self.logger.addHandler(logging.StreamHandler())
         self.logger.setLevel(logging.DEBUG)
@@ -22,8 +25,12 @@ class TestNodes(unittest.TestCase):
         del self.logger
         del self.nodegraph
 
-    def test_createNodeGraph(self) -> None:
-        print(self.nodegraph)
+    def test_connectNodes(self) -> None:
+        startNode: NodeStart = self.nodegraph._inputNode
+        scatterPlot: NodeScatterPlot = self.nodegraph._nodeScatterPlot
+
+        self.nodegraph._addConnection(scatterPlot._inputs[0], startNode._outputs[0])
+
     # def test_getNumberOfNodes(self):
     #     numNodes = self.nodegraph.getNumberOfNodes()
     #     self.assertEqual(numNodes, 5)
@@ -54,7 +61,6 @@ class TestNodes(unittest.TestCase):
     #     self.assertEqual(numNodes, -1)
     #
     # def test_isConnectedToStartAndGetNodePath(self):
-    #     self.createMinimalWatershedSetup()
     #     nodePath: List['BaseNode'] = self.nodegraph._getNodePath()
     #     expectedPath: List['BaseNode'] = [self.inpNode, self.grayNode, self.threshNode, self.watershedNode, self.resultNode]
     #     self.assertEqual(nodePath, expectedPath)
@@ -64,7 +70,7 @@ class TestNodes(unittest.TestCase):
     #     self.assertFalse(self.watershedNode._isConnectedToRGBInput())
     #     nodePath = self.nodegraph._getNodePath()
     #     self.assertEqual(nodePath, [])
-    #
+
     # def test_getNodeDict(self):
     #     self.createMinimalWatershedSetup()
     #     threshDict: dict = self.threshNode.toDict()
