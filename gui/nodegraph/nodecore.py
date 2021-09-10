@@ -19,10 +19,10 @@ If not, see <https://www.gnu.org/licenses/>.
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from typing import *
-from enum import Enum, auto
+from enum import Enum
 import numpy as np
 
-from gui.nodegraph.gradients import addBlueGradientToPainter
+from gui.nodegraph.gradients import addBlueGradientToPainter, getIOGradient
 if TYPE_CHECKING:
     from gui.nodegraph.nodegraph import NodeGraph
     from logging import Logger
@@ -34,6 +34,7 @@ class BaseNode(QtWidgets.QGraphicsWidget):
     """
     label = 'BaseNode'
     defaultParams: dict = {}
+    isRequiredAndUnique: bool = False  # if yes, this node will be created automatically and cannot be deleted or added again.
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(BaseNode, self).__init__()
@@ -55,8 +56,8 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         self.setLayout(self._layout)
         self._origLayoutSize: QtCore.QSize = QtCore.QSize()
         self._pen: QtGui.QPen = QtGui.QPen(QtCore.Qt.black, 2)
-        self._ioGradient: QtGui.QLinearGradient = None
-        self._bodyGradient: QtGui.QLinearGradient = None
+        self._ioGradient: Union[None, QtGui.QLinearGradient] = None
+        self._bodyGradient: Union[None, QtGui.QLinearGradient] = None
         self._inputStop: int = np.nan  # Vertical position where inputArea stops
         self._bodyHeight: int = np.nan  # Vertical height of body group
 
@@ -92,8 +93,6 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         self._origLayoutSize = self.preferredSize()
         self._updateGradients()
         self._addInputOutputItems()
-        if self._showPreviewBtn:
-            self._addPreviewButton()
 
         self._inputStop = int(inputGroup.rect().height() + self._layout.spacing())
         self._bodyHeight = int(bodyGroup.geometry().height() + self._layout.spacing())
@@ -127,20 +126,8 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         """
         pass
 
-    def pushPreview(self) -> None:
-        """
-        Create a preview image and send it to the detection preview window.
-        """
-        if self._isConnectedToRGBInput():
-            prevImg: np.ndarray = self._getPreviewImage()
-            if prevImg is not None:
-                self.previewGenerated.emit(prevImg)
-
     def _isConnectedToRGBInput(self) -> bool:
-        return recursiveIsConnectedToRGBInputNode(self)
-
-    def _getPreviewImage(self) -> np.ndarray:
-        return None
+        return recursiveIsConnectedToInputNode(self)
 
     def select(self) -> None:
         self._updateGradients(selected=True)
@@ -189,36 +176,41 @@ class BaseNode(QtWidgets.QGraphicsWidget):
             outp.setPos(xPos, yPos)
             outp.dragConnection.connect(self._startDragConnection)
 
-    def _addPreviewButton(self) -> None:
-        prevBtn: PreviewButton = PreviewButton(self)
-        prevBtn.setParentItem(self)
-        diameter = prevBtn.diameter
-        margin = 5
-        nodeWidth = self.preferredSize().width()
-        prevBtn.setPos(nodeWidth - diameter - margin, margin)
-
     def _getIOGradient(self, selected: bool = False) -> QtGui.QLinearGradient:
-        grad: QtGui.QLinearGradient = QtGui.QLinearGradient(0, 0, self.preferredWidth(), 0)
-        if selected:
-            grad.setColorAt(0, QtCore.Qt.gray)
-            grad.setColorAt(0.8, QtCore.Qt.lightGray)
-            grad.setColorAt(1, QtCore.Qt.white)
-        else:
-            grad.setColorAt(0, QtCore.Qt.darkGray)
-            grad.setColorAt(0.8, QtCore.Qt.gray)
-            grad.setColorAt(1, QtCore.Qt.lightGray)
+        grad: QtGui.QLinearGradient = QtGui.QLinearGradient(0, 0, 0, self.preferredHeight())
+        inputColor: Tuple[int, int, int] = (100, 255, 220)
+        if len(self._inputs) > 0:
+            inputTypes: List['DataType'] = self._inputs[0].getCompatibleDataTypes()
+            if len(inputTypes) == 1:
+                inputColor: Tuple[int, int, int] = inputTypes[0].getColor()
+
+        outputColor: Tuple[int, int, int] = (100, 100, 100)
+        if len(self._outputs) > 0:
+            outputColor: Tuple[int, int, int] = self._outputs[0].getDataType().getColor()
+
+        grad = getIOGradient(grad, selected, inputColor, outputColor)
         return grad
 
     def _getBodyGradient(self, selected: bool = False) -> QtGui.QLinearGradient:
         grad: QtGui.QLinearGradient = QtGui.QLinearGradient(0, 0, self.preferredWidth(), 0)
         if selected:
-            grad.setColorAt(0, QtGui.QColor(230, 255, 230))
-            grad.setColorAt(0.2, QtGui.QColor(180, 255, 180))
-            grad.setColorAt(1, QtGui.QColor(128, 128, 128))
+            if self.isRequiredAndUnique:
+                grad.setColorAt(0, QtGui.QColor(255, 233, 230))
+                grad.setColorAt(0.2, QtGui.QColor(255, 180, 180))
+                grad.setColorAt(1, QtGui.QColor(128, 128, 128))
+            else:
+                grad.setColorAt(0, QtGui.QColor(230, 255, 0))
+                grad.setColorAt(0.2, QtGui.QColor(180, 255, 0))
+                grad.setColorAt(1, QtGui.QColor(128, 128, 0))
         else:
-            grad.setColorAt(0, QtGui.QColor(200, 255, 200))
-            grad.setColorAt(0.2, QtGui.QColor(128, 255, 128))
-            grad.setColorAt(1, QtGui.QColor(64, 128, 64))
+            if self.isRequiredAndUnique:
+                grad.setColorAt(0, QtGui.QColor(255, 200, 200))
+                grad.setColorAt(0.2, QtGui.QColor(255, 128, 128))
+                grad.setColorAt(1, QtGui.QColor(128, 100, 100))
+            else:
+                grad.setColorAt(0, QtGui.QColor(200, 255, 0))
+                grad.setColorAt(0.2, QtGui.QColor(128, 255, 0))
+                grad.setColorAt(1, QtGui.QColor(64, 128, 0))
         return grad
 
     def _startDragConnection(self, slot: QtWidgets.QGraphicsObject) -> None:
@@ -269,6 +261,7 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         painter.setPen(self._pen)
         painter.setOpacity(self._alpha)
         painter.setBrush(self._ioGradient)
+
         path = QtGui.QPainterPath()
         path.addRoundedRect(self.boundingRect(), 10, 10)
         painter.drawPath(path)
@@ -490,16 +483,27 @@ class DataType(Enum):
     """
     The variations of (spectral) data that can be accepted or returned by a node
     """
-    CONTINUOUS = auto()
-    DISCRETE = auto()
+    CONTINUOUS = 0
+    DISCRETE = 1
+
+    def getColor(self) -> Tuple[int, int, int]:
+        """
+        Returns an RGB color representing the data type.
+        """
+        color: Tuple[int, int, int] = (0, 0, 0)
+        if self.value == 0:
+            color = (150, 255, 150)
+        elif self.value == 1:
+            color = (150, 150, 255)
+        return color
 
 
-def recursiveIsConnectedToRGBInputNode(node: 'BaseNode') -> bool:
+def recursiveIsConnectedToInputNode(node: 'BaseNode') -> bool:
     """
     Tests, if the node is connected to the RGB Input Node.
     """
 
-    def inputGoesToRGBNode(inp: 'Input') -> bool:
+    def inputGoesToStartNode(inp: 'Input') -> bool:
         goesToInput: bool = False
         connected = inp.getConnectedNode()
         if connected is not None:
@@ -509,9 +513,9 @@ def recursiveIsConnectedToRGBInputNode(node: 'BaseNode') -> bool:
     connectedToInput: bool = False
     for inp in node.getInputs():
         if inp.isConnected():
-            connectedToInput = inputGoesToRGBNode(inp)
+            connectedToInput = inputGoesToStartNode(inp)
             if not connectedToInput:
-                connectedToInput = recursiveIsConnectedToRGBInputNode(inp.getConnectedNode())
+                connectedToInput = recursiveIsConnectedToInputNode(inp.getConnectedNode())
             if connectedToInput:
                 break
 

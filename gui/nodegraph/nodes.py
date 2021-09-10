@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 class NodeStart(BaseNode):
     label = 'Spectra'
+    isRequiredAndUnique = True
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeStart, self).__init__(nodeGraphParent, logger, pos)
@@ -38,10 +39,11 @@ class NodeStart(BaseNode):
 
 class NodeScatterPlot(BaseNode):
     label = 'Scatter Plot'
+    isRequiredAndUnique = True
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeScatterPlot, self).__init__(nodeGraphParent, logger, pos)
-        self._inputs = [Input('Scatter Plot', [DataType.CONTINUOUS, DataType.DISCRETE])]
+        self._inputs = [Input('Scatter Plot', [DataType.DISCRETE])]
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> object:
@@ -50,6 +52,7 @@ class NodeScatterPlot(BaseNode):
 
 class NodeSpecPlot(BaseNode):
     label = 'Spectra Plot'
+    isRequiredAndUnique = True
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeSpecPlot, self).__init__(nodeGraphParent, logger, pos)
@@ -62,6 +65,7 @@ class NodeSpecPlot(BaseNode):
 
 class NodeClassification(BaseNode):
     label = 'Classification'
+    isRequiredAndUnique = True
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeClassification, self).__init__(nodeGraphParent, logger, pos)
@@ -72,12 +76,27 @@ class NodeClassification(BaseNode):
         return None
 
 
+class NodeDimReduct(BaseNode):
+    label = 'Dimensionality Reduction'
+
+    def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
+        super(NodeDimReduct, self).__init__(nodeGraphParent, logger, pos)
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS, DataType.DISCRETE])]
+        self._outputs = [Output(self, 'Spectra', DataType.DISCRETE)]
+        self._populateLayoutAndCreateIO()
+
+    def getOutput(self, outputName: str = '') -> object:
+        inputSpectra: np.ndarray = self._inputs[0].getValue()
+        return inputSpectra
+
+
 class NodeSNV(BaseNode):
-    label = 'SNV'
+    label = 'Standard Normal Variate'
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeSNV, self).__init__(nodeGraphParent, logger, pos)
-        self._inputs = [Input('Spectra Plot', [DataType.CONTINUOUS])]
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
+        self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> object:
@@ -90,20 +109,14 @@ class NodeNormalize(BaseNode):
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeNormalize, self).__init__(nodeGraphParent, logger, pos)
-        self._inputs = [Input('Spectra Plot', [DataType.CONTINUOUS])]
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
+        self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> object:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
         return inputSpectra
 
-# Here we define a dictionary of node classes that can be added to the nodegraph by the user.
-# Some "unique" ones have to be expluded, as they are in the nodegraph by default and cannot be there more
-# than one time.
-addableNodeTypes: List[Type['BaseNode']] = [val for key, val in locals().items()
-                                            if key.startswith('Node') and key not in ['NodeStart',
-                                                                                      'NodeScatterPlot',
-                                                                                      'NodeSpecPlot',
-                                                                                      'NodeClassification']]
 
-addableNodeTypes: Dict[str, Type['BaseNode']] = {node.label: node for node in addableNodeTypes}
+nodeTypes: List[Type['BaseNode']] = [val for key, val in locals().items() if key.startswith('Node')]
+nodeTypes: Dict[str, Type['BaseNode']] = {node.label: node for node in nodeTypes}

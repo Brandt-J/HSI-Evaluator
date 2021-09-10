@@ -48,8 +48,10 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._tempConnection: 'ConnectionWire' = None
         self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
         self._addNodesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Add Node")
-        for nodeClass in addableNodeTypes.keys():
-            self._addNodesMenu.addAction(nodeClass)
+        for nodeClassName, nodeClass in nodeTypes.items():
+            if not nodeClass.isRequiredAndUnique:
+                self._addNodesMenu.addAction(nodeClassName)
+
         self._contextMenu.addMenu(self._addNodesMenu)
         self._contextMenu.addSeparator()
         self._contextMenu.addAction("Save Graph")
@@ -63,8 +65,19 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._nodeSpecPlot: NodeSpecPlot = NodeSpecPlot(self, self._logger)
         self._nodeClf: NodeClassification = NodeClassification(self, self._logger)
 
-        for node in [self._inputNode, self._nodeScatterPlot, self._nodeSpecPlot, self._nodeClf]:
+        self._addRequiredNodes()
+        self._addNode(NodeSNV, QtCore.QPointF(50, 50))
+        self._addNode(NodeDimReduct, QtCore.QPointF(100, 100))
+
+    def _addRequiredNodes(self) -> None:
+        """
+        Adds the required nodes to the graph and positions them at reasonable places.
+        """
+        for node in self._getRequiredNodes():
             self.scene().addItem(node)
+        self._nodeClf.setPos(0, 400)
+        self._nodeSpecPlot.setPos(200, 400)
+        self._nodeScatterPlot.setPos(400, 400)
 
     def saveConfig(self, path: str) -> None:
         nodeConfig: List[dict] = [node.toDict() for node in self._nodes + [self._inputNode, self._resultNode]]
@@ -86,7 +99,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         raise NotImplementedError
         # for config in nodeConfigs:
-        #     nodeType: Type['BaseNode'] = addableNodeTypes[config["label"]]
+        #     nodeType: Type['BaseNode'] = nodeTypes[config["label"]]
         #     if nodeType not in [NodeRGBInput, NodeProcessContours]:
         #         newNode: 'BaseNode' = self._addNode(nodeType)
         #         newNode.id = config["id"]
@@ -107,20 +120,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 connectedNode: 'BaseNode' = self._getNodeOfID(connectedNodeID)
                 output: 'Output' = connectedNode.getOutputs()[outputID]
                 self._addConnection(inp, output)
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == QtCore.Qt.RightButton:
-            self._executeContextMenu(self.mapToGlobal(event.pos()))
-        else:
-            if event.button() == QtCore.Qt.LeftButton and self._selectedNode is not None:
-                self._deselectNode()
-            super(NodeGraph, self).mousePressEvent(event)
-            
-    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        if event.key() == QtCore.Qt.Key_Delete and self._selectedNode is not None:
-            self._deleteNode(self._selectedNode)
-        else:
-            super(NodeGraph, self).keyPressEvent(event)
 
     def selectNode(self, node: 'BaseNode') -> None:
         if self._selectedNode is not None:
@@ -215,8 +214,8 @@ class NodeGraph(QtWidgets.QGraphicsView):
             elif action == "Load Default Neural Net":
                 self._getNeuralNetSetup()
 
-            elif action in addableNodeTypes:
-                nodeClass: Type['BaseNode'] = addableNodeTypes[action]
+            elif action in nodeTypes:
+                nodeClass: Type['BaseNode'] = nodeTypes[action]
                 pos: QtCore.QPointF = self.mapToScene(self.mapFromGlobal(pos))
                 self._addNode(nodeClass, pos)
 
@@ -339,7 +338,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._detectParent.disableAutoUpdateDetection()
 
     def _addNode(self, nodeClass: Type['BaseNode'], pos: QtCore.QPointF = None) -> 'BaseNode':
-        assert nodeClass in addableNodeTypes.values(), f"Requested nodeType {nodeClass} does not exist."
+        assert nodeClass in nodeTypes.values(), f"Requested nodeType {nodeClass} does not exist."
         if pos is None:
             inputHeight: float = self._inputNode.preferredHeight()
             minSpace: float = 50
@@ -352,12 +351,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
 
         newNode: 'BaseNode' = nodeClass(self, self._logger, pos=pos)
         newNode.id = self._getNewNodeID()
-        newNode.previewGenerated.connect(self._showNodePreview)
-        if self._detectParent is not None:
-            newNode.detectionState.connect(self._detectParent.updateDetectionState)
-            newNode.parameterChanged.connect(self._detectParent.autoUpdateIfDesired)
-            if nodeClass == NodeContrastCurve:
-                newNode.setFullImage(self._detectParent.getFullImage())
 
         self._nodes.append(newNode)
         self.scene().addItem(newNode)
@@ -370,26 +363,31 @@ class NodeGraph(QtWidgets.QGraphicsView):
             self._removeConnection(wire)
 
     def _deleteNode(self, node: 'BaseNode') -> None:
-        assert node in self._nodes, f'Requested not present node to delete: {node}'
-        if self._detectParent is not None:
-            node.detectionState.disconnect()
-            node.parameterChanged.disconnect()
+        if node.isRequiredAndUnique:
+            QtWidgets.QMessageBox.about(self, "Warning", "This node is required and cannot be removed.")
 
-        for inp in node.getInputs():
-            if inp.isConnected():
-                self.capConnectionFrom(inp, drawNewConnection=False)
+        else:
 
-        for otherNode in self._nodes:
-            for inp in otherNode.getInputs():
-                if inp.getConnectedNode() is node:
+            assert node in self._nodes, f'Requested not present node to delete: {node}'
+            if self._detectParent is not None:
+                node.detectionState.disconnect()
+                node.parameterChanged.disconnect()
+
+            for inp in node.getInputs():
+                if inp.isConnected():
                     self.capConnectionFrom(inp, drawNewConnection=False)
 
-        self.scene().removeItem(node)
-        self._nodes.remove(node)
+            for otherNode in self._nodes:
+                for inp in otherNode.getInputs():
+                    if inp.getConnectedNode() is node:
+                        self.capConnectionFrom(inp, drawNewConnection=False)
+
+            self.scene().removeItem(node)
+            self._nodes.remove(node)
 
     def _getNewNodeID(self) -> int:
         """Get's a new unique Node id"""
-        curIDs: List[int] = [node.id for node in self._nodes + [self._resultNode, self._inputNode]]
+        curIDs: List[int] = [node.id for node in self._nodes + self._getRequiredNodes()]
         i: int = 0
         while True:
             if i in curIDs:
@@ -397,6 +395,12 @@ class NodeGraph(QtWidgets.QGraphicsView):
             else:
                 break
         return i
+
+    def _getRequiredNodes(self) -> List['BaseNode']:
+        """
+        Gets a list of the nodes that are always required for the nodegraph
+        """
+        return [self._inputNode, self._nodeSpecPlot, self._nodeScatterPlot, self._nodeClf]
 
     def disableAllNodes(self) -> None:
         for node in self._nodes + [self._resultNode, self._inputNode]:
@@ -426,6 +430,20 @@ class NodeGraph(QtWidgets.QGraphicsView):
 
     def updateScene(self) -> None:
         self.scene().update()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() == QtCore.Qt.Key_Delete and self._selectedNode is not None:
+            self._deleteNode(self._selectedNode)
+        else:
+            super(NodeGraph, self).keyPressEvent(event)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.RightButton:
+            self._executeContextMenu(self.mapToGlobal(event.pos()))
+        else:
+            if event.button() == QtCore.Qt.LeftButton and self._selectedNode is not None:
+                self._deselectNode()
+            super(NodeGraph, self).mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._tempConnection is not None:
@@ -476,9 +494,12 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._dragFromIn = self._dragFromOut = None
         self.scene().update()
 
-    def _getOverInputOutput(self, scenePos: QtCore.QPointF) -> Union[Input, Output]:
-        isOver: Union[Input, Output] = None
-        for node in self._nodes:
+    def _getOverInputOutput(self, scenePos: QtCore.QPointF) -> Union[None, Input, Output]:
+        """
+        Determines, if an input, an output or neither (None) is found at the given scene Position.
+        """
+        isOver: Union[None, Input, Output] = None
+        for node in self._nodes + self._getRequiredNodes():
             isOver = node.getInputOrOutputAtPos(scenePos)
             if isOver is not None:
                 break
