@@ -36,16 +36,27 @@ class NodeGraph(QtWidgets.QGraphicsView):
         scene.setItemIndexMethod(QtWidgets.QGraphicsScene.NoIndex)
         scene.setBackgroundBrush(QtCore.Qt.gray)
         self.setScene(scene)
+
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+        self._zoom = 0
+
+        self.setMinimumHeight(500)
+
         self.setRenderHint(QtGui.QPainter.Antialiasing)
         self._logger: 'Logger' = getLogger("NodeGraph")
 
         self._nodes: List['BaseNode'] = []  # Nodes, EXCEPT the start and end-Node
         self._connections: List['ConnectionWire'] = []
-        self._selectedNode: 'BaseNode' = None
+        self._selectedNode: Union[None, 'BaseNode'] = None
 
-        self._dragFromOut: 'Output' = None
-        self._dragFromIn: 'Input' = None
-        self._tempConnection: 'ConnectionWire' = None
+        self._dragFromOut: Union[None, 'Output'] = None
+        self._dragFromIn: Union[None, 'Input'] = None
+        self._tempConnection: Union[None, 'ConnectionWire'] = None
         self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
         self._addNodesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Add Node")
         for nodeClassName, nodeClass in nodeTypes.items():
@@ -68,6 +79,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._addRequiredNodes()
         self._addNode(NodeSNV, QtCore.QPointF(50, 50))
         self._addNode(NodeDimReduct, QtCore.QPointF(100, 100))
+        self._fitToWindow()
 
     def _addRequiredNodes(self) -> None:
         """
@@ -85,25 +97,23 @@ class NodeGraph(QtWidgets.QGraphicsView):
             json.dump(nodeConfig, fp)
 
     def loadConfig(self, path: str) -> None:
-        raise NotImplementedError
-        # self._deleteAllNodesAndConnections()
-        # with open(path, "r") as fp:
-        #     nodeConfigs: List[dict] = json.load(fp)
+        self._deleteAllNodesAndConnections()
+        with open(path, "r") as fp:
+            nodeConfigs: List[dict] = json.load(fp)
 
-        # self._createNodesFromConfig(nodeConfigs)
-        # self._createConnectionsFromConfig(nodeConfigs)
+        self._createNodesFromConfig(nodeConfigs)
+        self._createConnectionsFromConfig(nodeConfigs)
 
     def _createNodesFromConfig(self, nodeConfigs: List[dict]) -> None:
         """
         Takes a list of nodeconfigs and creates the nodes.
         """
-        raise NotImplementedError
-        # for config in nodeConfigs:
-        #     nodeType: Type['BaseNode'] = nodeTypes[config["label"]]
-        #     if nodeType not in [NodeRGBInput, NodeProcessContours]:
-        #         newNode: 'BaseNode' = self._addNode(nodeType)
-        #         newNode.id = config["id"]
-        #         newNode.fromDict(config)
+        for config in nodeConfigs:
+            nodeType: Type['BaseNode'] = nodeTypes[config["label"]]
+            if nodeType not in [NodeRGBInput, NodeProcessContours]:
+                newNode: 'BaseNode' = self._addNode(nodeType)
+                newNode.id = config["id"]
+                newNode.fromDict(config)
 
     def _createConnectionsFromConfig(self, nodeConfigs: List[dict]) -> None:
         """
@@ -131,67 +141,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._selectedNode.deselect()
         self._selectedNode = None
 
-    def getDetectionRunning(self) -> bool:
-        return self.detectionRunning
-
-    def runOnPreview(self) -> None:
-        self._logger.debug('Starting particle detection on preview image')
-        self.prepareForDetection()
-        numNodes: int = self.getNumberOfNodes()
-        if numNodes == -1:
-            QtWidgets.QMessageBox.warning(self, "Invalid Node Setup",
-                                          "There is no connection between input and measure points node.\n"
-                                          "Please fix node setup and retry,")
-        else:
-            contours, measPoints = self._resultNode.getOutput()
-            prevSize: int = self._detectParent.getPreviewSize()
-            overlayImg: np.ndarray = np.zeros((prevSize, prevSize, 3), dtype=np.uint8)
-
-            for cnt in contours:
-                cv2.drawContours(overlayImg, [cnt], -1, [128, 255, 128], thickness=1)  # outline
-                cv2.drawContours(overlayImg, [cnt], -1, [0, 255, 0], thickness=-1)  # fill
-
-            for measpoints in measPoints:
-                for point in measpoints:
-                    cv2.drawMarker(overlayImg, (point.x, point.y), [128, 128, 255], markerType=cv2.MARKER_SQUARE,
-                                   markerSize=5, thickness=3)
-
-            self._detectParent.updatePreviewOverlay(overlayImg)
-            for node in self._nodes:
-                node.invalidateCache()
-
-    def runOnFullImage(self, dataset: 'DataSet', logger: 'Logger' = None) -> bool:
-        if logger is not None:
-            oldLogger = self._logger
-            self._logger = logger
-
-        success: bool = False
-        self._logger.info(f'Starting particle detection on full image, detectunning: {self.detectionRunning}')
-        fullimage = self._detectParent.getFullImage()
-        self.prepareForDetection(fullimage)
-        try:
-            self._resultNode.getOutput(dataset=dataset, fullimg=fullimage)
-            success = True
-        except Exception as e:
-            self._logger.critical(f"Running detection on fullimage failed: {e}")
-
-        if logger is not None:
-            self._logger = oldLogger
-        return success
-
-    def prepareForDetection(self, fullimg: np.ndarray = None) -> None:
-        if fullimg is None:
-            self._setSeedsToNodes(preview=True)
-            prevImg: np.ndarray = self._detectParent.getPreviewImage()
-            self._inputNode.setInputImage(prevImg)
-        else:
-            self._setSeedsToNodes(preview=False)
-            self._inputNode.setInputImage(fullimg)
-
-    @QtCore.pyqtSlot(np.ndarray)
-    def _showNodePreview(self, prevImg: np.ndarray) -> None:
-        self._detectParent.updatePreviewOverlay(prevImg)
-
     def _executeContextMenu(self, pos: QtCore.QPoint) -> None:
         action: QtWidgets.QAction = self._contextMenu.exec_(pos)
         if action:
@@ -218,36 +167,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 nodeClass: Type['BaseNode'] = nodeTypes[action]
                 pos: QtCore.QPointF = self.mapToScene(self.mapFromGlobal(pos))
                 self._addNode(nodeClass, pos)
-
-    def _setSeedsToNodes(self, preview: bool) -> None:
-        """
-        If a watershed node is in the nodegraph, it gets passed references to the seedpoints from preview or fullimage,
-        according to the preview-flag.
-        """
-        for node in self._nodes:
-            if type(node) in [NodeWatershed, NodeThreshold]:
-                if preview:
-                    prevWidget: 'DetectionPreview' = self._detectParent.getPreviewWiget()
-                    seedPoints: np.ndarray = np.array(prevWidget.seedpoints)
-                    seedDeletePoints: np.ndarray = np.array(prevWidget.seeddeletepoints)
-                else:
-                    seedPoints: np.ndarray = self._detectParent.getDatasetSeedPoints()
-                    seedDeletePoints: np.ndarray = self._detectParent.getDatasetSeedDeletePoints()
-
-                node.setSeedPoints(seedPoints, seedDeletePoints)
-
-    def getPixelScale(self) -> float:
-        return self._detectParent.getPixelScale()
-
-    def getDetectionScale(self) -> float:
-        return self._detectParent.getDetectScaleFactor()
-
-    def getPreviewSize(self) -> int:
-        """Gets value of width and height of preview image. It's always squared..."""
-        return self._detectParent.getPreviewSize()
-
-    def getPreviewSourceImage(self) -> np.ndarray:
-        return self._detectParent.getPreviewImage()
 
     def getNumberOfNodes(self) -> int:
         """
@@ -307,35 +226,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 break
         assert wantedNode is not None, f'Node of id {nodeID} does not exist'
         return wantedNode
-
-    def _getBasicWatershedSetup(self) -> None:
-        self._deleteAllNodesAndConnections()
-
-        self._addNode(NodeGrayscale)
-        self._addNode(NodeContrastCurve)
-        self._addNode(NodeBlur)
-        self._addNode(NodeThreshold)
-        self._addNode(NodeWatershed)
-
-        self._addConnection(self._nodes[0].getInputs()[0], self._inputNode.getOutputs()[0])
-        for i in range(len(self._nodes) - 1):
-            self._addConnection(self._nodes[i + 1].getInputs()[0], self._nodes[i].getOutputs()[0])
-        self._addConnection(self._resultNode.getInputs()[0], self._nodes[-1].getOutputs()[0])
-
-        watershednode: NodeWatershed = cast(NodeWatershed, self._nodes[-1])
-        self._resultNode.setPos(0, watershednode.pos().y() + watershednode.preferredHeight() + 50)
-        self._detectParent.enableAutoUpdateDetection()
-
-    def _getNeuralNetSetup(self) -> None:
-        self._deleteAllNodesAndConnections()
-
-        neuralNetNode: NodeNeuralNet = cast(NodeNeuralNet, self._addNode(NodeNeuralNet))
-
-        self._addConnection(neuralNetNode.getInputs()[0], self._inputNode.getOutputs()[0])
-        self._addConnection(self._resultNode.getInputs()[0], neuralNetNode.getOutputs()[0])
-
-        self._resultNode.setPos(0, neuralNetNode.pos().y() + neuralNetNode.preferredHeight() + 50)
-        self._detectParent.disableAutoUpdateDetection()
 
     def _addNode(self, nodeClass: Type['BaseNode'], pos: QtCore.QPointF = None) -> 'BaseNode':
         assert nodeClass in nodeTypes.values(), f"Requested nodeType {nodeClass} does not exist."
@@ -460,6 +350,35 @@ class NodeGraph(QtWidgets.QGraphicsView):
         else:
             super(NodeGraph, self).mouseReleaseEvent(event)
 
+    def wheelEvent(self, event):
+        if event.angleDelta().y() > 0:
+            factor = 1.25
+            self._zoom += 1
+        else:
+            factor = 0.8
+            self._zoom -= 1
+
+        if self._zoom > 0:
+            self.scale(factor, factor)
+        elif self._zoom == 0:
+            self._fitToWindow()
+        else:
+            self._zoom = 0
+
+    def _fitToWindow(self, marginFactor: float = 0.3):
+        """
+        Fits the window to show the entire sample.
+        :param marginFactor: The view is scaled, so that there is an empty margin by this factor around the
+        visible elements in the scene.
+        :return:
+        """
+        brect = self.scene().itemsBoundingRect()
+        self.fitInView(-brect.width() * marginFactor,
+                       -brect.height() * marginFactor,
+                       brect.width() * (1+(2*marginFactor)),
+                       brect.height()*(1+(2*marginFactor)),
+                       QtCore.Qt.KeepAspectRatio)
+
     def _tryConnectingNodes(self, inOrOut: Union[Input, Output]) -> None:
         if inOrOut is not None:
             inp, outp = None, None
@@ -475,7 +394,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
                     self._addConnection(inp, outp)
                 else:
                     QtWidgets.QMessageBox.warning(self, "Incompatible Sockets",
-                                                  f"cannot connect {inp.getCompatibleDataTypes()} to {outp.getCompatibleDataTypes()}")
+                                                  f"cannot connect {inp.getCompatibleDataTypes()} to {outp.getDataType()}")
 
     def _addConnection(self, inp: 'Input', outp: 'Output') -> None:
         connectSucess: bool = outp.connectTo(inp)
