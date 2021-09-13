@@ -259,9 +259,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
         else:
 
             assert node in self._nodes, f'Requested not present node to delete: {node}'
-            if self._detectParent is not None:
-                node.detectionState.disconnect()
-                node.parameterChanged.disconnect()
 
             for inp in node.getInputs():
                 if inp.isConnected():

@@ -22,7 +22,6 @@ from typing import *
 from enum import Enum
 import numpy as np
 
-from gui.nodegraph.gradients import addBlueGradientToPainter, getIOGradient
 if TYPE_CHECKING:
     from gui.nodegraph.nodegraph import NodeGraph
     from logging import Logger
@@ -56,10 +55,7 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         self.setLayout(self._layout)
         self._origLayoutSize: QtCore.QSize = QtCore.QSize()
         self._pen: QtGui.QPen = QtGui.QPen(QtCore.Qt.black, 2)
-        self._ioGradient: Union[None, QtGui.QLinearGradient] = None
         self._bodyGradient: Union[None, QtGui.QLinearGradient] = None
-        self._inputStop: int = np.nan  # Vertical position where inputArea stops
-        self._bodyHeight: int = np.nan  # Vertical height of body group
 
     def _populateLayoutAndCreateIO(self) -> None:
         def getGroupBox(layout: QtWidgets.QLayout) -> QtWidgets.QGroupBox:
@@ -71,31 +67,13 @@ class BaseNode(QtWidgets.QGraphicsWidget):
             return _group
 
         scene: QtWidgets.QGraphicsScene = self._parentGraph.scene()
-        inputGroup: QtWidgets.QGroupBox = getGroupBox(QtWidgets.QGridLayout())
-        rowOffset = 1 if np.all([inp.isConnected for inp in self._inputs]) else 0
-        for i, inp in enumerate(self._inputs):
-            inputGroup.layout().addWidget(inp.getLabelWidget(), rowOffset, i)
-
         bodyGroup: QtWidgets.QGroupBox = getGroupBox(QtWidgets.QVBoxLayout())
         bodyGroup.layout().addWidget(getTransparentQLabel(self.label, bold=True))
-        if self._bodywidget is not None:
-            bodyGroup.layout().addWidget(self._bodywidget)
 
-        outputGroup: QtWidgets.QGroupBox = getGroupBox(QtWidgets.QHBoxLayout())
-        for i, outp in enumerate(self._outputs):
-            outputGroup.layout().addWidget(outp.getLabelWidget())
-
-        self._layout.addItem(scene.addWidget(inputGroup))
         self._layout.addItem(scene.addWidget(bodyGroup))
-        self._layout.addItem(scene.addWidget(outputGroup))
-        for i in range(3):
-            self._layout.setItemSpacing(i, 0)
         self._origLayoutSize = self.preferredSize()
         self._updateGradients()
         self._addInputOutputItems()
-
-        self._inputStop = int(inputGroup.rect().height() + self._layout.spacing())
-        self._bodyHeight = int(bodyGroup.geometry().height() + self._layout.spacing())
 
     def toDict(self) -> dict:
         """
@@ -156,40 +134,22 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         self.update()
 
     def _updateGradients(self, selected: bool = False) -> None:
-        self._ioGradient = self._getIOGradient(selected)
         self._bodyGradient = self._getBodyGradient(selected)
 
     def _addInputOutputItems(self) -> None:
+        middleX: float = self.preferredWidth()/2 - Input.diameter/2
         for inp in self._inputs:
-            xPos = inp.getLabelWidget().pos().x()  # i.e., lower corner
-            xPos += (inp.getLabelWidget().size().width() + inp.diameter) / 2
+            # xPos += (inp.getLabelWidget().size().width() + inp.diameter) / 2
             inp.setParentItem(self)
-            inp.setPos(xPos, 0)
+            inp.setPos(middleX, 0)
             inp.capConnection.connect(self._parentGraph.capConnectionFrom)
 
         for outp in self._outputs:
             diameter = outp.diameter
-            xPos = outp.getLabelWidget().pos().x()  # i.e., lower corner
-            xPos += (outp.getLabelWidget().sizeHint().width() + diameter) / 2
             yPos = int(self.boundingRect().height() - diameter)
             outp.setParentItem(self)
-            outp.setPos(xPos, yPos)
+            outp.setPos(middleX, yPos)
             outp.dragConnection.connect(self._startDragConnection)
-
-    def _getIOGradient(self, selected: bool = False) -> QtGui.QLinearGradient:
-        grad: QtGui.QLinearGradient = QtGui.QLinearGradient(0, 0, 0, self.preferredHeight())
-        inputColor: Tuple[int, int, int] = (100, 255, 220)
-        if len(self._inputs) > 0:
-            inputTypes: List['DataType'] = self._inputs[0].getCompatibleDataTypes()
-            if len(inputTypes) == 1:
-                inputColor: Tuple[int, int, int] = inputTypes[0].getColor()
-
-        outputColor: Tuple[int, int, int] = (100, 100, 100)
-        if len(self._outputs) > 0:
-            outputColor: Tuple[int, int, int] = self._outputs[0].getDataType().getColor()
-
-        grad = getIOGradient(grad, selected, inputColor, outputColor)
-        return grad
 
     def _getBodyGradient(self, selected: bool = False) -> QtGui.QLinearGradient:
         grad: QtGui.QLinearGradient = QtGui.QLinearGradient(0, 0, self.preferredWidth(), 0)
@@ -260,22 +220,18 @@ class BaseNode(QtWidgets.QGraphicsWidget):
     def paint(self, painter, option, widget) -> None:
         painter.setPen(self._pen)
         painter.setOpacity(self._alpha)
-        painter.setBrush(self._ioGradient)
+        painter.setBrush(self._bodyGradient)
 
         path = QtGui.QPainterPath()
         path.addRoundedRect(self.boundingRect(), 10, 10)
         painter.drawPath(path)
-
-        painter.setBrush(self._bodyGradient)
-        rect = QtCore.QRect(0, self._inputStop, int(self.preferredWidth()), self._bodyHeight)
-        painter.drawRect(rect)
 
 
 class Input(QtWidgets.QGraphicsObject):
     """
     Object representing an Node Input.
     """
-    diameter: float = 10  # px diameter of widget
+    diameter: float = 15  # px diameter of widget
     capConnection: QtCore.pyqtSignal = QtCore.pyqtSignal(QtWidgets.QGraphicsObject)
 
     def __init__(self, name: str, dataTypes: List['DataType']):
@@ -287,8 +243,9 @@ class Input(QtWidgets.QGraphicsObject):
         self.name: str = name
         self._types: List[DataType] = dataTypes
         self._connectedOutput: Union[None, 'Output'] = None
-        self._qlabel: QtWidgets.QLabel = getTransparentQLabel(name)
+        self._color: QtGui.QColor = QtCore.Qt.black
         self.setZValue(1)
+        self._setInputColor()
 
     def boundingRect(self) -> QtCore.QRectF:
         return QtCore.QRectF(0, 0, self.diameter, self.diameter)
@@ -306,12 +263,6 @@ class Input(QtWidgets.QGraphicsObject):
 
     def isConnected(self) -> bool:
         return self._connectedOutput is not None
-
-    def getWidget(self) -> QtWidgets.QWidget:
-        return self._widget
-
-    def getLabelWidget(self) -> QtWidgets.QLabel:
-        return self._qlabel
 
     def isCompatibleToOutput(self, output: 'Output') -> bool:
         """
@@ -349,20 +300,36 @@ class Input(QtWidgets.QGraphicsObject):
         self._connectedOutput = None
 
     def paint(self, painter: QtGui.QPainter, option, widget) -> None:
-        painter = addBlueGradientToPainter(painter)
+        painter.setPen(QtCore.Qt.black)
+        painter.setBrush(self._color)
         painter.drawEllipse(self.boundingRect())
+
+    def _setInputColor(self) -> None:
+        """
+        Sets a color that is then used for drawing, representing the datatypes.
+        """
+        if len(self._types) == 1:
+            rgb: np.ndarray = self._types[0].getColor()
+            self._color: QtGui.QColor = QtGui.QColor(rgb[0], rgb[1], rgb[2])
+        else:
+            rgb: np.ndarray = np.zeros(3)
+            for dtype in self._types:
+                rgb += dtype.getColor()
+            rgb = rgb / len(self._types)
+            self._color: QtGui.QColor = QtGui.QColor(rgb[0], rgb[1], rgb[2])
 
 
 class Output(QtWidgets.QGraphicsObject):
     dragConnection: QtCore.pyqtSignal = QtCore.pyqtSignal(QtWidgets.QGraphicsObject)
-    diameter: float = 10  # px diameter of widget
+    diameter: float = 15  # px diameter of widget
 
     def __init__(self, parentNode: 'BaseNode', name: str, dataType: 'DataType'):
         super(Output, self).__init__()
         self.name: str = name
         self._node: 'BaseNode' = parentNode
         self._type: DataType = dataType
-        self._qlabel: QtWidgets.QLabel = getTransparentQLabel(name)
+        rgb: np.ndarray = dataType.getColor()
+        self._color: QtGui.QColor = QtGui.QColor(rgb[0], rgb[1], rgb[2])
         self.setZValue(1)
 
     def boundingRect(self) -> QtCore.QRectF:
@@ -377,9 +344,6 @@ class Output(QtWidgets.QGraphicsObject):
     def getDataType(self) -> 'DataType':
         return self._type
 
-    def getLabelWidget(self) -> QtWidgets.QLabel:
-        return self._qlabel
-
     def getNode(self) -> 'BaseNode':
         return self._node
 
@@ -391,7 +355,8 @@ class Output(QtWidgets.QGraphicsObject):
         return success
 
     def paint(self, painter: QtGui.QPainter, option, widget) -> None:
-        painter = addBlueGradientToPainter(painter)
+        painter.setPen(QtCore.Qt.black)
+        painter.setBrush(self._color)
         painter.drawEllipse(self.boundingRect())
 
 
@@ -486,15 +451,15 @@ class DataType(Enum):
     CONTINUOUS = 0
     DISCRETE = 1
 
-    def getColor(self) -> Tuple[int, int, int]:
+    def getColor(self) -> np.ndarray:
         """
         Returns an RGB color representing the data type.
         """
-        color: Tuple[int, int, int] = (0, 0, 0)
+        color: np.ndarray = np.zeros(3)
         if self.value == 0:
-            color = (150, 255, 150)
+            color = np.array([150, 255, 150])
         elif self.value == 1:
-            color = (150, 150, 255)
+            color = np.array([150, 150, 255])
         return color
 
 
