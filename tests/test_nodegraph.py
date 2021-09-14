@@ -47,9 +47,9 @@ class TestNodes(unittest.TestCase):
 
     def test_connectNodes(self) -> None:
         startNode: NodeStart = self.nodegraph._inputNode
-        scatterPlot: NodeScatterPlot = self.nodegraph._nodeScatterPlot
+        specPlot: NodeSpecPlot = self.nodegraph._nodeSpecPlot
 
-        self.nodegraph._addConnection(scatterPlot._inputs[0], startNode._outputs[0])
+        self.nodegraph._addConnection(specPlot._inputs[0], startNode._outputs[0])
 
     # def test_getNumberOfNodes(self):
     #     numNodes = self.nodegraph.getNumberOfNodes()

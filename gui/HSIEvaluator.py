@@ -198,7 +198,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         viewObj: View = View()
         viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
-        viewObj.processStack = self._preprocSelector.getPreprocessorNames()
+        # viewObj.processStack = self._preprocSelector.getPreprocessorNames()  # TODO: Reimplement
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)

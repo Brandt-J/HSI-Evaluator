@@ -260,6 +260,40 @@ class SpectraCollection:
         """
         return self._spectra, self._labels
 
+    def getDictionary(self) -> Dict[str, np.ndarray]:
+        """
+        Converts the collection into a dictionary with class-names as keys and corresponding spectra arrays as values.
+        """
+        specDict: Dict[str, np.ndarray] = {}
+        uniqueClasses: np.ndarray = np.unique(self._labels)
+        for cls in uniqueClasses:
+            ind: np.ndarray = np.where(self._labels == cls)[0]
+            specDict[cls] = self._spectra[ind, :]
+        return specDict
+
+    def getSampleDictionary(self) -> Dict[str, Dict[str, np.ndarray]]:
+        """
+        Creates a dictionary sample wise. Keys: Sample Names. Values: Sample-Dict with keys: class-names and
+        values: spec array
+        """
+        sampleDict: Dict[str, Dict[str, np.ndarray]] = {}
+        uniqueSamples: np.ndarray = np.unique(self._sampleNames)
+        uniqueClasses: np.ndarray = np.unique(self._labels)
+        for sample in uniqueSamples:
+            sampleInd: np.ndarray = np.where(self._sampleNames == sample)[0]
+            sampleSpecs: np.ndarray = self._spectra[sampleInd, :]
+            sampleLbl: np.ndarray = self._labels[sampleInd]
+
+            specDict: Dict[str, np.ndarray] = {}
+            for cls in uniqueClasses:
+                clsInd: np.ndarray = np.where(sampleLbl == cls)[0]
+                if len(clsInd) > 0:
+                    specDict[cls] = sampleSpecs[clsInd, :]
+
+            sampleDict[sample] = specDict
+
+        return sampleDict
+
     def getSampleNames(self) -> np.ndarray:
         """
         Returns the sample names of each spectrum.
