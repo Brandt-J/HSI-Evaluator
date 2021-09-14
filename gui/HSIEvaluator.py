@@ -18,7 +18,7 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import os
-from PyQt5 import QtWidgets, QtGui
+from PyQt5 import QtWidgets, QtGui, QtCore
 import numpy as np
 from typing import *
 import pickle
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from logging import Logger
     from preprocessing.preprocessors import Preprocessor
     from gui.sampleview import SampleView
+    from spectraObject import SpectraCollection
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -47,10 +48,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._logger: 'Logger' = getLogger("MainWindow")
 
         self._multiSampleView: MultiSampleView = MultiSampleView(self)
-        self._preprocSelector: PreprocessingSelector = PreprocessingSelector()
         self._resultPlots: ResultPlots = ResultPlots()
+        self._preprocSelector: PreprocessingSelector = PreprocessingSelector(self, self._resultPlots)
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassificationUI = ClassificationUI(self)
+        self._clfWidget.setDisabled(True)
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
 
         self._configureWidgets()
@@ -65,6 +67,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         graphView: 'GraphView' = sampleView.getGraphView()
         graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
+        graphView.SelectionChanged.connect(self._preprocSelector.updatePreviewSpectra)
+
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
         sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
@@ -94,17 +98,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
-    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from the currently active sampleview.
-        :return: Dictionary[className, (NxM) specArray of N spectra with M wavelengths
+        :return: Spectra Collection with all data
         """
         return self._multiSampleView.getLabelledSpectraFromActiveView()
 
-    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
-        :return:
+        :return: Spectra Collection with all data
         """
         return self._multiSampleView.getLabelledSpectraFromAllViews()
 
@@ -194,7 +198,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         viewObj: View = View()
         viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
-        viewObj.processStack = self._preprocSelector.getPreprocessorNames()
+        # viewObj.processStack = self._preprocSelector.getPreprocessorNames()  # TODO: Reimplement
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)
@@ -277,9 +281,13 @@ class MainWindow(QtWidgets.QMainWindow):
         clsLayout.addStretch()
         clsLayout.addWidget(self._clfWidget)
 
-        specLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        specLayout.addWidget(self._preprocSelector)
-        specLayout.addWidget(self._resultPlots)
+        splitter1: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        splitter1.addWidget(self._preprocSelector)
+        splitter1.addWidget(self._resultPlots)
+
+        splitter2: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter2.addWidget(self._multiSampleView)
+        splitter2.addWidget(splitter1)
 
         group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
         layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -287,8 +295,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(group)
 
         layout.addLayout(clsLayout)
-        layout.addWidget(self._multiSampleView)
-        layout.addLayout(specLayout)
+        layout.addWidget(splitter2)
 
     def _getUIWidgetsForSelectiveEnabling(self) -> List[QtWidgets.QWidget]:
         """

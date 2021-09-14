@@ -21,7 +21,7 @@ from unittest import TestCase
 from typing import *
 import numpy as np
 
-from spectraObject import SpectraObject, splitUpArray
+from spectraObject import SpectraObject, splitUpArray, SpectraCollection
 from preprocessing.preprocessors import getPreprocessors
 
 
@@ -76,3 +76,31 @@ class TestSpecObject(TestCase):
         numHundreds = len(np.where(reconstructedCube == 100)[0])
         self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
         self.assertTrue(np.array_equal(reconstructedCube, testCube))
+
+
+class TestSpecCollection(TestCase):
+    def test_addSpectra(self) -> None:
+        specColl: SpectraCollection = SpectraCollection()
+        testDict: Dict[str, np.ndarray] = {"class1": np.random.rand(10, 5),
+                                           "class2": np.random.rand(20, 5)}
+
+        specColl.addSpectraDict(testDict, "sample1")
+        specColl.addSpectraDict(testDict, "sample2")
+
+        expectedLabels = np.array(["class1"]*10 + ["class2"]*20 + ["class1"]*10 + ["class2"]*20)
+        expectedSampleNames = np.array(["sample1"]*30 + ["sample2"]*30)
+        expectedSpectra = np.vstack((testDict["class1"], testDict["class2"], testDict["class1"], testDict["class2"]))
+        spectra, labels = specColl.getXY()
+
+        self.assertEqual(spectra.shape[0], 60)  # 2 * (10 + 20)
+        self.assertEqual(spectra.shape[1], 5)
+        self.assertTrue(np.array_equal(expectedSpectra, spectra))
+
+        self.assertEqual(len(labels), 60)
+        self.assertTrue(np.array_equal(expectedLabels, labels))
+
+        sampleNames: np.ndarray = specColl.getSampleNames()
+        self.assertEqual(len(sampleNames), 60)
+        self.assertTrue(np.array_equal(sampleNames, expectedSampleNames))
+
+

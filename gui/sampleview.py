@@ -26,7 +26,7 @@ from copy import deepcopy
 
 from logger import getLogger
 from projectPaths import getAppFolder
-from spectraObject import SpectraObject
+from spectraObject import SpectraObject, SpectraCollection
 from dataObjects import Sample, getSpectraFromIndices
 from loadNumpyCube import loadNumpyCube
 from legacyConvert import assertUpToDateSample
@@ -50,6 +50,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._mainWinParent: 'MainWindow' = mainWinParent
         self._sampleviews: List['SampleView'] = []
         self._logger: 'Logger' = getLogger('MultiSampleView')
+        self.setMinimumWidth(500)
 
     def addSampleView(self) -> 'SampleView':
         """
@@ -125,27 +126,28 @@ class MultiSampleView(QtWidgets.QScrollArea):
     def getWavelengths(self) -> np.ndarray:
         return self._sampleviews[0].getWavelengths()
 
-    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self) -> SpectraCollection:
         """
         Gets the labelled Spectra, in form of a dictionary, from the active sampleview
-        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
+        :return: SpectraCollection with all the daata
         """
-        spectra: Dict[str, np.ndarray] = {}
+        specColl: SpectraCollection = SpectraCollection()
         for view in self._sampleviews:
             if view.isActive():
-                spectra = view.getVisibleLabelledSpectra()
+                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra()
+                specColl.addSpectraDict(spectra, view.getName())
                 break
-        return spectra
+        return specColl
 
-    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self) -> SpectraCollection:
         """
         Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
-        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
+        :return: SpectraCollectionObject
         """
-        spectra: Dict[str, Dict[str, np.ndarray]] = {}
+        specColl: SpectraCollection = SpectraCollection()
         for view in self._sampleviews:
-            spectra[view.getName()] = view.getVisibleLabelledSpectra()
-        return spectra
+            specColl.addSpectraDict(view.getVisibleLabelledSpectra(), view.getName())
+        return specColl
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
         """
