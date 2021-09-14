@@ -114,11 +114,11 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         Runs the nodegraph so that both resultplots get updated (if connected).
         """
-        if self._nodeSpecPlot.isConnected():
+        if self._nodeSpecPlot.isConnectedToInput():
             preprocSpecs: np.ndarray = self._nodeSpecPlot.getOutput()
             self.NewSpecsForSpecPlot.emit(preprocSpecs)
 
-        if self._nodeScatterPlot.isConnected():
+        if self._nodeScatterPlot.isConnectedToInput():
             preprocSpecs: np.ndarray = self._nodeScatterPlot.getOutput()
             self.NewSpecsForScatterPlot.emit(preprocSpecs)
 

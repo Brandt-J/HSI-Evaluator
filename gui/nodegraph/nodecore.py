@@ -107,7 +107,7 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         """
         pass
 
-    def _isConnectedToRGBInput(self) -> bool:
+    def isConnectedToInput(self) -> bool:
         return recursiveIsConnectedToInputNode(self)
 
     def select(self) -> None:

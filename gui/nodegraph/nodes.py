@@ -58,9 +58,6 @@ class NodeScatterPlot(BaseNode):
         self._cachedSpectra: Union[None, np.ndarray] = None
         self._populateLayoutAndCreateIO()
 
-    def isConnected(self) -> bool:
-        return self._inputs[0].isConnected()
-
     def getOutput(self, outputName: str = '') -> np.ndarray:
         if self._cachedSpectra is not None:
             specs: np.ndarray = self._cachedSpectra
@@ -78,9 +75,6 @@ class NodeSpecPlot(BaseNode):
         self._inputs = [Input('Spectra Plot', [DataType.CONTINUOUS])]
         self._cachedSpectra: Union[None, np.ndarray] = None
         self._populateLayoutAndCreateIO()
-
-    def isConnected(self) -> bool:
-        return self._inputs[0].isConnected()
 
     def getOutput(self, outputName: str = '') -> np.ndarray:
         if self._cachedSpectra is not None:

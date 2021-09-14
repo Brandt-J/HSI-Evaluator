@@ -116,12 +116,3 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         :param processorNames: List of processor Names
         """
         raise NotImplementedError
-
-
-if __name__ == '__main__':
-    import sys
-
-    app = QtWidgets.QApplication(sys.argv)
-    editor: PreprocessingSelector = PreprocessingSelector()
-    editor.show()
-    app.exec_()
