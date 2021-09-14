@@ -25,7 +25,7 @@ import pickle
 
 from logger import getLogger
 from dataObjects import View, getFilePathHash
-from loadNumpyCube import loadNumpyCube
+from loadCube import loadCube
 from legacyConvert import assertUpToDateView
 from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
@@ -152,7 +152,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _promptLoadNPYSample(self) -> None:
         """Prompts for a npy file to open as sample"""
         fnames, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Select Files",
-                                                           r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI", filter="*.npy")
+                                                           r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI",
+                                                           filter="*.npy *.hdr")
         for fname in fnames:
             self._loadFile(fname)
 
@@ -165,9 +166,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multiSampleView.loadSampleViewFromFile(savedSamplePath)
             self._logger.info(f"Loading saved status for sample {name}")
         else:
-            cube: np.ndarray = loadNumpyCube(fname)
+            cube, wavelengths = loadCube(fname)
             newView: 'SampleView' = self._multiSampleView.addSampleView()
-            newView.setUp(fname, cube)
+            newView.setUp(fname, cube, wavelengths)
             self._logger.info(f"Creating new sample from: {name}")
 
         self.enableWidgets()
@@ -270,11 +271,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._exportSpecAct.triggered.connect(self._multiSampleView.exportSpectra)
         self._exportSpecAct.setShortcut("Ctrl+E")
 
+        closeAct: QtWidgets.QAction = QtWidgets.QAction("Close &Program", self)
+        closeAct.triggered.connect(self.close)
+
         filemenu.addAction(openAct)
         filemenu.addSeparator()
         filemenu.addAction(loadViewAct)
         filemenu.addAction(self._saveViewAct)
         filemenu.addAction(self._exportSpecAct)
+        filemenu.addSeparator()
+        filemenu.addAction(closeAct)
+
         self.menuBar().addMenu(filemenu)
 
     def _createLayout(self) -> None:
@@ -312,8 +319,13 @@ class MainWindow(QtWidgets.QMainWindow):
         return widgetList
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
-        self._multiSampleView.saveSamples()
-        self._multiSampleView.closeAllSamples()
+        reply = QtWidgets.QMessageBox.question(self, "Close Program", "Are you sure you want to close?",
+                                               QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                                               QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._multiSampleView.saveSamples()
+            self._multiSampleView.closeAllSamples()
+            a0.accept()
 
 
 def main():

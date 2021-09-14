@@ -23,7 +23,7 @@ import numpy as np
 import os
 import tempfile
 
-from loadNumpyCube import loadNumpyCube
+from loadCube import loadCube
 
 
 class TestImportNumpy(TestCase):
@@ -36,6 +36,7 @@ class TestImportNumpy(TestCase):
             savePath: str = os.path.join(tmpdirname, "testcube.npy")
             np.save(savePath, cube)
 
-            loadedCube: np.ndarray = loadNumpyCube(savePath)
+            loadedCube, wavelengths = loadCube(savePath)
             self.assertEqual(loadedCube[5, 3, 6], 0)
             self.assertEqual(loadedCube[2, 5, 7], 0)
+            self.assertTrue(np.array_equal(wavelengths, np.arange(cube.shape[0])))

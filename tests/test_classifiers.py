@@ -63,7 +63,8 @@ class MockMainWin:
                                  "class2": np.arange(20)+20}
         sample1: SampleView = SampleView()
         sample1.setSampleData(data1)
-        sample1.setCube(np.random.rand(self.cubeShape[0], self.cubeShape[1], self.cubeShape[2]))
+        sample1.setCube(np.random.rand(self.cubeShape[0], self.cubeShape[1], self.cubeShape[2]),
+                        np.arange(self.cubeShape[0]))
         self._samples: List['SampleView'] = [sample1]
 
     def disableWidgets(self):

@@ -29,7 +29,7 @@ from logger import getLogger
 from projectPaths import getAppFolder
 from spectraObject import SpectraObject, SpectraCollection
 from dataObjects import Sample, getSpectraFromIndices
-from loadNumpyCube import loadNumpyCube
+from loadCube import loadCube
 from legacyConvert import assertUpToDateSample
 from gui.graphOverlays import GraphView
 from gui.dbWin import DBUploadWin
@@ -347,15 +347,15 @@ class SampleView(QtWidgets.QMainWindow):
         self._graphView.setParentReferences(self, parent)
         self._mainWindow = parent
 
-    def setUp(self, filePath: str, cube: np.ndarray) -> None:
+    def setUp(self, filePath: str, cube: np.ndarray, wavelengths: np.ndarray) -> None:
         self._sampleData.filePath = filePath
         self._sampleData.setDefaultName()
-        self.setCube(cube)
+        self.setCube(cube, wavelengths)
         self._setupWidgetsFromSampleData()
 
     def setupFromSampleData(self) -> None:
-        cube: np.ndarray = loadNumpyCube(self._sampleData.filePath)
-        self.setCube(cube)
+        cube, wavelengths = loadCube(self._sampleData.filePath)
+        self.setCube(cube, wavelengths)
         self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
         self._setupWidgetsFromSampleData()
 
@@ -364,9 +364,13 @@ class SampleView(QtWidgets.QMainWindow):
         self.createLayout()
         self.SizeChanged.emit()
 
-    def setCube(self, cube: np.ndarray) -> None:
-        """Sets references to the spec cube."""
-        self._sampleData.specObj.setCube(cube)
+    def setCube(self, cube: np.ndarray, wavelengths: np.ndarray) -> None:
+        """
+        Sets references to the spec cube.
+        :param cube: Shape (KxMxN) cube with MxN spectra of K wavelenghts
+        :param wavelengths: The corresponding K wavelengths.
+        """
+        self._sampleData.specObj.setCube(cube, wavelengths)
         self._graphView.setUpToCube(cube)
 
     def getSpecObj(self) -> 'SpectraObject':

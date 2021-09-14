@@ -42,10 +42,12 @@ class SpectraObject:
         self._classes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}  # classname, (y-coordinages, x-coordinates)
         self._logger: 'Logger' = getLogger("SpectraObject")
 
-    def setCube(self, cube: np.ndarray) -> None:
+    def setCube(self, cube: np.ndarray, wavelengths: np.ndarray = None) -> None:
         self._cube = cube
-        if self._wavelengths is None:
+        if wavelengths is None:
             self._setDefaultWavelengths(cube)
+        else:
+            self._wavelengths = wavelengths
 
     def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray, backgroundIndices: Set[int] = set()):
         """

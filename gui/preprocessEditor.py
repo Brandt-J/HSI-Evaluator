@@ -75,8 +75,11 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
             self._nodeGraph.setInputSpecta(spectra)
             self._nodeGraph.updatePlotNodes()
         else:
-            QtWidgets.QMessageBox.about(self, "Info", "Spectra Preprocessing cannot be previewed.\n"
-                                                      "There are now spectra currently labelled.")
+            self._showNoSpectraWarning()
+
+    def _showNoSpectraWarning(self) -> None:
+        QtWidgets.QMessageBox.about(self, "Info", "Spectra Preprocessing cannot be previewed.\n"
+                                                  "There are now spectra currently labelled.")
 
     def _limitToMaxNumber(self, spectra: np.ndarray, labels: np.ndarray, sampleNames: np.ndarray):
         """

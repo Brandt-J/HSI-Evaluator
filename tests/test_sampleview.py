@@ -80,12 +80,13 @@ class TestSampleView(TestCase):
 
     def testSetupSampleView(self) -> None:
         sampleView: SampleView = SampleView()
-        fname, cube = "testName.npy", np.ones((3, 5, 5))
-        sampleView.setUp(fname, cube)
+        fname, cube, wavelenghts = "testName.npy", np.ones((3, 5, 5)), np.arange(3)
+        sampleView.setUp(fname, cube, wavelenghts)
 
         self.assertEqual(sampleView._name, fname.split('.npy')[0])
         self.assertTrue(sampleView.getGraphView()._origCube is cube)
         self.assertTrue(sampleView.getSampleData().specObj.getCube() is cube)
+        self.assertTrue(np.array_equal(sampleView.getWavelengths(), np.arange(3)))
 
     def testGetSpectra(self) -> None:
         imgClf: MainWindow = MainWindow()
@@ -250,6 +251,7 @@ class TestSampleView(TestCase):
 
     def test_loadFromSample(self) -> None:
         imgClf: MainWindow = MainWindow()
+        imgClf._preprocSelector._showNoSpectraWarning = lambda: print('no spectra, no preprocessed spectra preview..')
         sample: Sample = Sample()
         sample.name = 'Sample1'
         sample.classes2Indices = {'Background': {1, 2, 3, 4},
