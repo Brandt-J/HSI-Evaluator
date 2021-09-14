@@ -314,7 +314,7 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("HSI Evaluator")
     win = MainWindow()
-    win.show()
+    win.showMaximized()
     app.exec_()
 
 

@@ -50,7 +50,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._mainWinParent: 'MainWindow' = mainWinParent
         self._sampleviews: List['SampleView'] = []
         self._logger: 'Logger' = getLogger('MultiSampleView')
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(850)
 
     def addSampleView(self) -> 'SampleView':
         """
@@ -275,6 +275,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._exportBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
         self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
         self._selectBrightBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Bright")
@@ -487,6 +488,7 @@ class SampleView(QtWidgets.QMainWindow):
         actionsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Actions")
         actionsGroup.setLayout(QtWidgets.QHBoxLayout())
         actionsGroup.layout().addWidget(self._uploadBtn)
+        actionsGroup.layout().addWidget(self._exportBtn)
         actionsGroup.layout().addWidget(self._closeBtn)
 
         toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
@@ -559,6 +561,10 @@ class SampleView(QtWidgets.QMainWindow):
         self._uploadBtn.released.connect(self._uploadToSQL)
         self._uploadBtn.setToolTip("Upload Spectra to SQL Database.")
 
+        self._exportBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowDown')))
+        self._exportBtn.released.connect(self._exportSpectra)
+        self._exportBtn.setToolTip("Export Labelled Spectra as txt-File.")
+
         self._trainCheckBox.setChecked(True)
         self._inferenceCheckBox.setChecked(True)
 
@@ -625,6 +631,35 @@ class SampleView(QtWidgets.QMainWindow):
         self._mainWindow.disableWidgets()
         self._dbWin.recreateLayout()
         self._dbWin.show()
+
+    def _exportSpectra(self) -> None:
+        """
+        Exports the labelled spectra for use in other software.
+        """
+        specs: Dict[str, np.ndarray] = self.getAllLabelledSpectra()
+        uniqueAssignments: List[str] = list(specs.keys())
+        assignments: List[str] = []
+        specArr: Union[None, np.ndarray] = None
+        for cls, clsSpecs in specs.items():
+            numSpecs: int = clsSpecs.shape[0]
+            assignments += [uniqueAssignments.index(cls)]*numSpecs
+            if specArr is None:
+                specArr = clsSpecs
+            else:
+                specArr = np.vstack((clsSpecs, specArr))
+
+        folder: str = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory where to save to.")
+        if folder:
+            specPath: str = os.path.join(folder, f"Spectra {self._name}.txt")
+            np.savetxt(specPath, specArr)
+            assignPath: str = os.path.join(folder, f"Assignments {self._name}.txt")
+            np.savetxt(assignPath, assignments, fmt="%s")
+
+            combi = np.hstack((np.array(assignments)[:, np.newaxis], specArr))
+            combiPath = os.path.join(folder, f"SpecsAndAssignments {self._name}.txt")
+            np.savetxt(combiPath, combi, fmt="%s")
+
+            QtWidgets.QMessageBox.about(self, "Info", f"Spectra and Assignments saved to\n{folder}")
 
     def _sqlUploadFinished(self) -> None:
         """
