@@ -16,7 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+import random
+import json
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pickle
 import os
@@ -242,6 +243,41 @@ class MultiSampleView(QtWidgets.QScrollArea):
         os.makedirs(path, exist_ok=True)
         return path
 
+    def exportSpectra(self) -> None:
+        """
+        Exports the labelled spectra for use in other software.
+        """
+        specColl: SpectraCollection = self.getLabelledSpectraFromAllViews()
+        specArr, assignments = specColl.getXY()
+
+        folder: str = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory where to save to.")
+        numSpecs, ok = QtWidgets.QInputDialog.getInt(self, "Max. Number of Spectra to Export?",
+                                                     "Enter the max. number of spectra to export.",
+                                                          2000, 100, 10000, 500)
+        if folder and ok:
+            if len(assignments) > numSpecs:
+                randInd: np.ndarray = np.array(random.sample(list(np.arange(len(assignments))), numSpecs))
+                specArr = specArr[randInd, :]
+                assignments = assignments[randInd]
+
+            uniqueAssignments: List[str] = list(np.unique(assignments))
+            assignmentDict: Dict[str, int] = {cls: uniqueAssignments.index(cls)+1 for cls in assignments}  # class 0 get's ignored by PLS Toolbox, hence we have the +1 here.
+            numberAssignments: np.ndarray = np.array([assignmentDict[cls] for cls in assignments])
+
+            specPath: str = os.path.join(folder, f"Exported Spectra from {len(self._sampleviews)} samples.txt")
+            np.savetxt(specPath, specArr)
+            assignPath: str = os.path.join(folder, f"Exported Assignments from {len(self._sampleviews)} samples.txt")
+            np.savetxt(assignPath, numberAssignments)
+
+            codePath: str = os.path.join(folder, f"Exported Spectra Encoding from {len(self._sampleviews)} samples.txt")
+            with open(codePath, "w") as fp:
+                json.dump(assignmentDict, fp)
+
+            QtWidgets.QMessageBox.about(self, "Info", f"Spectra and Assignments saved to\n{folder}\n\n"
+                                                      f"Class encoding:\n"
+                                                      f"{assignmentDict}")
+
+
 
 class SampleView(QtWidgets.QMainWindow):
     SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
@@ -275,7 +311,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._exportBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+
         self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
         self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
         self._selectBrightBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Bright")
@@ -488,7 +524,6 @@ class SampleView(QtWidgets.QMainWindow):
         actionsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Actions")
         actionsGroup.setLayout(QtWidgets.QHBoxLayout())
         actionsGroup.layout().addWidget(self._uploadBtn)
-        actionsGroup.layout().addWidget(self._exportBtn)
         actionsGroup.layout().addWidget(self._closeBtn)
 
         toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
@@ -561,10 +596,6 @@ class SampleView(QtWidgets.QMainWindow):
         self._uploadBtn.released.connect(self._uploadToSQL)
         self._uploadBtn.setToolTip("Upload Spectra to SQL Database.")
 
-        self._exportBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowDown')))
-        self._exportBtn.released.connect(self._exportSpectra)
-        self._exportBtn.setToolTip("Export Labelled Spectra as txt-File.")
-
         self._trainCheckBox.setChecked(True)
         self._inferenceCheckBox.setChecked(True)
 
@@ -631,35 +662,6 @@ class SampleView(QtWidgets.QMainWindow):
         self._mainWindow.disableWidgets()
         self._dbWin.recreateLayout()
         self._dbWin.show()
-
-    def _exportSpectra(self) -> None:
-        """
-        Exports the labelled spectra for use in other software.
-        """
-        specs: Dict[str, np.ndarray] = self.getAllLabelledSpectra()
-        uniqueAssignments: List[str] = list(specs.keys())
-        assignments: List[str] = []
-        specArr: Union[None, np.ndarray] = None
-        for cls, clsSpecs in specs.items():
-            numSpecs: int = clsSpecs.shape[0]
-            assignments += [uniqueAssignments.index(cls)]*numSpecs
-            if specArr is None:
-                specArr = clsSpecs
-            else:
-                specArr = np.vstack((clsSpecs, specArr))
-
-        folder: str = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory where to save to.")
-        if folder:
-            specPath: str = os.path.join(folder, f"Spectra {self._name}.txt")
-            np.savetxt(specPath, specArr)
-            assignPath: str = os.path.join(folder, f"Assignments {self._name}.txt")
-            np.savetxt(assignPath, assignments, fmt="%s")
-
-            combi = np.hstack((np.array(assignments)[:, np.newaxis], specArr))
-            combiPath = os.path.join(folder, f"SpecsAndAssignments {self._name}.txt")
-            np.savetxt(combiPath, combi, fmt="%s")
-
-            QtWidgets.QMessageBox.about(self, "Info", f"Spectra and Assignments saved to\n{folder}")
 
     def _sqlUploadFinished(self) -> None:
         """

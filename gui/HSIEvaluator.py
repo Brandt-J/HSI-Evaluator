@@ -54,6 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clfWidget: ClassificationUI = ClassificationUI(self)
         self._clfWidget.setDisabled(True)
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
+        self._exportSpecAct: QtWidgets.QAction = QtWidgets.QAction("&Export Spectra to ASCII")
 
         self._configureWidgets()
         self._createMenuBar()
@@ -258,17 +259,22 @@ class MainWindow(QtWidgets.QMainWindow):
         openAct: QtWidgets.QAction = QtWidgets.QAction("&Open Sample(s)", self)
         openAct.setShortcut("Ctrl+O")
         openAct.triggered.connect(self._promptLoadNPYSample)
+
         loadViewAct: QtWidgets.QAction = QtWidgets.QAction("Open &View", self)
         loadViewAct.triggered.connect(self._promptLoadView)
         loadViewAct.setShortcut("Ctrl+Shift+O")
+
         self._saveViewAct.triggered.connect(self._promptSaveView)
         self._saveViewAct.setShortcut("Ctrl+S")
+
+        self._exportSpecAct.triggered.connect(self._multiSampleView.exportSpectra)
+        self._exportSpecAct.setShortcut("Ctrl+E")
 
         filemenu.addAction(openAct)
         filemenu.addSeparator()
         filemenu.addAction(loadViewAct)
         filemenu.addAction(self._saveViewAct)
-
+        filemenu.addAction(self._exportSpecAct)
         self.menuBar().addMenu(filemenu)
 
     def _createLayout(self) -> None:
@@ -301,7 +307,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         Returns a list of ui widgets that can be disabled and enabled, depedning on current ui context
         """
-        widgetList = [self._saveViewAct, self._multiSampleView, self._resultPlots, self._clfWidget, self._clsCreator]
+        widgetList = [self._saveViewAct, self._multiSampleView, self._resultPlots, self._clfWidget, self._clsCreator,
+                      self._exportSpecAct, self._preprocSelector]
         return widgetList
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
