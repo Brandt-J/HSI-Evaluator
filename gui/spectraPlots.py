@@ -70,9 +70,15 @@ class ResultPlots(QtWidgets.QWidget):
 
     def getNumberOfRequiredSpectra(self) -> int:
         """
-        Get's the number of spectra required for previewing in the spectra and the scatter plot.
+        Gets the number of spectra required for previewing in the spectra and the scatter plot.
         """
         return self._numSpecSpinner.value()
+
+    def getRandomSeed(self) -> int:
+        """
+        Gets the desired random seed.
+        """
+        return self._seedSpinner.value()
 
     def setClassAndSampleLabels(self, classLabels, sampleNames) -> None:
         self._specPlot.setClassAndSampleNames(classLabels, sampleNames)

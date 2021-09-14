@@ -191,3 +191,35 @@ def deriv_smooth(input_data: np.ndarray, derivative: int = 0, windowSize: int = 
             output_data[i, derivative:] = np.diff(smoothed, n=derivative)
 
     return output_data
+
+
+def msc(spectra: np.ndarray):
+    """
+    Multiplicative Scatter Correction technique performed with mean of the sample data as the reference.
+    Adapted from: https://nirpyresearch.com/two-scatter-correction-techniques-nir-spectroscopy-python/
+    :param spectra: MxN array of M spectra with N wavenumbers
+    :returns: corrected spectra: Scatter corrected spectra data
+    """
+    spectra = spectra.copy()
+    # mean centre correction
+    for i in range(spectra.shape[0]):
+        spectra[i, :] -= spectra[i, :].mean()
+
+    # Get the reference spectrum. If not given, estimate it from the mean
+    ref = np.mean(spectra, axis=0)
+
+    # Define a new array and populate it with the corrected data
+    data_msc = np.zeros_like(spectra)
+    for i in range(spectra.shape[0]):
+        # Run regression
+        fit = np.polyfit(ref, spectra[i, :], 1, full=True)
+        # Apply correction
+        if not fit[0][0] == 0:
+            corrected = (spectra[i, :] - fit[0][1]) / fit[0][0]
+        else:
+            corrected = spectra[i, :]
+
+        data_msc[i, :] = corrected
+
+    assert np.all(np.isfinite(data_msc))
+    return data_msc

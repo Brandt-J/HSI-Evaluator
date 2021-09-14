@@ -83,6 +83,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         Limits the number of spectra, labels and samplenames to the maximum number given by the result plots.
         """
         numSpecsRequired: int = self._plots.getNumberOfRequiredSpectra()
+        random.seed(self._plots.getRandomSeed())
         if numSpecsRequired < len(labels):
             randomIndices: List[int] = random.sample(list(np.arange(len(labels))), numSpecsRequired)
             spectra = spectra[randomIndices, :]

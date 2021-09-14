@@ -22,6 +22,8 @@ from sklearn.manifold import TSNE
 
 
 from gui.nodegraph.nodecore import *
+from preprocessing.processing import *
+
 if TYPE_CHECKING:
     from gui.nodegraph.nodegraph import NodeGraph
     from logging import Logger
@@ -159,9 +161,9 @@ class NodeSNV(BaseNode):
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._populateLayoutAndCreateIO()
 
-    def getOutput(self, outputName: str = '') -> object:
+    def getOutput(self, outputName: str = '') -> np.ndarray:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
-        return inputSpectra
+        return snv(inputSpectra)
 
 
 class NodeNormalize(BaseNode):
@@ -173,9 +175,69 @@ class NodeNormalize(BaseNode):
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._populateLayoutAndCreateIO()
 
-    def getOutput(self, outputName: str = '') -> object:
+    def getOutput(self, outputName: str = '') -> np.ndarray:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
-        return inputSpectra
+        return normalizeIntensities(inputSpectra)
+
+
+class NodeDetrend(BaseNode):
+    label = 'Detrend'
+
+    def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
+        super(NodeDetrend, self).__init__(nodeGraphParent, logger, pos)
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
+        self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
+        self._populateLayoutAndCreateIO()
+
+    def getOutput(self, outputName: str = '') -> np.ndarray:
+        inputSpectra: np.ndarray = self._inputs[0].getValue()
+        return detrend(inputSpectra)
+
+
+class NodeMSC(BaseNode):
+    label = 'Mult. Scatt. Corr.'
+
+    def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
+        super(NodeMSC, self).__init__(nodeGraphParent, logger, pos)
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
+        self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
+        self._populateLayoutAndCreateIO()
+
+    def getOutput(self, outputName: str = '') -> np.ndarray:
+        inputSpectra: np.ndarray = self._inputs[0].getValue()
+        return msc(inputSpectra)
+
+
+class NodeSmoothDeriv(BaseNode):
+    label = 'Derivative/Smooth'
+
+    def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
+        super(NodeSmoothDeriv, self).__init__(nodeGraphParent, logger, pos)
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
+        self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
+
+        self._derivSpin: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+        self._derivSpin.setMinimum(0)
+        self._derivSpin.setMaximum(5)
+        self._derivSpin.setValue(1)
+
+        self._winSizeSpin: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+        self._winSizeSpin.setMinimum(1)
+        self._winSizeSpin.setMaximum(21)
+        self._winSizeSpin.setValue(5)
+
+        self._bodywidget: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        layout.addRow("Derivative Order:", self._derivSpin)
+        layout.addRow("Window Size:", self._winSizeSpin)
+        self._bodywidget.setLayout(layout)
+
+        self._populateLayoutAndCreateIO()
+
+    def getOutput(self, outputName: str = '') -> np.ndarray:
+        inputSpectra: np.ndarray = self._inputs[0].getValue()
+        return deriv_smooth(inputSpectra, self._derivSpin.value(), self._winSizeSpin.value())
+
 
 
 nodeTypes: List[Type['BaseNode']] = [val for key, val in locals().items() if key.startswith('Node')]

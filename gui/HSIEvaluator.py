@@ -18,7 +18,7 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import os
-from PyQt5 import QtWidgets, QtGui
+from PyQt5 import QtWidgets, QtGui, QtCore
 import numpy as np
 from typing import *
 import pickle
@@ -52,6 +52,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._preprocSelector: PreprocessingSelector = PreprocessingSelector(self, self._resultPlots)
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassificationUI = ClassificationUI(self)
+        self._clfWidget.setDisabled(True)
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
 
         self._configureWidgets()
@@ -280,9 +281,13 @@ class MainWindow(QtWidgets.QMainWindow):
         clsLayout.addStretch()
         clsLayout.addWidget(self._clfWidget)
 
-        specLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        specLayout.addWidget(self._preprocSelector)
-        specLayout.addWidget(self._resultPlots)
+        splitter1: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        splitter1.addWidget(self._preprocSelector)
+        splitter1.addWidget(self._resultPlots)
+
+        splitter2: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter2.addWidget(self._multiSampleView)
+        splitter2.addWidget(splitter1)
 
         group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
         layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -290,8 +295,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(group)
 
         layout.addLayout(clsLayout)
-        layout.addWidget(self._multiSampleView)
-        layout.addLayout(specLayout)
+        layout.addWidget(splitter2)
 
     def _getUIWidgetsForSelectiveEnabling(self) -> List[QtWidgets.QWidget]:
         """

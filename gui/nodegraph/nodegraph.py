@@ -35,7 +35,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         NodeGraph Object for Spectra Preprocessing.
         """
         super(NodeGraph, self).__init__()
-        self.setMinimumSize(700, 300)
+        self.setMinimumSize(500, 250)
         scene = BackgroundScene(self)
         scene.setItemIndexMethod(QtWidgets.QGraphicsScene.NoIndex)
         scene.setBackgroundBrush(QtCore.Qt.gray)
@@ -48,8 +48,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
         self._zoom = 0
-
-        self.setMinimumHeight(500)
 
         self.setRenderHint(QtGui.QPainter.Antialiasing)
         self._logger: 'Logger' = getLogger("NodeGraph")
@@ -124,7 +122,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
             preprocSpecs: np.ndarray = self._nodeScatterPlot.getOutput()
             self.NewSpecsForScatterPlot.emit(preprocSpecs)
 
-
     def selectNode(self, node: 'BaseNode') -> None:
         if self._selectedNode is not None:
             self._selectedNode.deselect()
@@ -196,22 +193,18 @@ class NodeGraph(QtWidgets.QGraphicsView):
         if action:
             action = action.text()
             if action == "Save Graph":
-                if self._detectParent is not None:
-                    savePath: str = self._detectParent.getDetectGraphSavePath(default=False)
-                    if savePath is not None:
-                        self.saveConfig(savePath)
+                QtWidgets.QMessageBox.about(self, "Warning", "Sorry, Saving/Loading not yet implemented.")
+                # if self._detectParent is not None:
+                #     savePath: str = self._detectParent.getDetectGraphSavePath(default=False)
+                #     if savePath is not None:
+                #         self.saveConfig(savePath)
 
             elif action == "Load Graph":
-                if self._detectParent is not None:
-                    loadPath: str = self._detectParent.getDetectGraphLoadPath(default=False)
-                    if os.path.exists(loadPath):
-                        self.loadConfig(loadPath)
-
-            elif action == "Load Default Watershed":
-                self._getBasicWatershedSetup()
-
-            elif action == "Load Default Neural Net":
-                self._getNeuralNetSetup()
+                QtWidgets.QMessageBox.about(self, "Warning", "Sorry, Saving/Loading not yet implemented.")
+                # if self._detectParent is not None:
+                #     loadPath: str = self._detectParent.getDetectGraphLoadPath(default=False)
+                #     if os.path.exists(loadPath):
+                #         self.loadConfig(loadPath)
 
             elif action in nodeTypes:
                 nodeClass: Type['BaseNode'] = nodeTypes[action]

@@ -50,6 +50,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._mainWinParent: 'MainWindow' = mainWinParent
         self._sampleviews: List['SampleView'] = []
         self._logger: 'Logger' = getLogger('MultiSampleView')
+        self.setMinimumWidth(500)
 
     def addSampleView(self) -> 'SampleView':
         """
