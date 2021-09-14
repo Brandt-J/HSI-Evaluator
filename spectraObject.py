@@ -17,8 +17,6 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 import dataclasses
-
-from PyQt5 import QtCore
 import numpy as np
 from typing import List, Dict, Tuple, TYPE_CHECKING, Union, cast, Set
 import random
@@ -245,6 +243,51 @@ class SpectraObject:
         for i in range(specArr.shape[0]):
             specArr[i, :] = cube[:, indices[i][0], indices[i][1]]
         return specArr
+
+
+class SpectraCollection:
+    """
+    Container for keeping spectra from multiple samples.
+    """
+    def __init__(self):
+        self._labels: Union[None, np.ndarray] = None  # Array storing N class names
+        self._spectra: Union[None, np.ndarray] = None  # (NxM) Array storing N spectra of M wavelenghts
+        self._sampleNames: Union[None, np.ndarray] = None  # Array storing N sample names
+
+    def getXY(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Returns a tuple of Spectra (NxM) Array and class labels (N) array.
+        """
+        return self._spectra, self._labels
+
+    def getSampleNames(self) -> np.ndarray:
+        """
+        Returns the sample names of each spectrum.
+        """
+        return self._sampleNames
+
+    def hasSpectra(self) -> bool:
+        """
+        Returns, whether the collection actually contains any data.
+        """
+        return self._spectra is not None
+
+    def addSpectraDict(self, specsToAdd: Dict[str, np.ndarray], sampleName: str) -> None:
+        """
+        Adds the given spectra dictionary of the given sample to the collection.
+        :param specsToAdd: (key: className, value: NxM array of N spectra with M wavelenghts)
+        :param sampleName: Name of corresponding sample
+        """
+        for cls, specs in specsToAdd.items():
+            numSpecs: int = specs.shape[0]
+            if self._spectra is None:
+                self._spectra = specs
+                self._labels = np.array([cls]*numSpecs)
+                self._sampleNames = np.array([sampleName]*numSpecs)
+            else:
+                self._spectra = np.vstack((self._spectra, specs))
+                self._labels = np.append(self._labels, [cls]*numSpecs)
+                self._sampleNames = np.append(self._sampleNames, [sampleName]*numSpecs)
 
 
 def splitUpArray(specArr: np.ndarray, numParts: int = 8) -> List[np.ndarray]:

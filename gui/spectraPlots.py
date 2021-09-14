@@ -27,7 +27,7 @@ from typing import List, Dict, TYPE_CHECKING, cast, Union
 
 from logger import getLogger
 from preprocessing.preprocessors import Background
-from gui.pcaPlot import PCAPlot
+from gui.scatterPlot import ScatterPlot
 from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
@@ -57,7 +57,7 @@ class ResultPlots(QtWidgets.QWidget):
         self._seedSpinner: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
 
         self._specPlot: 'SpecPlot' = SpecPlot(self)
-        self._pcaPlot: 'PCAPlot' = PCAPlot()
+        self._scatterPlot: 'ScatterPlot' = ScatterPlot()
 
         self._tabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
         self._configureWidgets()
@@ -66,10 +66,33 @@ class ResultPlots(QtWidgets.QWidget):
     def setMainWinRef(self, mainWin: 'MainWindow') -> None:
         self._mainWindow = mainWin
         self._specPlot.setMainWindow(mainWin)
+        self._scatterPlot.setMainWindow(mainWin)
+
+    def getNumberOfRequiredSpectra(self) -> int:
+        """
+        Get's the number of spectra required for previewing in the spectra and the scatter plot.
+        """
+        return self._numSpecSpinner.value()
+
+    def setClassAndSampleLabels(self, classLabels, sampleNames) -> None:
+        self._specPlot.setClassAndSampleNames(classLabels, sampleNames)
+        self._scatterPlot.setClassAndSampleNames(classLabels, sampleNames)
 
     @QtCore.pyqtSlot(str)
     def switchToDescriptorSet(self, descSetName: str) -> None:
         self._specPlot.switchToDescriptorSet(descSetName)
+
+    @QtCore.pyqtSlot(np.ndarray)
+    def updateSpecPlot(self, spectra: np.ndarray) -> None:
+        self._specPlot.resetPlots()
+        self._specPlot.updatePlot(spectra)
+        self._specPlot.finishPlotting()
+
+    @QtCore.pyqtSlot(np.ndarray)
+    def updateScatterPlot(self, spectra: np.ndarray) -> None:
+        self._scatterPlot.resetPlots()
+        self._scatterPlot.updatePlot(spectra)
+        self._scatterPlot.finishPlotting()
 
     def getDecsriptorLibrary(self) -> DescriptorLibrary:
         return self._specPlot.getDecsriptorLibrary()
@@ -77,69 +100,83 @@ class ResultPlots(QtWidgets.QWidget):
     def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
         self._specPlot.setDescriptorLibrary(descLib)
 
+    def getShowAllSamples(self) -> bool:
+        """
+        Returns if the spectra of all samples are to be shown or only from the currently active sampleview.
+        """
+        return self._showAllCheckBox.isChecked()
+
+    def clearPlots(self) -> None:
+        """
+        Clears the plots. Called before updating the preprocessed spectra.
+        """
+        self._specPlot.resetPlots()
+        self._scatterPlot.resetPlots()
+
     def updatePlots(self) -> None:
         """
         Updating the spec plot
         :return:
         """
-        self._specPlot.resetPlots()
-        self._pcaPlot.resetPlots()
-        if self._mainWindow is not None:
-            if self._showAllCheckBox.isChecked():
-                self._plotAllSamples()
-            else:
-                background: np.ndarray = self._mainWindow.getBackgroundOfActiveSample()
-                self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView(), background)
+        print("called update plots")
+        # self._specPlot.resetPlots()
+        # self._scatterPlot.resetPlots()
+        # if self._mainWindow is not None:
+        #     if self._showAllCheckBox.isChecked():
+        #         self._plotAllSamples()
+        #     else:
+        #         background: np.ndarray = self._mainWindow.getBackgroundOfActiveSample()
+        #         self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView(), background)
+        #
+        # self._specPlot.finishPlotting()
+        # self._scatterPlot.finishPlotting()
 
-        self._specPlot.finishPlotting()
-        self._pcaPlot.finishPlotting()
-
-    def _plotAllSamples(self) -> None:
-        """
-        Plots the Spectra from all samples, labelled also with sample names.
-        :return:
-        """
-        i: int = 0
-        allSpecs: Dict[str, Dict[str, np.ndarray]] = self._mainWindow.getLabelledSpectraFromAllViews()
-        allBackgrounds: Dict[str, np.ndarray] = self._mainWindow.getBackgroundsOfAllSamples()
-
-        for sampleName, specDict in allSpecs.items():
-            background: np.ndarray = allBackgrounds[sampleName]
-            self._plotSpectraDict(specDict, background, sampleName=sampleName, linestyle=self.linestyles[i])
-
-            if i == len(self.linestyles)-2:
-                i = 0
-            else:
-                i += 1
-
-    def _plotSpectraDict(self, specs: Dict[str, np.ndarray], backgroundSpec: np.ndarray,
-                         sampleName: Union[None, str] = None,
-                         linestyle: [Union[str, tuple]] = "solid") -> None:
-        """
-        Plots the given spectra dictionary from the currently active sample.
-        :param specs: The spectr dictionaty (key: classname, value: spectra (NxM) array of N spectra with M wavelengths
-        :param backgroundSpec: Averaged background spectrum of the corresponding sample.
-        :param sampleName: optional samplename to include in legend
-        :param linestyle: optional linestyle for the sample spectra
-        :return:
-        """
-        def getLegendName() -> str:
-            if sampleName is None:
-                nameForLegend = cls_name
-            else:
-                nameForLegend = f"{cls_name} from {sampleName[:15]}"
-            return nameForLegend
-
-        preprocessors: List['Preprocessor'] = self._mainWindow.getPreprocessors()
-
-        for i, (cls_name, cls_specs) in enumerate(specs.items()):
-            color = [i / 255 for i in self._mainWindow.getColorOfClass(cls_name)]
-            cls_specs = self._limitSpecNumber(cls_specs)
-            cls_specs = self._preprocessSpectra(cls_specs, preprocessors, backgroundSpec)
-
-            legendName = getLegendName()
-            self._specPlot.plotSpectra(cls_specs, i, linestyle, color, legendName)
-            self._pcaPlot.addSpectraToPCA(cls_specs, linestyle, color, legendName)
+    # def _plotAllSamples(self) -> None:
+    #     """
+    #     Plots the Spectra from all samples, labelled also with sample names.
+    #     :return:
+    #     """
+    #     i: int = 0
+    #     allSpecs: Dict[str, Dict[str, np.ndarray]] = self._mainWindow.getLabelledSpectraFromAllViews()
+    #     allBackgrounds: Dict[str, np.ndarray] = self._mainWindow.getBackgroundsOfAllSamples()
+    #
+    #     for sampleName, specDict in allSpecs.items():
+    #         background: np.ndarray = allBackgrounds[sampleName]
+    #         self._plotSpectraDict(specDict, background, sampleName=sampleName, linestyle=self.linestyles[i])
+    #
+    #         if i == len(self.linestyles)-2:
+    #             i = 0
+    #         else:
+    #             i += 1
+    #
+    # def _plotSpectraDict(self, specs: Dict[str, np.ndarray], backgroundSpec: np.ndarray,
+    #                      sampleName: Union[None, str] = None,
+    #                      linestyle: [Union[str, tuple]] = "solid") -> None:
+    #     """
+    #     Plots the given spectra dictionary from the currently active sample.
+    #     :param specs: The spectr dictionaty (key: classname, value: spectra (NxM) array of N spectra with M wavelengths
+    #     :param backgroundSpec: Averaged background spectrum of the corresponding sample.
+    #     :param sampleName: optional samplename to include in legend
+    #     :param linestyle: optional linestyle for the sample spectra
+    #     :return:
+    #     """
+    #     def getLegendName() -> str:
+    #         if sampleName is None:
+    #             nameForLegend = cls_name
+    #         else:
+    #             nameForLegend = f"{cls_name} from {sampleName[:15]}"
+    #         return nameForLegend
+    #
+    #     preprocessors: List['Preprocessor'] = self._mainWindow.getPreprocessors()
+    #
+    #     for i, (cls_name, cls_specs) in enumerate(specs.items()):
+    #         color = [i / 255 for i in self._mainWindow.getColorOfClass(cls_name)]
+    #         cls_specs = self._limitSpecNumber(cls_specs)
+    #         cls_specs = self._preprocessSpectra(cls_specs, preprocessors, backgroundSpec)
+    #
+    #         legendName = getLegendName()
+    #         self._specPlot.plotSpectra(cls_specs, i, linestyle, color, legendName)
+    #         self._scatterPlot.addSpectraToPCA(cls_specs, linestyle, color, legendName)
 
     def updateCursorSpectrum(self, x: int, y: int) -> None:
         pass  # TODO: REFACTOR to directly take spectrum as input
@@ -179,34 +216,11 @@ class ResultPlots(QtWidgets.QWidget):
         optionsLayout.addStretch()
 
         self._tabView.addTab(self._specPlot, "Spectra View")
-        self._tabView.addTab(self._pcaPlot, "PCA View")
+        self._tabView.addTab(self._scatterPlot, "Scatter View")
 
         layout.addLayout(optionsLayout)
         layout.addWidget(self._tabView)
         self.setLayout(layout)
-
-    def _preprocessSpectra(self, specArr: np.ndarray, preprocessors: List['Preprocessor'],
-                             backgroundSpec: np.ndarray) -> np.ndarray:
-        """
-        Prepares the spec (NxM) array of N spec with M wavelengths for plotting.
-        Performs averating (if desired) and transpose.
-        :param specArr: (NxM) array of N spec with M wavelengths
-        :param preprocessors: The preprocessors to use
-        :param backgroundSpec: Averaged spectrum of background
-        :return: spec array in (MxN) shape, as required for plt batch plotting
-        """
-        newArr: np.ndarray = specArr.copy()
-        onedimensional = len(newArr.shape) == 1
-        if onedimensional:
-            newArr = newArr[np.newaxis, :]
-
-        for processor in preprocessors:
-            if type(processor) == Background:
-                processor: Background = cast(Background, processor)
-                processor.setBackground(backgroundSpec)
-            newArr = processor.applyToSpectra(newArr)
-
-        return newArr
 
     def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
         """
@@ -243,6 +257,9 @@ class SpecPlot(QtWidgets.QWidget):
         self._descLib: DescriptorLibrary = DescriptorLibrary()
         self._activeDescSet: Union[None, DescriptorSet] = None
 
+        self._labels: Union[None, np.ndarray] = None
+        self._sampleNames: Union[None, np.ndarray] = None
+
         self._legendItems: List[str] = []
         self._descLines: List[List[plt.Line2D]] = []
         self._selectedDescIndex: int = -1
@@ -253,8 +270,25 @@ class SpecPlot(QtWidgets.QWidget):
         self._configureWidgets()
         self._createLayout()
 
+    def updatePlot(self, spectra: np.ndarray) -> None:
+        uniqueLabels: np.ndarray = np.unique(self._labels)
+        uniqueSamples: np.ndarray = np.unique(self._sampleNames)
+        for uniqueLbl in uniqueLabels:
+            self._legendItems.append(uniqueLbl)
+            ind: np.ndarray = np.where(self._labels == uniqueLbl)[0]
+            specs: np.ndarray = spectra[ind, :]
+            if self._avgCheckBox.isChecked():
+                specs = np.mean(specs, axis=0)
+
+            color = [i / 255 for i in self._mainWin.getColorOfClass(uniqueLbl)]
+            self._specAx.plot(self._mainWin.getWavelengths(), specs.transpose(), color=color)
+
     def setMainWindow(self, mainWinRef: 'MainWindow') -> None:
         self._mainWin = mainWinRef
+
+    def setClassAndSampleNames(self, classLabels: np.ndarray, sampleNames: np.ndarray) -> None:
+        self._labels = classLabels
+        self._sampleNames = sampleNames
 
     def getDecsriptorLibrary(self) -> DescriptorLibrary:
         return self._descLib

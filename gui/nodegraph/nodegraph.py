@@ -20,12 +20,16 @@ from copy import copy
 import json
 import os
 
+import numpy as np
 from logger import getLogger
 from gui.nodegraph.nodes import *
 from gui.nodegraph.nodecore import *
 
 
 class NodeGraph(QtWidgets.QGraphicsView):
+    NewSpecsForSpecPlot: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
+    NewSpecsForScatterPlot: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
+
     def __init__(self):
         """
         NodeGraph Object for Spectra Preprocessing.
@@ -77,19 +81,16 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._nodeClf: NodeClassification = NodeClassification(self, self._logger)
 
         self._addRequiredNodes()
-        self._addNode(NodeSNV, QtCore.QPointF(50, 50))
-        self._addNode(NodeDimReduct, QtCore.QPointF(100, 100))
-        self._fitToWindow()
+        nodeSNV: NodeSNV = self._addNode(NodeSNV, QtCore.QPointF(0, 100))
+        self._addConnection(nodeSNV._inputs[0], self._inputNode._outputs[0])
 
-    def _addRequiredNodes(self) -> None:
-        """
-        Adds the required nodes to the graph and positions them at reasonable places.
-        """
-        for node in self._getRequiredNodes():
-            self.scene().addItem(node)
-        self._nodeClf.setPos(0, 400)
-        self._nodeSpecPlot.setPos(200, 400)
-        self._nodeScatterPlot.setPos(400, 400)
+        nodeDimRed: NodeDimReduct = self._addNode(NodeDimReduct, QtCore.QPointF(0, 200))
+        self._addConnection(nodeDimRed._inputs[0], nodeSNV._outputs[0])
+
+        self._addConnection(self._nodeScatterPlot._inputs[0], nodeDimRed._outputs[0])
+        self._addConnection(self._nodeSpecPlot._inputs[0], nodeSNV._outputs[0])
+
+        self._fitToWindow()
 
     def saveConfig(self, path: str) -> None:
         nodeConfig: List[dict] = [node.toDict() for node in self._nodes + [self._inputNode, self._resultNode]]
@@ -103,6 +104,51 @@ class NodeGraph(QtWidgets.QGraphicsView):
 
         self._createNodesFromConfig(nodeConfigs)
         self._createConnectionsFromConfig(nodeConfigs)
+
+    def setInputSpecta(self, spectra: np.ndarray) -> None:
+        """
+        Sets the spectra for the input node
+        :param spectra: (NxM) array of N spectra with M wavelenghts
+        """
+        self._inputNode.setSpectra(spectra)
+
+    def updatePlotNodes(self) -> None:
+        """
+        Runs the nodegraph so that both resultplots get updated (if connected).
+        """
+        if self._nodeSpecPlot.isConnected():
+            preprocSpecs: np.ndarray = self._nodeSpecPlot.getOutput()
+            self.NewSpecsForSpecPlot.emit(preprocSpecs)
+
+        if self._nodeScatterPlot.isConnected():
+            preprocSpecs: np.ndarray = self._nodeScatterPlot.getOutput()
+            self.NewSpecsForScatterPlot.emit(preprocSpecs)
+
+
+    def selectNode(self, node: 'BaseNode') -> None:
+        if self._selectedNode is not None:
+            self._selectedNode.deselect()
+        node.select()
+        self._selectedNode = node
+
+    def getNumberOfNodes(self) -> int:
+        """
+        Returns the number of nodes in the current node pipeline, i.e., between input and output (ProcessContours) node.
+        If "-1" is returned, there is no connection
+        """
+        nodePath: List['BaseNode'] = self._getNodePath()
+        if len(nodePath) == 0:
+            numNodes = -1
+        else:
+            numNodes = len(nodePath)
+        return numNodes
+
+    def clearNodeCache(self) -> None:
+        """
+        Clears the cache of all nodes.
+        """
+        for node in self._nodes:
+            node.invalidateCache()
 
     def _createNodesFromConfig(self, nodeConfigs: List[dict]) -> None:
         """
@@ -131,11 +177,15 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 output: 'Output' = connectedNode.getOutputs()[outputID]
                 self._addConnection(inp, output)
 
-    def selectNode(self, node: 'BaseNode') -> None:
-        if self._selectedNode is not None:
-            self._selectedNode.deselect()
-        node.select()
-        self._selectedNode = node
+    def _addRequiredNodes(self) -> None:
+        """
+        Adds the required nodes to the graph and positions them at reasonable places.
+        """
+        for node in self._getRequiredNodes():
+            self.scene().addItem(node)
+        self._nodeClf.setPos(0, 400)
+        self._nodeSpecPlot.setPos(200, 400)
+        self._nodeScatterPlot.setPos(400, 400)
 
     def _deselectNode(self) -> None:
         self._selectedNode.deselect()
@@ -167,18 +217,6 @@ class NodeGraph(QtWidgets.QGraphicsView):
                 nodeClass: Type['BaseNode'] = nodeTypes[action]
                 pos: QtCore.QPointF = self.mapToScene(self.mapFromGlobal(pos))
                 self._addNode(nodeClass, pos)
-
-    def getNumberOfNodes(self) -> int:
-        """
-        Returns the number of nodes in the current node pipeline, i.e., between input and output (ProcessContours) node.
-        If "-1" is returned, there is no connection
-        """
-        nodePath: List['BaseNode'] = self._getNodePath()
-        if len(nodePath) == 0:
-            numNodes = -1
-        else:
-            numNodes = len(nodePath)
-        return numNodes
 
     def _getNodePath(self) -> List['BaseNode']:
         """

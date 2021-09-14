@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from logging import Logger
     from preprocessing.preprocessors import Preprocessor
     from gui.sampleview import SampleView
+    from spectraObject import SpectraCollection
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -47,8 +48,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._logger: 'Logger' = getLogger("MainWindow")
 
         self._multiSampleView: MultiSampleView = MultiSampleView(self)
-        self._preprocSelector: PreprocessingSelector = PreprocessingSelector()
         self._resultPlots: ResultPlots = ResultPlots()
+        self._preprocSelector: PreprocessingSelector = PreprocessingSelector(self, self._resultPlots)
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassificationUI = ClassificationUI(self)
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
@@ -65,6 +66,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         graphView: 'GraphView' = sampleView.getGraphView()
         graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
+        graphView.SelectionChanged.connect(self._preprocSelector.updatePreviewSpectra)
+
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
         sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
@@ -94,17 +97,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
-    def getLabelledSpectraFromActiveView(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectraFromActiveView(self) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from the currently active sampleview.
-        :return: Dictionary[className, (NxM) specArray of N spectra with M wavelengths
+        :return: Spectra Collection with all data
         """
         return self._multiSampleView.getLabelledSpectraFromActiveView()
 
-    def getLabelledSpectraFromAllViews(self) -> Dict[str, Dict[str, np.ndarray]]:
+    def getLabelledSpectraFromAllViews(self) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
-        :return:
+        :return: Spectra Collection with all data
         """
         return self._multiSampleView.getLabelledSpectraFromAllViews()
 

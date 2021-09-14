@@ -16,6 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
 
 from gui.nodegraph.nodecore import *
 if TYPE_CHECKING:
@@ -32,9 +36,14 @@ class NodeStart(BaseNode):
         self.isStartNode = True
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._populateLayoutAndCreateIO()
+        self._spectra: Union[None, np.ndarray] = None
 
-    def getOutput(self, outputName: str == '') -> float:
-        return self._inputs[0].getValue()
+    def setSpectra(self, spectra: np.ndarray) -> None:
+        self._spectra = spectra
+
+    def getOutput(self, outputName: str == '') -> np.ndarray:
+        assert self._spectra is not None, "Spectra were not yet set on Input Node!"
+        return self._spectra
 
 
 class NodeScatterPlot(BaseNode):
@@ -44,10 +53,18 @@ class NodeScatterPlot(BaseNode):
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeScatterPlot, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Scatter Plot', [DataType.DISCRETE])]
+        self._cachedSpectra: Union[None, np.ndarray] = None
         self._populateLayoutAndCreateIO()
 
-    def getOutput(self, outputName: str = '') -> object:
-        return None
+    def isConnected(self) -> bool:
+        return self._inputs[0].isConnected()
+
+    def getOutput(self, outputName: str = '') -> np.ndarray:
+        if self._cachedSpectra is not None:
+            specs: np.ndarray = self._cachedSpectra
+        else:
+            specs: np.ndarray = self._inputs[0].getValue()
+        return specs
 
 
 class NodeSpecPlot(BaseNode):
@@ -57,10 +74,18 @@ class NodeSpecPlot(BaseNode):
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeSpecPlot, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra Plot', [DataType.CONTINUOUS])]
+        self._cachedSpectra: Union[None, np.ndarray] = None
         self._populateLayoutAndCreateIO()
 
-    def getOutput(self, outputName: str = '') -> object:
-        return None
+    def isConnected(self) -> bool:
+        return self._inputs[0].isConnected()
+
+    def getOutput(self, outputName: str = '') -> np.ndarray:
+        if self._cachedSpectra is not None:
+            specs: np.ndarray = self._cachedSpectra
+        else:
+            specs: np.ndarray = self._inputs[0].getValue()
+        return specs
 
 
 class NodeClassification(BaseNode):
@@ -83,11 +108,46 @@ class NodeDimReduct(BaseNode):
         super(NodeDimReduct, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS, DataType.DISCRETE])]
         self._outputs = [Output(self, 'Spectra', DataType.DISCRETE)]
+
+        self._pcaBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton("PCA")
+        self._pcaBtn.setChecked(True)
+        self._tsneBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton("t-SNE")
+        self._numcompSpin: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+
+        self._pcaBtn.toggled.connect(lambda: self.ParamsChanged.emit())
+        self._tsneBtn.toggled.connect(lambda: self.ParamsChanged.emit())
+        self._numcompSpin.valueChanged.connect(lambda: self.ParamsChanged.emit())
+        self._numcompSpin.setMinimum(2)
+        self._numcompSpin.setMaximum(100)
+        self._numcompSpin.setValue(3)
+
+        btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self._pcaBtn)
+        btnLayout.addWidget(self._tsneBtn)
+
+        self._bodywidget: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        layout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
+        self._bodywidget.setLayout(layout)
+        layout.addLayout(btnLayout, 0, 0, 1, 2)
+        layout.addWidget(QtWidgets.QLabel("Num Components:"), 1, 0)
+        layout.addWidget(self._numcompSpin)
+
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> object:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
-        return inputSpectra
+        numComps: int = self._numcompSpin.value()
+        if self._pcaBtn.isChecked():
+            pca: PCA = PCA(n_components=numComps)
+            outSpecs: np.ndarray = pca.fit_transform(inputSpectra)
+        else:
+            if numComps > 3:
+                QtWidgets.QMessageBox.about(self._parentGraph, "Info", "Num Components cannot be greater than 3 with t-SNE.\n"
+                                                                       "Calculating only three components.")
+                numComps = 3
+            tsne: TSNE = TSNE(n_components=numComps)
+            outSpecs: np.ndarray = tsne.fit_transform(inputSpectra)
+        return outSpecs
 
 
 class NodeSNV(BaseNode):

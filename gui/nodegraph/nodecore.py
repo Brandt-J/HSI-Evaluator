@@ -34,6 +34,7 @@ class BaseNode(QtWidgets.QGraphicsWidget):
     label = 'BaseNode'
     defaultParams: dict = {}
     isRequiredAndUnique: bool = False  # if yes, this node will be created automatically and cannot be deleted or added again.
+    ParamsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(BaseNode, self).__init__()
@@ -69,6 +70,8 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         scene: QtWidgets.QGraphicsScene = self._parentGraph.scene()
         bodyGroup: QtWidgets.QGroupBox = getGroupBox(QtWidgets.QVBoxLayout())
         bodyGroup.layout().addWidget(getTransparentQLabel(self.label, bold=True))
+        if self._bodywidget is not None:
+            bodyGroup.layout().addWidget(self._bodywidget)
 
         self._layout.addItem(scene.addWidget(bodyGroup))
         self._origLayoutSize = self.preferredSize()
@@ -100,7 +103,7 @@ class BaseNode(QtWidgets.QGraphicsWidget):
 
     def invalidateCache(self) -> None:
         """
-        Will be called after particle detection. Can be overloaded to erase any temporarily cached results.
+        Can be overloaded to erase any temporarily cached results.
         """
         pass
 
