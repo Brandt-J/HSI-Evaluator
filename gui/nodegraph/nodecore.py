@@ -23,8 +23,9 @@ from enum import Enum
 import numpy as np
 
 if TYPE_CHECKING:
-    from gui.nodegraph.nodegraph import NodeGraph
+    from preprocessing.preprocessors import Preprocessor
     from logging import Logger
+    from gui.nodegraph.nodegraph import NodeGraph
 
 
 class BaseNode(QtWidgets.QGraphicsWidget):
@@ -43,7 +44,8 @@ class BaseNode(QtWidgets.QGraphicsWidget):
         self._outputs: List['Output'] = []
         self._bodywidget: Union[None, QtWidgets.QWidget] = None
         self._logger: 'Logger' = logger
-        self._showPreviewBtn: bool = True
+        self._preprocessor: Union[None, 'Preprocessor'] = None
+
         self.isStartNode: bool = False
         self.id: int = -1
         self._alpha: float = 1.0
@@ -95,9 +97,9 @@ class BaseNode(QtWidgets.QGraphicsWidget):
                           'inputs': inDict}
         return nodeDict
 
-    def fromDict(self, configDict: dict) -> dict:
+    def fromDict(self, paramsDict: dict) -> None:
         """
-        Used to restore configuration from the dict
+        Used to restore configuration from the dict. Only the "params" sub-dictionary is passed in.
         """
         pass
 
@@ -195,6 +197,9 @@ class BaseNode(QtWidgets.QGraphicsWidget):
 
     def getOutput(self, outputName: str = '') -> object:
         raise NotImplementedError
+
+    def getPreprocessor(self) -> Union[None, 'Preprocessor']:
+        return self._preprocessor
 
     def getOutputs(self) -> List['Output']:
         return self._outputs

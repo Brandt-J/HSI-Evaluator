@@ -16,14 +16,17 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import os
 from copy import copy
 import json
-import os
 
-import numpy as np
 from logger import getLogger
+from projectPaths import getAppFolder
 from gui.nodegraph.nodes import *
 from gui.nodegraph.nodecore import *
+
+if TYPE_CHECKING:
+    from preprocessing.preprocessors import Preprocessor
 
 
 class NodeGraph(QtWidgets.QGraphicsView):
@@ -73,35 +76,30 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self.verticalScrollBar().valueChanged.connect(self.updateScene)
 
         self._inputNode: NodeStart = NodeStart(self, self._logger)
-        self._inputNode.id = 0
         self._nodeScatterPlot: NodeScatterPlot = NodeScatterPlot(self, self._logger)
         self._nodeSpecPlot: NodeSpecPlot = NodeSpecPlot(self, self._logger)
         self._nodeClf: NodeClassification = NodeClassification(self, self._logger)
 
+        for i, node in enumerate(self._getRequiredNodes()):
+            node.id = i
         self._addRequiredNodes()
-        nodeSNV: NodeSNV = self._addNode(NodeSNV, QtCore.QPointF(0, 100))
-        self._addConnection(nodeSNV._inputs[0], self._inputNode._outputs[0])
-
-        nodeDimRed: NodeDimReduct = self._addNode(NodeDimReduct, QtCore.QPointF(0, 200))
-        self._addConnection(nodeDimRed._inputs[0], nodeSNV._outputs[0])
-
-        self._addConnection(self._nodeScatterPlot._inputs[0], nodeDimRed._outputs[0])
-        self._addConnection(self._nodeSpecPlot._inputs[0], nodeSNV._outputs[0])
+        self._addMinimalSetup()
 
         self._fitToWindow()
 
-    def saveConfig(self, path: str) -> None:
-        nodeConfig: List[dict] = [node.toDict() for node in self._nodes + [self._inputNode, self._resultNode]]
-        with open(path, "w") as fp:
-            json.dump(nodeConfig, fp)
+    def getGraphConfig(self) -> List[dict]:
+        """
+        Returns a list of configurations representing the current node setup.
+        """
+        return [node.toDict() for node in self._nodes + self._getRequiredNodes()]
 
-    def loadConfig(self, path: str) -> None:
+    def applyGraphConfig(self, configList: List[dict]) -> None:
+        """
+        Takes a list of node configurations and sets up the current graph accordingly.
+        """
         self._deleteAllNodesAndConnections()
-        with open(path, "r") as fp:
-            nodeConfigs: List[dict] = json.load(fp)
-
-        self._createNodesFromConfig(nodeConfigs)
-        self._createConnectionsFromConfig(nodeConfigs)
+        self._createNodesFromConfig(configList)
+        self._createConnectionsFromConfig(configList)
 
     def setInputSpecta(self, spectra: np.ndarray) -> None:
         """
@@ -128,17 +126,14 @@ class NodeGraph(QtWidgets.QGraphicsView):
         node.select()
         self._selectedNode = node
 
-    def getNumberOfNodes(self) -> int:
+    def getPreprocessors(self) -> List['Preprocessor']:
         """
-        Returns the number of nodes in the current node pipeline, i.e., between input and output (ProcessContours) node.
-        If "-1" is returned, there is no connection
+        Returns a stack of Preprocessors for the current classficiation setup.
         """
-        nodePath: List['BaseNode'] = self._getNodePath()
-        if len(nodePath) == 0:
-            numNodes = -1
-        else:
-            numNodes = len(nodePath)
-        return numNodes
+        preprocStack: List['Preprocessor'] = []
+
+
+        return preprocStack
 
     def clearNodeCache(self) -> None:
         """
@@ -153,10 +148,28 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         for config in nodeConfigs:
             nodeType: Type['BaseNode'] = nodeTypes[config["label"]]
-            if nodeType not in [NodeRGBInput, NodeProcessContours]:
+            if nodeType not in [NodeStart, NodeScatterPlot, NodeSpecPlot, NodeClassification]:
                 newNode: 'BaseNode' = self._addNode(nodeType)
                 newNode.id = config["id"]
-                newNode.fromDict(config)
+                newNode.fromDict(config["params"])
+
+    def _saveConfig(self, path: str) -> None:
+        """
+        Saves the current graph configuration to file
+        :param path: The filepath where to save the config to.
+        """
+        with open(path, "w") as fp:
+            json.dump(self.getGraphConfig(), fp)
+
+    def _loadConfig(self, path: str) -> None:
+        """
+        Loads a configuration from file and sets the graph accordinly.
+        :param path: The filepath where to load the config from.
+        """
+        assert os.path.exists(path), f"Cannot load config from {path}.\nFile does not exist."
+        with open(path, "r") as fp:
+            nodeConfigs: List[dict] = json.load(fp)
+        self.applyGraphConfig(nodeConfigs)
 
     def _createConnectionsFromConfig(self, nodeConfigs: List[dict]) -> None:
         """
@@ -180,9 +193,23 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         for node in self._getRequiredNodes():
             self.scene().addItem(node)
-        self._nodeClf.setPos(0, 400)
-        self._nodeSpecPlot.setPos(200, 400)
-        self._nodeScatterPlot.setPos(400, 400)
+        self._nodeClf.setPos(0, 500)
+        self._nodeSpecPlot.setPos(400, 500)
+        self._nodeScatterPlot.setPos(200, 500)
+
+    def _addMinimalSetup(self) -> None:
+        """
+        Creates a minimal working setup and connects nodes.
+        """
+        nodeDeriv: NodeSmoothDeriv = cast(NodeSmoothDeriv, self._addNode(NodeSmoothDeriv, QtCore.QPointF(0, 100)))
+        self._addConnection(nodeDeriv._inputs[0], self._inputNode._outputs[0])
+
+        nodeDimRed: NodeDimReduct = cast(NodeDimReduct, self._addNode(NodeDimReduct, QtCore.QPointF(0, 300)))
+        self._addConnection(nodeDimRed._inputs[0], nodeDeriv._outputs[0])
+
+        self._addConnection(self._nodeScatterPlot._inputs[0], nodeDimRed._outputs[0])
+        self._addConnection(self._nodeSpecPlot._inputs[0], nodeDeriv._outputs[0])
+        self._addConnection(self._nodeClf._inputs[0], nodeDimRed._outputs[0])
 
     def _deselectNode(self) -> None:
         self._selectedNode.deselect()
@@ -193,65 +220,74 @@ class NodeGraph(QtWidgets.QGraphicsView):
         if action:
             action = action.text()
             if action == "Save Graph":
-                QtWidgets.QMessageBox.about(self, "Warning", "Sorry, Saving/Loading not yet implemented.")
-                # if self._detectParent is not None:
-                #     savePath: str = self._detectParent.getDetectGraphSavePath(default=False)
-                #     if savePath is not None:
-                #         self.saveConfig(savePath)
+                graphName, ok = QtWidgets.QInputDialog.getText(self, "Input Name",
+                                                               "What Name should the procedure be saved at?")
+                if ok:
+                    savePath: str = os.path.join(self._getGraphSaveFolder(), graphName + '.graph')
+                    self._saveConfig(savePath)
 
             elif action == "Load Graph":
-                QtWidgets.QMessageBox.about(self, "Warning", "Sorry, Saving/Loading not yet implemented.")
-                # if self._detectParent is not None:
-                #     loadPath: str = self._detectParent.getDetectGraphLoadPath(default=False)
-                #     if os.path.exists(loadPath):
-                #         self.loadConfig(loadPath)
+                graphName, _ = QtWidgets.QFileDialog.getOpenFileName(self, "What procedure to load?",
+                                                                     self._getGraphSaveFolder(), "*.graph")
+                if graphName:
+                    loadPath: str = os.path.join(self._getGraphSaveFolder(), graphName)
+                    self._loadConfig(loadPath)
 
             elif action in nodeTypes:
                 nodeClass: Type['BaseNode'] = nodeTypes[action]
                 pos: QtCore.QPointF = self.mapToScene(self.mapFromGlobal(pos))
                 self._addNode(nodeClass, pos)
 
-    def _getNodePath(self) -> List['BaseNode']:
+    def _getGraphSaveFolder(self) -> str:
         """
-        Gets the path of Nodes starting from the RGB Input node to the Process Contours Node. Returns an empty list
+        Returns a folder in which graphs can be saved.
+        """
+        path: str = os.path.join(getAppFolder(), "PreprocessingGraphs")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def _getClassificationPath(self) -> List['BaseNode']:
+        """
+        Gets the path of Nodes starting from the Spectra Input node to the Classification Node. Returns an empty list
         if there is no valid connection.
         """
         def allNodesVisited(visited: List['BaseNode']) -> bool:
-            return len(visited) == len(self._nodes) + 2
+            return len(visited) == len(self._nodes) + len(self._getRequiredNodes())
 
         nodePath: List['BaseNode'] = []
-        startReached: bool = False
-        newNodeFound: bool = True
-        visitedNodes: List['BaseNode'] = []
+        if self._nodeClf.isConnectedToInput():
+            startReached: bool = False
+            newNodeFound: bool = True
+            visitedNodes: List['BaseNode'] = []
 
-        paths: List[List['BaseNode']] = [[self._resultNode]]
-        while not startReached and not allNodesVisited(visitedNodes) and newNodeFound:
-            newNodeFound = False
-            for curPath in paths:
-                curNode: 'BaseNode' = curPath[-1]
-                linkedNodes: List['BaseNode'] = self._getConnectedNodes(curNode)
-                if len(linkedNodes) > 0:
-                    node: 'BaseNode' = linkedNodes[0]
-                    if node not in visitedNodes:
-                        curPath.append(node)
-                        visitedNodes.append(node)
-                        newNodeFound = True
-                        if type(node) == NodeRGBInput:
-                            startReached = True
-                            nodePath = curPath[::-1]
-                            len(curPath)
-                            break
-                        linkedNodes.remove(node)
+            paths: List[List['BaseNode']] = [[self._nodeClf]]
+            while not startReached and not allNodesVisited(visitedNodes) and newNodeFound:
+                newNodeFound = False
+                for curPath in paths:
+                    curNode: 'BaseNode' = curPath[-1]
+                    linkedNodes: List['BaseNode'] = self._getConnectedNodes(curNode)
+                    if len(linkedNodes) > 0:
+                        node: 'BaseNode' = linkedNodes[0]
+                        if node not in visitedNodes:
+                            curPath.append(node)
+                            visitedNodes.append(node)
+                            newNodeFound = True
+                            if type(node) == NodeStart:
+                                startReached = True
+                                nodePath = curPath[::-1]
+                                len(curPath)
+                                break
+                            linkedNodes.remove(node)
 
-                    # attach a copy of the unfinished path for each remaining linked node
-                    for _ in range(len(linkedNodes)):
-                        paths.append(copy(curPath))
+                        # attach a copy of the unfinished path for each remaining linked node
+                        for _ in range(len(linkedNodes)):
+                            paths.append(copy(curPath))
 
         return nodePath
 
     def _getNodeOfID(self, nodeID: int) -> 'BaseNode':
         wantedNode: 'BaseNode' = None
-        for node in self._nodes + [self._inputNode, self._resultNode]:
+        for node in self._nodes + self._getRequiredNodes():
             if node.id == nodeID:
                 wantedNode = node
                 break

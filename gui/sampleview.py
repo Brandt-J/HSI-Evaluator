@@ -278,7 +278,6 @@ class MultiSampleView(QtWidgets.QScrollArea):
                                                       f"{assignmentDict}")
 
 
-
 class SampleView(QtWidgets.QMainWindow):
     SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)

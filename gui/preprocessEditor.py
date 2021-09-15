@@ -22,7 +22,6 @@ from PyQt5 import QtWidgets, QtCore
 from typing import Dict, List, TYPE_CHECKING
 import numpy as np
 
-from preprocessing.preprocessors import getPreprocessors
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -96,16 +95,9 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
 
     def getPreprocessors(self) -> List['Preprocessor']:
         """
-        Returns a list of the currently selected preprocessors.
+        Returns a list of the preprocessors connected to the Classification Node.
         """
-        selectedProcessors: List['Preprocessor'] = []
-        availableProc: List['Preprocessor'] = getPreprocessors()
-        for lbl in self._selected:
-            for proc in availableProc:
-                if proc.label == lbl.text():
-                    selectedProcessors.append(proc)
-                    break
-        return selectedProcessors
+        return self._nodeGraph.getPreprocessors()
 
     def getPreprocessorNames(self) -> List[str]:
         """

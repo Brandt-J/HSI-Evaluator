@@ -138,6 +138,10 @@ class MainWindow(QtWidgets.QMainWindow):
         return self._multiSampleView.getActiveSample()
 
     def getPreprocessors(self) -> List['Preprocessor']:
+        """
+        Returns the stack of Preprocessors for the current classification setup (i.e., as connected to the "Classification"
+        node in the nodegraph.
+        """
         return self._preprocSelector.getPreprocessors()
 
     def getWavelengths(self) -> np.ndarray:

@@ -4,3 +4,5 @@ gui/__pycache__/
 .idea/
 
 __pycache__/
+
+config.cfg

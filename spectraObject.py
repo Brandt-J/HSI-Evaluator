@@ -52,7 +52,7 @@ class SpectraObject:
     def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray, backgroundIndices: Set[int] = set()):
         """
         Sets the preprocessing parameters
-        :param preprocessingQueue: List of Preprocessors
+        :param preprocessingQueue: List of Preprocessors§
         :param background: np.ndarray of background spectrum
         :param backgroundIndices: Set of indices of pixels of background class. These will be ignored during processing, if required.
         """

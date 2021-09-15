@@ -16,7 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-from typing import List
 from unittest import TestCase
 from PyQt5 import QtWidgets
 import sys
