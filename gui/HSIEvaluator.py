@@ -24,6 +24,7 @@ from typing import *
 import pickle
 
 from logger import getLogger
+from readConfig import sampleDirectory
 from dataObjects import View, getFilePathHash
 from loadCube import loadCube
 from legacyConvert import assertUpToDateView
@@ -152,7 +153,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _promptLoadNPYSample(self) -> None:
         """Prompts for a npy file to open as sample"""
         fnames, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Select Files",
-                                                           r"C:\Users\xbrjos\Desktop\Unsynced Files\IMEC HSI",
+                                                           sampleDirectory,
                                                            filter="*.npy *.hdr")
         for fname in fnames:
             self._loadFile(fname)
