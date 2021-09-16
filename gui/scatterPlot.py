@@ -43,7 +43,6 @@ class ScatterPlot(FigureCanvas):
 
         self._labels: Union[None, np.ndarray] = None  # lists the label names of each data point
         self._colors: List[List[float]] = []  # lists the color of each data point
-        # self._allNames: List[str] = []
         self._name2colors: Dict[str, List[float]] = {}  # connects legend label to plot color
         # self._name2lines: Dict[str, Union[str, tuple]] = {}  # connects legend label to line style
 
@@ -55,9 +54,8 @@ class ScatterPlot(FigureCanvas):
         Called before starting to plot a new set of spectra.
         """
         self._ax.clear()
-        # self._colors = []
         self._name2colors = {}
-        # self._name2lines = {}
+        self.draw()
 
     def setClassAndSampleNames(self, classLabels: np.ndarray, sampleNames: np.ndarray) -> None:
         self._labels = classLabels
@@ -76,24 +74,6 @@ class ScatterPlot(FigureCanvas):
                 confidence_ellipse(points[ind, :2], self._ax, edgecolor=color, linestyle='-')  # re-include: linestyle=self._name2lines[name]
         else:
             self._logger.warning("Cannot update scatter plot, Main Window Reference was not yet set.")
-
-    # def addSpectraToPCA(self, spectra: np.ndarray, linestyle: Union[str, tuple], color: List[float], legendName: str) -> None:
-    #     """
-    #     Plots the spectra array.
-    #     :param spectra: (NxM) array of N spectra with M wavelengths
-    #     :param linestyle: the linestyle code to use
-    #     :param color: The rgb color to use (or rgba)
-    #     :param legendName: The legendname of the given spec set.
-    #     """
-    #     if self._spectraForPCA is None:
-    #         self._spectraForPCA = spectra
-    #     else:
-    #         self._spectraForPCA = np.vstack((self._spectraForPCA, spectra))
-    #
-    #     self._colors += [color] * spectra.shape[0]
-    #     self._allNames += [legendName] * spectra.shape[0]
-    #     self._name2colors[legendName] = color
-    #     self._name2lines[legendName] = linestyle
 
     def finishPlotting(self) -> None:
         """

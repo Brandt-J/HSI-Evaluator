@@ -322,6 +322,7 @@ class SpecPlot(QtWidgets.QWidget):
         """
         self._specAx.clear()
         self._legendItems = []
+        self._canvas.draw()
 
     def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
                      color: List[float], legendName: str) -> None:

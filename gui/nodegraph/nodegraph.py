@@ -91,7 +91,10 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         Returns a list of configurations representing the current node setup.
         """
-        return [node.toDict() for node in self._nodes + self._getRequiredNodes()]
+        nodeDicts: List[dict] = []
+        for node in self._nodes + self._getRequiredNodes():
+            nodeDicts.append(node.toDict())
+        return nodeDicts
 
     def applyGraphConfig(self, configList: List[dict]) -> None:
         """
@@ -112,6 +115,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         Runs the nodegraph so that both resultplots get updated (if connected).
         """
+
         if self._nodeSpecPlot.isConnectedToInput():
             preprocSpecs: np.ndarray = self._nodeSpecPlot.getOutput()
             self.NewSpecsForSpecPlot.emit(preprocSpecs)
@@ -146,9 +150,10 @@ class NodeGraph(QtWidgets.QGraphicsView):
         """
         Takes a list of nodeconfigs and creates the nodes.
         """
+        requiredNodeTypes = [type(node) for node in self._getRequiredNodes()]
         for config in nodeConfigs:
             nodeType: Type['BaseNode'] = nodeTypes[config["label"]]
-            if nodeType not in [NodeStart, NodeScatterPlot, NodeSpecPlot, NodeClassification]:
+            if nodeType not in requiredNodeTypes:
                 newNode: 'BaseNode' = self._addNode(nodeType)
                 newNode.id = config["id"]
                 newNode.fromDict(config["params"])
@@ -313,7 +318,12 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self.scene().addItem(newNode)
         return newNode
 
+
+
     def _deleteAllNodesAndConnections(self) -> None:
+        """
+        Deletes all nodes but the required ones, and also all connections.
+        """
         for node in reversed(self._nodes):
             self._deleteNode(node)
         for wire in reversed(self._connections):
@@ -324,14 +334,12 @@ class NodeGraph(QtWidgets.QGraphicsView):
             QtWidgets.QMessageBox.about(self, "Warning", "This node is required and cannot be removed.")
 
         else:
-
             assert node in self._nodes, f'Requested not present node to delete: {node}'
-
             for inp in node.getInputs():
                 if inp.isConnected():
                     self.capConnectionFrom(inp, drawNewConnection=False)
 
-            for otherNode in self._nodes:
+            for otherNode in self._nodes + self._getRequiredNodes():
                 for inp in otherNode.getInputs():
                     if inp.getConnectedNode() is node:
                         self.capConnectionFrom(inp, drawNewConnection=False)

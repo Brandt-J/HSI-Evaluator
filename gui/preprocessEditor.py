@@ -99,15 +99,21 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         """
         return self._nodeGraph.getPreprocessors()
 
+    def getProcessingGraph(self) -> List[dict]:
+        """
+        Gets a list of nodeDictionaries, representing the currently selected preprocessing setup.
+        """
+        return self._nodeGraph.getGraphConfig()
+
     def getPreprocessorNames(self) -> List[str]:
         """
         Returns a list of the currently selected preprocessor names. Used for storing
         """
         return [lbl.text() for lbl in self._selected]
 
-    def selectPreprocessors(self, processorNames: List[str]) -> None:
+    def applyPreprocessingConfig(self, processConfig: List[dict]) -> None:
         """
-        Takes a list of processor names and sets the current selection to that.
-        :param processorNames: List of processor Names
+        Takes a nodegraph config in form of a list of nodeDictionaries and sets up the graph accordingly.
+        :param processConfig: List of Node Configurations (nodeDicts)
         """
-        raise NotImplementedError
+        self._nodeGraph.applyGraphConfig(processConfig)

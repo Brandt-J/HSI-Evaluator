@@ -77,7 +77,7 @@ class View:
         self.version: int = currentViewVersion  # counter for tracking older versions
         self.title: str = ''
         self.samples: List['Sample'] = []
-        self.processStack: List[str] = []
+        self.processingGraph: List[dict] = []
 
 
 def getFilePathHash(fpath: str) -> str:

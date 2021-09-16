@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
@@ -204,6 +205,7 @@ class NodeDetrend(BaseNode):
         super(NodeDetrend, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
+        self._preprocessor = Preprocessor()
         self._preprocessor.applyToSpectra = detrend
         self._populateLayoutAndCreateIO()
 
@@ -226,6 +228,22 @@ class NodeMSC(BaseNode):
     def getOutput(self, outputName: str = '') -> np.ndarray:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
         return self._preprocessor.applyToSpectra(inputSpectra)
+
+
+class NodeBackground(BaseNode):
+    label = 'Subtract Background'
+
+    def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
+        super(NodeBackground, self).__init__(nodeGraphParent, logger, pos)
+        self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
+        self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
+        # self._preprocessor = Preprocessor()
+        # self._preprocessor.applyToSpectra = msc
+        self._populateLayoutAndCreateIO()
+
+    def getOutput(self, outputName: str = '') -> np.ndarray:
+        inputSpectra: np.ndarray = self._inputs[0].getValue()
+        return inputSpectra
 
 
 class NodeSmoothDeriv(BaseNode):
