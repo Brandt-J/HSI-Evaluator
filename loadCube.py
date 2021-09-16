@@ -44,6 +44,11 @@ def loadCube(fname: str, errorPixelThreshold: float = 1000) -> Tuple[np.ndarray,
     :param errorPixelThreshold: The threshold used to detet erroneous pixels.
     :return: Tuple[(NxM) array of N spectra with M wavelenghts, array of M wavelengths]
     """
+    if not os.path.exists(fname) and fname.endswith(".npy"):
+        fname = fname.replace("npy", "hdr")
+    assert os.path.exists(fname), f"File {fname} not found for loading the cube."
+
+
     if fname.endswith(".npy"):
         cube: np.ndarray = np.load(fname)
         wavelengths: np.ndarray = np.arange(cube.shape[0])

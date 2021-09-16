@@ -91,22 +91,23 @@ def _updateViewToVersion1(view: 'View') -> 'View':
 def _updateViewToVersion2(view: 'View') -> 'View':
     logger.info(f"Converting view {view.title} to Version 2")
     # Recreate nodegraph from just the preprocessorNames.
-    nodegraph: NodeGraph = NodeGraph()
-    nodegraph._deleteAllNodesAndConnections()
-    nodeClasses: list = _preprocNames2NodeClasses(view.processStack)
-    lastNode: Union[None, 'BaseNode'] = None
-    for i, cls in enumerate(nodeClasses):
-        newNode: 'BaseNode' = nodegraph._addNode(cls)
-        if i == 0:
-            nodegraph._addConnection(newNode._inputs[0], nodegraph._inputNode._outputs[0])  # connect to input
-        else:
-            nodegraph._addConnection(newNode._inputs[0], lastNode._outputs[0])
-        lastNode: 'BaseNode' = newNode
+    if len(view.processStack) > 0:
+        nodeClasses: list = _preprocNames2NodeClasses(view.processStack)
+        nodegraph: NodeGraph = NodeGraph()
+        nodegraph._deleteAllNodesAndConnections()
+        lastNode: Union[None, 'BaseNode'] = None
+        for i, cls in enumerate(nodeClasses):
+            newNode: 'BaseNode' = nodegraph._addNode(cls)
+            if i == 0:
+                nodegraph._addConnection(newNode._inputs[0], nodegraph._inputNode._outputs[0])  # connect to input
+            else:
+                nodegraph._addConnection(newNode._inputs[0], lastNode._outputs[0])
+            lastNode: 'BaseNode' = newNode
 
-    nodegraph._addConnection(nodegraph._nodeClf._inputs[0], lastNode._outputs[0])  # connect lastNode to Classifier Node
+        nodegraph._addConnection(nodegraph._nodeClf._inputs[0], lastNode._outputs[0])  # connect lastNode to Classifier Node
 
-    view.processingGraph = nodegraph.getGraphConfig()
-    # del view.processStack  # I leave it there for the moment. Could be uncommented after some good testing in practice.
+        view.processingGraph = nodegraph.getGraphConfig()
+        # del view.processStack  # I leave it there for the moment. Could be uncommented after some good testing in practice.
     return view
 
 
