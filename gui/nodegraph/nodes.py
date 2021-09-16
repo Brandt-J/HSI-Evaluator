@@ -148,23 +148,25 @@ class NodeDimReduct(BaseNode):
         self._pcaBtn.setChecked(paramsDict["pcaChecked"])
 
     def _updatePreprocessor(self) -> None:
-        def applyPreproc(spectra: np.ndarray, dimRedObj: Union[PCA, TSNE]) -> np.ndarray:
-            return dimRedObj.fit_transform(spectra)
+        # def applyPreproc(spectra: np.ndarray, dimRedObj: Union[PCA, TSNE]) -> np.ndarray:
+        #     return dimRedObj.fit_transform(spectra)
 
         numComps: int = self._numcompSpin.value()
         if self._pcaBtn.isChecked():
-            dimRed: PCA = PCA(n_components=numComps)
+            pca: PCA = PCA(n_components=numComps)
             self._preprocessor.label = f"PCA, {numComps} components"
+            self._preprocessor.applyToSpectra = pca.fit_transform
         else:
             if numComps > 3:
                 QtWidgets.QMessageBox.about(self._parentGraph, "Info",
                                             "Num Components cannot be greater than 3 with t-SNE.\n"
                                             "Calculating only three components.")
                 numComps = 3
-            dimRed: TSNE = TSNE(n_components=numComps)
+            tsne: TSNE = TSNE(n_components=numComps)
             self._preprocessor.label = f"t-SNE, {numComps} components"
+            self._preprocessor.applyToSpectra = tsne.fit_transform
 
-        self._preprocessor.applyToSpectra = functools.partial(applyPreproc, dimRedObj=dimRed)
+        # self._preprocessor.applyToSpectra = functools.partial(applyPreproc, dimRedObj=dimRed)
 
 
 class NodeSNV(BaseNode):

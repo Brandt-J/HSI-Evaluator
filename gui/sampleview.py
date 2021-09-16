@@ -440,7 +440,7 @@ class SampleView(QtWidgets.QMainWindow):
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             if self._mainWindow.classIsVisible(name):
-                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getNotPreprocessedCube())
+                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getCube())
         return spectra
 
     def getAllLabelledSpectra(self) -> Dict[str, np.ndarray]:
@@ -451,7 +451,7 @@ class SampleView(QtWidgets.QMainWindow):
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             spectra[name] = getSpectraFromIndices(np.array(list(indices)),
-                                                  self._sampleData.specObj.getNotPreprocessedCube())
+                                                  self._sampleData.specObj.getCube())
         return spectra
 
     def getSelectedMaxBrightness(self) -> float:

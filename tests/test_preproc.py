@@ -19,7 +19,9 @@ If not, see <https://www.gnu.org/licenses/>.
 from unittest import TestCase
 from PyQt5 import QtWidgets
 import sys
+from typing import *
 import numpy as np
+from collections import Counter
 
 from gui.preprocessEditor import PreprocessingSelector
 from gui.spectraPlots import ResultPlots
@@ -31,19 +33,31 @@ class TestPreprocessingEditor(TestCase):
         cls.app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
 
     def test_limitSpecNumber(self):
+        def clsNameFromInt(integer: int) -> str:
+            return f"class_{integer+1}"
+
         resPlots: ResultPlots = ResultPlots()
         selector: PreprocessingSelector = PreprocessingSelector(None, resPlots)
 
-        specs: np.ndarray = np.random.rand(50, 5)
-        labels: np.ndarray = np.array([f"class_{i+1}" for i in range(50)])
-        sampleNames: np.ndarray = np.array([f"sample_{i + 1}" for i in range(50)])
+        numClasses, specsPerClass = 3, 50
+        specs: np.ndarray = np.random.rand(numClasses*specsPerClass, 5)
+        labels: List[str] = []
+        for i in range(numClasses):
+            labels += [clsNameFromInt(i)] * specsPerClass
+        labels: np.ndarray = np.array(labels)
 
-        resPlots._numSpecSpinner.setValue(20)
+        sampleNames: np.ndarray = np.array([f"sample_{i}" for i in range(numClasses*specsPerClass)])
+
+        maxNumberPerClass: int = 20
+        resPlots._numSpecSpinner.setValue(maxNumberPerClass)
         newSpecs, newLabels, newSampleNames = selector._limitToMaxNumber(specs, labels, sampleNames)
-        self.assertTrue(newSpecs.shape[0] == len(newLabels) == len(newSampleNames) == 20)
+        self.assertTrue(newSpecs.shape[0] == len(newLabels) == len(newSampleNames) == maxNumberPerClass*numClasses)
+
+        counter: Counter = Counter(newLabels)
+        for i in range(numClasses):
+            clsName = clsNameFromInt(i)
+            self.assertEqual(counter[clsName], maxNumberPerClass)
 
         for i, (label, sampleName) in enumerate(zip(newLabels, newSampleNames)):
-            indLabel: int = int(label.split('_')[1])
             indSampleName: int = int(sampleName.split('_')[1])
-            self.assertEqual(indLabel, indSampleName)
-            self.assertTrue(np.array_equal(newSpecs[i, :], specs[indLabel-1, :]))
+            self.assertTrue(np.array_equal(newSpecs[i, :], specs[indSampleName, :]))

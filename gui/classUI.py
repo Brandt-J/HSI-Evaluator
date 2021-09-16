@@ -462,6 +462,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
                 QtWidgets.QMessageBox.critical(self, "Error in classification", f"The following error occured:\n"
                                                                                 f"{error.errorText}")
                 errorOccured = True
+
             elif type(queueContent) == str:
                 self._setValidationResult(cast(str, queueContent))
 
@@ -472,6 +473,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
             if len(self._samplesToClassify) == 0 or errorOccured:
                 self._finishComputation()
+                # if errorOccured:
+                #     raise ClassificationError("An error during classification occurred")
 
     def _updateClassifiedSample(self, finishedData: 'Sample') -> None:
         """

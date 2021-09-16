@@ -28,6 +28,11 @@ from logger import getLogger
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 
+if TYPE_CHECKING:
+    from spectraObject import SpectraObject
+    from dataObjects import Sample
+    from logging import Logger
+
 
 def getClassifiers() -> List['BaseClassifier']:
     # return [NeuralNet(), SVM(), RDF()]
@@ -92,7 +97,8 @@ def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List[
             assignments: List[str] = getClassesForPixels(specObj, classifier, ignoreBackground)
         except Exception as e:
             queue.put(ClassificationError(e))
-            ClassificationError(e)
+            raise ClassificationError(e)
+
         cubeShape = specObj.getCube().shape
         skipIndices: Set[int] = specObj.getBackgroundIndices() if ignoreBackground else set([])
         clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict, skipIndices)
@@ -120,8 +126,9 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
                 specList.append(cube[:, y, x])
             i += 1
 
+    specArr: np.ndarray = np.array(specList)
     try:
-        result: np.ndarray = classifier.predict(np.array(specList))
+        result: np.ndarray = classifier.predict(specArr)
     except Exception as e:
         raise ClassificationError("Error during classifier inference: {e}")
     return list(result)

@@ -64,7 +64,7 @@ class Sample:
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self.classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getNotPreprocessedCube())
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getCube())
         return spectra
 
     def setClassOverlay(self, classImage: np.ndarray) -> None:

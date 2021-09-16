@@ -19,8 +19,9 @@ If not, see <https://www.gnu.org/licenses/>.
 import random
 
 from PyQt5 import QtWidgets, QtCore
-from typing import Dict, List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Union
 import numpy as np
+from collections import Counter
 
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
@@ -38,6 +39,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         self.setWindowTitle("Define Preprocessing")
         
         self._nodeGraph: NodeGraph = NodeGraph()
+        self._nodeGraph.ClassificationPathHasChanged.connect(lambda: self.ProcessorStackUpdated.emit())
 
         self._mainWin: 'MainWindow' = mainWinParent
         self._plots: 'ResultPlots' = resultPlots
@@ -81,16 +83,31 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
 
     def _limitToMaxNumber(self, spectra: np.ndarray, labels: np.ndarray, sampleNames: np.ndarray):
         """
-        Limits the number of spectra, labels and samplenames to the maximum number given by the result plots.
+        Limits the number of spectra, labels and samplenames to the maximum number per class given by the result plots.
         """
-        numSpecsRequired: int = self._plots.getNumberOfRequiredSpectra()
+        maxSpecsPerCls: int = self._plots.getMaxNumOfSpectraPerCls()
         random.seed(self._plots.getRandomSeed())
-        if numSpecsRequired < len(labels):
-            randomIndices: List[int] = random.sample(list(np.arange(len(labels))), numSpecsRequired)
-            spectra = spectra[randomIndices, :]
-            labels = labels[randomIndices]
-            sampleNames = sampleNames[randomIndices]
-        return spectra, labels, sampleNames
+
+        newSpecs: Union[None, np.ndarray] = None
+        newLabels: List[str] = []
+        newSampleNames: List[str] = []
+
+        counter: Counter = Counter(labels)
+        for cls, abundancy in counter.items():
+            ind: np.ndarray = np.where(labels == cls)[0]
+            if abundancy > maxSpecsPerCls:
+                ind = np.array(random.sample(list(ind), maxSpecsPerCls))
+            if newSpecs is None:
+                newSpecs = spectra[ind, :]
+            else:
+                newSpecs = np.vstack((newSpecs, spectra[ind, :]))
+            newLabels += list(labels[ind])
+            newSampleNames += list(sampleNames[ind])
+
+        newLabels: np.ndarray = np.array(newLabels)
+        newSampleNames: np.ndarray = np.array(newSampleNames)
+
+        return newSpecs, newLabels, newSampleNames
 
     def getPreprocessors(self) -> List['Preprocessor']:
         """

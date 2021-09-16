@@ -68,9 +68,9 @@ class ResultPlots(QtWidgets.QWidget):
         self._specPlot.setMainWindow(mainWin)
         self._scatterPlot.setMainWindow(mainWin)
 
-    def getNumberOfRequiredSpectra(self) -> int:
+    def getMaxNumOfSpectraPerCls(self) -> int:
         """
-        Gets the number of spectra required for previewing in the spectra and the scatter plot.
+        Gets the max number of spectra per class for previewing in the spectra and the scatter plot.
         """
         return self._numSpecSpinner.value()
 

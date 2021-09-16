@@ -125,15 +125,18 @@ class SpectraObject:
         :param ignoreBackground: Whether or not the background pixels where ignored
         :return: (NxXxY) cube array of X*Y spectra of N wavelengths (M = X*Y)
         """
-        cube = self._cube.copy()
+        if specArr.shape[1] == self._cube.shape[0]:
+            cube: np.ndarray = self._cube.copy()
+        else:
+            cube = np.zeros((specArr.shape[1], self._cube.shape[1], self._cube.shape[2]))
+            
         i: int = 0  # counter for cube index
         j: int = 0  # counter for spec Array
-        for y in range(self._cube.shape[1]):
-            for x in range(self._cube.shape[2]):
+        for y in range(cube.shape[1]):
+            for x in range(cube.shape[2]):
                 if not ignoreBackground or (ignoreBackground and i not in self._backgroundIndices):
                     cube[:, y, x] = specArr[j, :]
                     j += 1
-
                 i += 1
 
         return cube

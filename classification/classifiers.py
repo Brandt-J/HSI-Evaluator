@@ -162,7 +162,7 @@ class SVM(BaseClassifier):
     def __init__(self):
         super(SVM, self).__init__()
         self._clf: Union[None, svm.SVC] = None
-        self._kernel: str = "linear"
+        self._kernel: str = "rbf"
         self._kernelSelector: Union[None, QtWidgets.QComboBox] = None
         self._recreateComboBox()
 

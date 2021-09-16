@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 class NodeGraph(QtWidgets.QGraphicsView):
     NewSpecsForSpecPlot: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
     NewSpecsForScatterPlot: QtCore.pyqtSignal = QtCore.pyqtSignal(np.ndarray)
+    ClassificationPathHasChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         """
@@ -58,6 +59,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._nodes: List['BaseNode'] = []  # Nodes, EXCEPT the start and end-Node
         self._connections: List['ConnectionWire'] = []
         self._selectedNode: Union[None, 'BaseNode'] = None
+        self._lastClfNodePath: List['BaseNode'] = []
 
         self._dragFromOut: Union[None, 'Output'] = None
         self._dragFromIn: Union[None, 'Input'] = None
@@ -477,10 +479,12 @@ class NodeGraph(QtWidgets.QGraphicsView):
         newConn: ConnectionWire = ConnectionWire(inp, outp)
         self._connections.append(newConn)
         self.scene().addItem(newConn)
+        self._checkForNewClassificationPath()
 
     def _removeConnection(self, connectionWire: 'ConnectionWire') -> None:
         self._connections.remove(connectionWire)
         self.scene().removeItem(connectionWire)
+        self._checkForNewClassificationPath()
 
     def _destroyTempConnection(self) -> None:
         self.scene().removeItem(self._tempConnection)
@@ -514,6 +518,16 @@ class NodeGraph(QtWidgets.QGraphicsView):
             if inp.isConnected():
                 nodes.append(inp.getConnectedNode())
         return nodes
+
+    def _checkForNewClassificationPath(self) -> None:
+        """
+        Called after creating or deleting a connection. Checks, whether the nodepath to the classification node
+        has changed. If yes, the corresponding signal is emitted.
+        """
+        curClfPath: List['BaseNode'] = self._getClassificationPath()
+        if curClfPath != self._lastClfNodePath:
+            self.ClassificationPathHasChanged.emit()
+            self._lastClfNodePath = curClfPath
 
 
 class BackgroundScene(QtWidgets.QGraphicsScene):
