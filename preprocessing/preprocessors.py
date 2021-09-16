@@ -17,75 +17,76 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from abc import ABC, abstractmethod
-from typing import List
-import sys
-import os
-sys.path.append(os.getcwd())
-from preprocessing.processing import *
+# from abc import ABC, abstractmethod
+# from typing import List
+# import sys
+# import os
+# sys.path.append(os.getcwd())
+# from preprocessing.processing import *
+import numpy as np
 
 
-class Preprocessor(ABC):
+class Preprocessor:
     label: str = ''
 
-    @abstractmethod
     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
         """
         Takes (N, M) array of N spectra with M wavelengths and applies the processing
         :param spectra:
         :return:
         """
+        raise NotImplementedError
 
-
-class MeanCentering(Preprocessor):
-    label = 'MeanCentering'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return mean_center(spectra)
-
-
-class Normalize(Preprocessor):
-    label = 'Normalize'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return normalizeIntensities(spectra)
-
-
-class Detrend(Preprocessor):
-    label = 'Detrend'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return detrend(spectra)
-
-
-class SNV(Preprocessor):
-    label = 'Standard Normal Variate'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return snv(spectra)
-
-
-class Smooth(Preprocessor):
-    label = 'Smooth'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return deriv_smooth(spectra, derivative=0)
-
-
-class Derivative1(Preprocessor):
-    label = '1st Derivative (smooth)'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return deriv_smooth(spectra, derivative=1)
-
-
-class Derivative2(Preprocessor):
-    label = '2nd Derivative (smooth)'
-
-    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-        return deriv_smooth(spectra, derivative=2)
-
-
+#
+# class MeanCentering(Preprocessor):
+#     label = 'MeanCentering'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return mean_center(spectra)
+#
+#
+# class Normalize(Preprocessor):
+#     label = 'Normalize'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return normalizeIntensities(spectra)
+#
+#
+# class Detrend(Preprocessor):
+#     label = 'Detrend'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return detrend(spectra)
+#
+#
+# class SNV(Preprocessor):
+#     label = 'Standard Normal Variate'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return snv(spectra)
+#
+#
+# class Smooth(Preprocessor):
+#     label = 'Smooth'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return deriv_smooth(spectra, derivative=0)
+#
+#
+# class Derivative1(Preprocessor):
+#     label = '1st Derivative (smooth)'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return deriv_smooth(spectra, derivative=1)
+#
+#
+# class Derivative2(Preprocessor):
+#     label = '2nd Derivative (smooth)'
+#
+#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+#         return deriv_smooth(spectra, derivative=2)
+#
+#
 class Background(Preprocessor):
     label = 'Subtract Background'
 
@@ -107,7 +108,7 @@ class Background(Preprocessor):
                 curSpec -= self._backgroundSpec
                 spectra[i, :] = curSpec
         return spectra
-
-
-def getPreprocessors() -> List[Preprocessor]:
-    return [Background(), Normalize(), MeanCentering(), SNV(), Detrend(), Derivative1(), Derivative2()]
+#
+#
+# def getPreprocessors() -> List[Preprocessor]:
+#     return [Background(), Normalize(), MeanCentering(), SNV(), Detrend(), Derivative1(), Derivative2()]

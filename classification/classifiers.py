@@ -16,17 +16,12 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+from typing import Dict, List, Union
 
 import numpy as np
 from PyQt5 import QtWidgets
-from typing import *
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
-
-
-def getClassifiers() -> List['BaseClassifier']:
-    # return [NeuralNet(), SVM(), RDF()]
-    return [SVM(), KNN()]
 
 
 class ClassificationError(Exception):
@@ -116,25 +111,6 @@ class BaseClassifier:
         raise NotImplementedError
 
 
-# class NeuralNet(BaseClassifier):
-#     title = "Neural Net"
-#
-#     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-#         pass
-#
-#     def predict(self, spectra: np.ndarray) -> np.ndarray:
-#         return np.zeros(spectra.shape[0])
-#
-#
-# class RDF(BaseClassifier):
-#     title = "Random Decision Forest"
-#
-#     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-#         pass
-#
-#     def predict(self, spectra: np.ndarray) -> np.ndarray:
-#         return np.zeros(spectra.shape[0])
-
 class KNN(BaseClassifier):
     title = "k-Nearest Neighbors"
 
@@ -186,7 +162,7 @@ class SVM(BaseClassifier):
     def __init__(self):
         super(SVM, self).__init__()
         self._clf: Union[None, svm.SVC] = None
-        self._kernel: str = "linear"
+        self._kernel: str = "rbf"
         self._kernelSelector: Union[None, QtWidgets.QComboBox] = None
         self._recreateComboBox()
 
@@ -223,3 +199,23 @@ class SVM(BaseClassifier):
 
     def _updateClassifier(self) -> None:
         self._kernel = self._kernelSelector.currentText()
+
+
+# class NeuralNet(BaseClassifier):
+#     title = "Neural Net"
+#
+#     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
+#         pass
+#
+#     def predict(self, spectra: np.ndarray) -> np.ndarray:
+#         return np.zeros(spectra.shape[0])
+#
+#
+# class RDF(BaseClassifier):
+#     title = "Random Decision Forest"
+#
+#     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
+#         pass
+#
+#     def predict(self, spectra: np.ndarray) -> np.ndarray:
+#         return np.zeros(spectra.shape[0])

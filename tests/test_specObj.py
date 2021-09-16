@@ -20,9 +20,31 @@ If not, see <https://www.gnu.org/licenses/>.
 from unittest import TestCase
 from typing import *
 import numpy as np
+from PyQt5 import QtWidgets
+import sys
 
 from spectraObject import SpectraObject, splitUpArray, SpectraCollection
-from preprocessing.preprocessors import getPreprocessors
+from gui.nodegraph.nodes import nodeTypes
+from gui.nodegraph.nodegraph import NodeGraph
+if TYPE_CHECKING:
+    from preprocessing.preprocessors import Preprocessor
+    from gui.nodegraph.nodecore import BaseNode
+
+
+def getPreprocessors() -> List['Preprocessor']:
+    """
+    Gets the available preprocessors for spectral data.
+    """
+    graph: NodeGraph = NodeGraph()
+    preprocList: List['Preprocessor'] = []
+    for nodetype in nodeTypes.values():
+        node: 'BaseNode' = nodetype(graph, None)
+        if node.getPreprocessor() is not None:
+            preprocList.append(node.getPreprocessor())
+    return preprocList
+
+
+app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
 
 
 class TestSpecObject(TestCase):
@@ -74,8 +96,7 @@ class TestSpecObject(TestCase):
 
         reconstructedCube: np.ndarray = specObj._specArr2cube(specArr, ignoreBackground=True)
         numHundreds = len(np.where(reconstructedCube == 100)[0])
-        self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
-        self.assertTrue(np.array_equal(reconstructedCube, testCube))
+        self.assertEqual(numHundreds, 0)
 
 
 class TestSpecCollection(TestCase):

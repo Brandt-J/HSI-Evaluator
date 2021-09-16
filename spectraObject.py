@@ -52,7 +52,7 @@ class SpectraObject:
     def preparePreprocessing(self, preprocessingQueue: List['Preprocessor'], background: np.ndarray, backgroundIndices: Set[int] = set()):
         """
         Sets the preprocessing parameters
-        :param preprocessingQueue: List of Preprocessors
+        :param preprocessingQueue: List of Preprocessors§
         :param background: np.ndarray of background spectrum
         :param backgroundIndices: Set of indices of pixels of background class. These will be ignored during processing, if required.
         """
@@ -82,10 +82,11 @@ class SpectraObject:
 
         self._resetPreprocessing()
 
-    def _preprocessSpectraMultiProcessing(self, specArr: np.ndarray) -> np.ndarray:
+    def _preprocessSpectraMultiProcessing(self, specArr: np.ndarray, maxWorkers: int = 8) -> np.ndarray:
         """
         Preprocesses the given spectra array using a Process Pool Executor.
         :param specArr: (NxM) array of N spectra with M wavelengths
+        :param maxWorkers: Max number of Workers for multiprocessing.
         :return: processed (NxM) array
         """
         self._logger.debug(f"Preprocessing {len(specArr)} spectra with pool process executor.")
@@ -93,7 +94,7 @@ class SpectraObject:
         splitArrays: List[np.ndarray] = splitUpArray(specArr, numParts=10)
         for partArray in splitArrays:
             preprocDatas.append(PreprocessData(partArray, self._preprocQueue, self._background))
-        maxWorkers: int = 6
+
         with ProcessPoolExecutor(max_workers=maxWorkers) as executor:
             result: List[np.ndarray] = list(executor.map(applyPreprocessing, preprocDatas))
 
@@ -124,15 +125,18 @@ class SpectraObject:
         :param ignoreBackground: Whether or not the background pixels where ignored
         :return: (NxXxY) cube array of X*Y spectra of N wavelengths (M = X*Y)
         """
-        cube = self._cube.copy()
+        if specArr.shape[1] == self._cube.shape[0]:
+            cube: np.ndarray = self._cube.copy()
+        else:
+            cube = np.zeros((specArr.shape[1], self._cube.shape[1], self._cube.shape[2]))
+            
         i: int = 0  # counter for cube index
         j: int = 0  # counter for spec Array
-        for y in range(self._cube.shape[1]):
-            for x in range(self._cube.shape[2]):
+        for y in range(cube.shape[1]):
+            for x in range(cube.shape[2]):
                 if not ignoreBackground or (ignoreBackground and i not in self._backgroundIndices):
                     cube[:, y, x] = specArr[j, :]
                     j += 1
-
                 i += 1
 
         return cube

@@ -17,17 +17,21 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Union
+import difflib
 
 from spectraObject import SpectraObject
 from logger import getLogger
+from gui.nodegraph.nodegraph import NodeGraph
+from gui.nodegraph.nodes import nodeTypes
 
 if TYPE_CHECKING:
     from logging import Logger
     from dataObjects import Sample, View
+    from gui.nodegraph.nodecore import BaseNode
 
 currentSampleVersion = 1
-currentViewVersion = 1
+currentViewVersion = 2
 
 logger: 'Logger' = getLogger("LegacyConvert")
 
@@ -49,6 +53,8 @@ def assertUpToDateView(view: 'View') -> 'View':
 
     if not hasattr(view, "version"):
         view = _updateViewToVersion1(view)
+    if view.version == 1:
+        view = _updateViewToVersion2(view)
 
     return view
 
@@ -78,4 +84,40 @@ def _updateViewToVersion1(view: 'View') -> 'View':
         newSample.__dict__.update(sample.__dict__)
         samples.append(newSample)
     view.samples = samples
+    view.version = 1
     return view
+
+
+def _updateViewToVersion2(view: 'View') -> 'View':
+    logger.info(f"Converting view {view.title} to Version 2")
+    # Recreate nodegraph from just the preprocessorNames.
+    nodegraph: NodeGraph = NodeGraph()
+    nodegraph._deleteAllNodesAndConnections()
+    nodeClasses: list = _preprocNames2NodeClasses(view.processStack)
+    lastNode: Union[None, 'BaseNode'] = None
+    for i, cls in enumerate(nodeClasses):
+        newNode: 'BaseNode' = nodegraph._addNode(cls)
+        if i == 0:
+            nodegraph._addConnection(newNode._inputs[0], nodegraph._inputNode._outputs[0])  # connect to input
+        else:
+            nodegraph._addConnection(newNode._inputs[0], lastNode._outputs[0])
+        lastNode: 'BaseNode' = newNode
+
+    nodegraph._addConnection(nodegraph._nodeClf._inputs[0], lastNode._outputs[0])  # connect lastNode to Classifier Node
+
+    view.processingGraph = nodegraph.getGraphConfig()
+    # del view.processStack  # I leave it there for the moment. Could be uncommented after some good testing in practice.
+    return view
+
+
+def _preprocNames2NodeClasses(preprocNames: List[str]) -> list:
+    """
+    Takes a List of preprocessorName and finds the available preprocessor NodeTypes that are closest to that.
+    :param preprocNames: List of Names of Preprocessors
+    :return: List of NodeTypes corresponding to the procList.
+    """
+    types: list = []
+    for name in preprocNames:
+        closestName = difflib.get_close_matches(name, nodeTypes.keys(), cutoff=0)[0]
+        types.append(nodeTypes[closestName])
+    return types

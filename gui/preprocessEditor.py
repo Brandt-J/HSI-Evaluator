@@ -19,16 +19,15 @@ If not, see <https://www.gnu.org/licenses/>.
 import random
 
 from PyQt5 import QtWidgets, QtCore
-from typing import Dict, List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING, Union
 import numpy as np
+from collections import Counter
 
-from preprocessing.preprocessors import getPreprocessors
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from spectraObject import SpectraCollection
-    from gui.spectraPlots import ResultPlots, SpecPlot
-    from gui.scatterPlot import ScatterPlot
+    from gui.spectraPlots import ResultPlots
     from preprocessing.preprocessors import Preprocessor
 
 
@@ -40,6 +39,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         self.setWindowTitle("Define Preprocessing")
         
         self._nodeGraph: NodeGraph = NodeGraph()
+        self._nodeGraph.ClassificationPathHasChanged.connect(lambda: self.ProcessorStackUpdated.emit())
 
         self._mainWin: 'MainWindow' = mainWinParent
         self._plots: 'ResultPlots' = resultPlots
@@ -83,29 +83,43 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
 
     def _limitToMaxNumber(self, spectra: np.ndarray, labels: np.ndarray, sampleNames: np.ndarray):
         """
-        Limits the number of spectra, labels and samplenames to the maximum number given by the result plots.
+        Limits the number of spectra, labels and samplenames to the maximum number per class given by the result plots.
         """
-        numSpecsRequired: int = self._plots.getNumberOfRequiredSpectra()
+        maxSpecsPerCls: int = self._plots.getMaxNumOfSpectraPerCls()
         random.seed(self._plots.getRandomSeed())
-        if numSpecsRequired < len(labels):
-            randomIndices: List[int] = random.sample(list(np.arange(len(labels))), numSpecsRequired)
-            spectra = spectra[randomIndices, :]
-            labels = labels[randomIndices]
-            sampleNames = sampleNames[randomIndices]
-        return spectra, labels, sampleNames
+
+        newSpecs: Union[None, np.ndarray] = None
+        newLabels: List[str] = []
+        newSampleNames: List[str] = []
+
+        counter: Counter = Counter(labels)
+        for cls, abundancy in counter.items():
+            ind: np.ndarray = np.where(labels == cls)[0]
+            if abundancy > maxSpecsPerCls:
+                ind = np.array(random.sample(list(ind), maxSpecsPerCls))
+            if newSpecs is None:
+                newSpecs = spectra[ind, :]
+            else:
+                newSpecs = np.vstack((newSpecs, spectra[ind, :]))
+            newLabels += list(labels[ind])
+            newSampleNames += list(sampleNames[ind])
+
+        newLabels: np.ndarray = np.array(newLabels)
+        newSampleNames: np.ndarray = np.array(newSampleNames)
+
+        return newSpecs, newLabels, newSampleNames
 
     def getPreprocessors(self) -> List['Preprocessor']:
         """
-        Returns a list of the currently selected preprocessors.
+        Returns a list of the preprocessors connected to the Classification Node.
         """
-        selectedProcessors: List['Preprocessor'] = []
-        availableProc: List['Preprocessor'] = getPreprocessors()
-        for lbl in self._selected:
-            for proc in availableProc:
-                if proc.label == lbl.text():
-                    selectedProcessors.append(proc)
-                    break
-        return selectedProcessors
+        return self._nodeGraph.getPreprocessors()
+
+    def getProcessingGraph(self) -> List[dict]:
+        """
+        Gets a list of nodeDictionaries, representing the currently selected preprocessing setup.
+        """
+        return self._nodeGraph.getGraphConfig()
 
     def getPreprocessorNames(self) -> List[str]:
         """
@@ -113,9 +127,9 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         """
         return [lbl.text() for lbl in self._selected]
 
-    def selectPreprocessors(self, processorNames: List[str]) -> None:
+    def applyPreprocessingConfig(self, processConfig: List[dict]) -> None:
         """
-        Takes a list of processor names and sets the current selection to that.
-        :param processorNames: List of processor Names
+        Takes a nodegraph config in form of a list of nodeDictionaries and sets up the graph accordingly.
+        :param processConfig: List of Node Configurations (nodeDicts)
         """
-        raise NotImplementedError
+        self._nodeGraph.applyGraphConfig(processConfig)

@@ -51,84 +51,69 @@ class TestNodes(unittest.TestCase):
 
         self.nodegraph._addConnection(specPlot._inputs[0], startNode._outputs[0])
 
-    # def test_getNumberOfNodes(self):
-    #     numNodes = self.nodegraph.getNumberOfNodes()
-    #     self.assertEqual(numNodes, 5)
-    #
-    #     # Now add a number node to the Threshold node's low-input
-    #     self.nodegraph._addNode(NodeNumber)
-    #     numNode: NodeNumber = self.nodegraph._nodes[-1]
-    #     threshNode: NodeThreshold = self.nodegraph._nodes[1]
-    #     self.nodegraph._addConnection(threshNode._inputs[1], numNode._outputs[0])
-    #     numNodes = self.nodegraph.getNumberOfNodes()
-    #     self.assertEqual(numNodes, 5)
-    #
-    #     # And now another one to the high-input
-    #     self.nodegraph._addNode(NodeNumber)
-    #     newNodeNumber: NodeNumber = self.nodegraph._nodes[-1]
-    #     self.nodegraph._addConnection(threshNode._inputs[2], newNodeNumber._outputs[0])
-    #     numNodes = self.nodegraph.getNumberOfNodes()
-    #     self.assertEqual(numNodes, 5)
-    #
-    #     # And now add another not connected node:
-    #     self.nodegraph._addNode(NodeMath)
-    #     numNodes = self.nodegraph.getNumberOfNodes()
-    #     self.assertEqual(numNodes, 5)
-    #
-    #     # Now disconnect the start node, it should return -1:
-    #     self.nodegraph.capConnectionFrom(self.nodegraph._nodes[0]._inputs[0])
-    #     numNodes = self.nodegraph.getNumberOfNodes()
-    #     self.assertEqual(numNodes, -1)
-    #
-    # def test_isConnectedToStartAndGetNodePath(self):
-    #     nodePath: List['BaseNode'] = self.nodegraph._getNodePath()
-    #     expectedPath: List['BaseNode'] = [self.inpNode, self.grayNode, self.threshNode, self.watershedNode, self.resultNode]
-    #     self.assertEqual(nodePath, expectedPath)
-    #
-    #     self.nodegraph._deleteNode(self.threshNode)
-    #     self.assertTrue(self.grayNode._isConnectedToRGBInput())
-    #     self.assertFalse(self.watershedNode._isConnectedToRGBInput())
-    #     nodePath = self.nodegraph._getNodePath()
-    #     self.assertEqual(nodePath, [])
+    def test_isConnectedToStartAndGetNodePath(self):
+        nodeSmoothDeriv: BaseNode = self.nodegraph._nodes[0]
+        self.assertTrue(type(nodeSmoothDeriv) == NodeSmoothDeriv)
+        nodeDimReduct: BaseNode = self.nodegraph._nodes[1]
+        self.assertTrue(type(nodeDimReduct) == NodeDimReduct)
 
-    # def test_getNodeDict(self):
-    #     self.createMinimalWatershedSetup()
-    #     threshDict: dict = self.threshNode.toDict()
-    #     self.assertEqual(threshDict["label"], self.threshNode.label)
-    #     self.assertEqual(threshDict["id"], self.threshNode.id)
-    #
-    #     inputs: dict = threshDict["inputs"]
-    #     self.assertEqual(list(inputs.keys()), [0])  # the first input has a connection
-    #     self.assertEqual(inputs[0], [self.grayNode.id, 0])  # it is connected to the first output of the gray node, specified by its id
-    #
-    #     params: dict = threshDict["params"]
-    #     self.assertEqual(params["threshLow"], self.threshNode._threshLow.value())
-    #     self.assertEqual(params["threshHigh"], self.threshNode._threshHigh.value())
-    #
-    # def test_deleteALlNodes(self):
-    #     self.createMinimalWatershedSetup()
-    #     self.nodegraph._deleteAllNodesAndConnections()
-    #     self.assertEqual(len(self.nodegraph._nodes), 0)
-    #     self.assertEqual(len(self.nodegraph._connections), 0)
-    #
-    # def test_saveLoadNodeConfig(self) -> None:
-    #     self.createMinimalWatershedSetup()
-    #
-    #     with tempfile.TemporaryDirectory() as tmpDir:
-    #         origThresh = self.threshNode._threshLow.value()
-    #         origNodePath: List['BaseNode'] = copy.copy(self.nodegraph._getNodePath())
-    #         self.threshNode._threshLow.setValue(2*origThresh)
-    #         savePath: str = os.path.join(tmpDir, 'nodeConfig.txt')
-    #         self.nodegraph.saveConfig(savePath)
-    #         self.assertTrue(os.path.exists(savePath))
-    #
-    #         self.threshNode._threshLow.setValue(0)  # set to something else..
-    #         self.nodegraph.loadConfig(savePath)
-    #         self.assertEqual(len(origNodePath), self.nodegraph.getNumberOfNodes())
-    #         for origNode, newNode in zip(origNodePath, self.nodegraph._getNodePath()):
-    #             self.assertEqual(type(origNode), type(newNode))
-    #             self.assertEqual(origNode.id, newNode.id)
-    #             if type(newNode) == NodeThreshold:
-    #                 self.assertEqual(newNode._threshLow.value(), 2*origThresh)
-    #
-    #
+        expectedPath: List['BaseNode'] = [self.nodegraph._inputNode,
+                                          nodeSmoothDeriv,
+                                          nodeDimReduct,
+                                          self.nodegraph._nodeClf]
+
+        nodePath: List['BaseNode'] = self.nodegraph._getClassificationPath()
+        self.assertEqual(nodePath, expectedPath)
+
+        self.nodegraph._deleteNode(nodeDimReduct)
+        self.assertTrue(nodeSmoothDeriv.isConnectedToInput())
+        self.assertFalse(self.nodegraph._nodeClf.isConnectedToInput())
+        nodePath = self.nodegraph._getClassificationPath()
+        self.assertEqual(nodePath, [])
+
+    def test_getNodeDict(self):
+        nodeDimReduct: BaseNode = self.nodegraph._nodes[1]
+        nodeSmoothDeriv: BaseNode = self.nodegraph._nodes[0]
+        self.assertTrue(type(nodeSmoothDeriv) == NodeSmoothDeriv)
+        self.assertTrue(type(nodeDimReduct) == NodeDimReduct)
+
+        nodeDict: dict = nodeDimReduct.toDict()
+        self.assertEqual(nodeDict["label"], nodeDimReduct.label)
+        self.assertEqual(nodeDict["id"], nodeDimReduct.id)
+
+        inputs: dict = nodeDict["inputs"]
+        self.assertEqual(list(inputs.keys()), [0])  # the first input has a connection
+        self.assertEqual(inputs[0], [nodeSmoothDeriv.id, 0])  # it is connected to the first output of the gray node, specified by its id
+
+        params: dict = nodeDict["params"]
+        self.assertEqual(params["numComps"], nodeDimReduct._numcompSpin.value())
+        self.assertEqual(params["pcaChecked"], nodeDimReduct._pcaBtn.isChecked())
+
+    def test_deleteAllNodes(self):
+        self.nodegraph._deleteAllNodesAndConnections()
+        self.assertEqual(len(self.nodegraph._nodes), 0)
+        self.assertEqual(len(self.nodegraph._connections), 0)
+
+    def test_saveLoadNodeConfig(self) -> None:
+        smoothNode: NodeSmoothDeriv = cast(NodeSmoothDeriv, self.nodegraph._nodes[0])
+        self.assertTrue(type(smoothNode) == NodeSmoothDeriv)
+        origWinSize = smoothNode._winSizeSpin.value()
+        origNodePath: List['BaseNode'] = copy.copy(self.nodegraph._getClassificationPath())
+        smoothNode._winSizeSpin.setValue(2*origWinSize)
+
+        with tempfile.TemporaryDirectory() as tmpDir:
+            savePath: str = os.path.join(tmpDir, 'nodeConfig.txt')
+            self.nodegraph._saveConfig(savePath)
+            self.assertTrue(os.path.exists(savePath))
+
+            smoothNode._winSizeSpin.setValue(0)  # set to something else..
+            self.nodegraph._loadConfig(savePath)
+
+        loadedNodePath: List['BaseNode'] = self.nodegraph._getClassificationPath()
+        self.assertEqual(len(origNodePath), len(loadedNodePath))
+
+        for origNode, newNode in zip(origNodePath, loadedNodePath):
+            self.assertEqual(type(origNode), type(newNode))
+            self.assertEqual(origNode.id, newNode.id)
+            if type(newNode) == NodeSmoothDeriv:
+                self.assertEqual(newNode._winSizeSpin.value(), 2*origWinSize)

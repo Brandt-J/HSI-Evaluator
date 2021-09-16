@@ -32,7 +32,7 @@ from gui.graphOverlays import GraphView
 from spectraObject import SpectraObject, SpectraCollection
 
 if TYPE_CHECKING:
-    from gui.classification import ClassCreator
+    from gui.classUI import ClassCreator
     from dataObjects import View
     from gui.preprocessEditor import PreprocessingSelector
 

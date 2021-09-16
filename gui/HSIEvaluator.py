@@ -32,7 +32,7 @@ from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
-from gui.classification import ClassCreator, ClassificationUI
+from gui.classUI import ClassCreator, ClassificationUI
 
 
 if TYPE_CHECKING:
@@ -60,7 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createMenuBar()
         self._createLayout()
-        self.disableWidgets()
+        # self.disableWidgets()
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._resultPlots.updatePlots)
@@ -139,6 +139,10 @@ class MainWindow(QtWidgets.QMainWindow):
         return self._multiSampleView.getActiveSample()
 
     def getPreprocessors(self) -> List['Preprocessor']:
+        """
+        Returns the stack of Preprocessors for the current classification setup (i.e., as connected to the "Classification"
+        node in the nodegraph.
+        """
         return self._preprocSelector.getPreprocessors()
 
     def getWavelengths(self) -> np.ndarray:
@@ -201,7 +205,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         viewObj: View = View()
         viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
-        # viewObj.processStack = self._preprocSelector.getPreprocessorNames()  # TODO: Reimplement
+        viewObj.processingGraph = self._preprocSelector.getProcessingGraph()
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)
@@ -213,14 +217,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         with open(fname, "rb") as fp:
             loadedView: View = pickle.load(fp)
-            loadedView = assertUpToDateView(loadedView)
+            loadedView = assertUpToDateView(loadedView)  # TODO: map from processStack to processingGraph
         view: View = View()
         view.__dict__.update(loadedView.__dict__)
 
         if view.title != '':
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
         self._multiSampleView.createListOfSamples(view.samples)
-        self._preprocSelector.selectPreprocessors(view.processStack)
+        self._preprocSelector.applyPreprocessingConfig(view.processingGraph)
+        self._preprocSelector.updatePreviewSpectra()
         self.enableWidgets()
         self._resultPlots.updatePlots()
         self._clfWidget.forcePreprocessing()

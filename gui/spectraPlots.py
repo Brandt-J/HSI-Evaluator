@@ -68,9 +68,9 @@ class ResultPlots(QtWidgets.QWidget):
         self._specPlot.setMainWindow(mainWin)
         self._scatterPlot.setMainWindow(mainWin)
 
-    def getNumberOfRequiredSpectra(self) -> int:
+    def getMaxNumOfSpectraPerCls(self) -> int:
         """
-        Gets the number of spectra required for previewing in the spectra and the scatter plot.
+        Gets the max number of spectra per class for previewing in the spectra and the scatter plot.
         """
         return self._numSpecSpinner.value()
 
@@ -322,6 +322,7 @@ class SpecPlot(QtWidgets.QWidget):
         """
         self._specAx.clear()
         self._legendItems = []
+        self._canvas.draw()
 
     def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
                      color: List[float], legendName: str) -> None:

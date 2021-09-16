@@ -23,10 +23,11 @@ from unittest import TestCase
 import numpy as np
 from typing import *
 
-from classifiers import SVM
+from classification.classifiers import SVM
 from dataObjects import Sample
-from gui.classification import ClassificationUI
+from gui.classUI import ClassificationUI
 from gui.sampleview import SampleView
+from tests.test_specObj import getPreprocessors
 
 
 class TestClassifiers(TestCase):
@@ -49,8 +50,7 @@ class TestClassifiers(TestCase):
 
     def test_runClassification(self) -> None:
         classUI: ClassificationUI = ClassificationUI(MockMainWin())
-        classUI._classifyImage()
-        # Make sure it does not fail
+        classUI._classifyImage()  # Make sure it does not fail
 
 
 class MockMainWin:
@@ -70,11 +70,11 @@ class MockMainWin:
     def disableWidgets(self):
         pass
 
-    def enableWidges(self):
+    def enableWidgets(self):
         pass
 
     def getPreprocessors(self):
-        return []
+        return getPreprocessors()
 
     def getAllSamples(self) -> List['SampleView']:
         return self._samples
