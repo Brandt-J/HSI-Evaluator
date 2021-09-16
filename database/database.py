@@ -24,6 +24,7 @@ import mysql.connector
 from typing import Union, TYPE_CHECKING, List, Dict
 
 import numpy as np
+from readConfig import sqlLogin
 from projectPaths import getAppFolder
 from logger import getLogger
 
@@ -44,13 +45,7 @@ class DBConnection:
         """
         if self._connection is None:
             try:
-                config: dict = self._getConfigDict()
-            except FileNotFoundError as e:
-                self._logger.critical(f"Configuration file for SQL Connection not found: {e}")
-                raise ConnectionError(e)
-
-            try:
-                self._connection = mysql.connector.connect(**config)
+                self._connection = mysql.connector.connect(**sqlLogin)
                 self._logger.info("Successfully connected to database.")
             except mysql.connector.errors.ProgrammingError as e:
                 self._logger.critical(f"Connection error: {e}")
@@ -170,16 +165,6 @@ class DBConnection:
         """
         if self._connection is None:
             self.connect()  # Will raise exception if not possible
-
-    def _getConfigDict(self) -> dict:
-        path: str = os.path.join(getAppFolder(), "dbconfig.txt")
-        config: dict = {}
-        if os.path.exists(path):
-            with open(path, "r") as fp:
-                config = json.load(fp)
-        else:
-            raise FileNotFoundError(f"No database config found at {path}")
-        return config
 
     def _getMaterialTypes(self) -> List[str]:
         """

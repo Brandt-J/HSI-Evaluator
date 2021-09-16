@@ -22,8 +22,12 @@ import sys
 from typing import Tuple
 import numpy as np
 
-os.environ['PATH'] = r'C:\imec_15\HSI Snapscan\bin' + os.pathsep + os.environ['PATH']
-sys.path.append(r'C:\imec_15\HSI Snapscan\python')
+from readConfig import snapScanFolder
+
+snapscanBinaries = os.path.join(snapScanFolder, "bin")
+snapscanAPI = os.path.join(snapScanFolder, "python")
+os.environ['PATH'] = snapscanBinaries + os.pathsep + os.environ['PATH']
+sys.path.append(snapscanAPI)
 try:
     import hsi_snapscan as HSI
     snapscanEnabled: bool = True
