@@ -23,9 +23,9 @@ from unittest import TestCase
 import numpy as np
 from typing import *
 
-from classifiers import SVM
+from classification.classifiers import SVM
 from dataObjects import Sample
-from gui.classification import ClassificationUI
+from gui.classUI import ClassificationUI
 from gui.sampleview import SampleView
 
 

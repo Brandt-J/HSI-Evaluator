@@ -32,7 +32,7 @@ from gui.sampleview import MultiSampleView
 from gui.graphOverlays import GraphView
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
-from gui.classification import ClassCreator, ClassificationUI
+from gui.classUI import ClassCreator, ClassificationUI
 
 
 if TYPE_CHECKING:
