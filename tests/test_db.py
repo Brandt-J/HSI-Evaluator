@@ -30,87 +30,79 @@ from database.database import DBConnection, uploadSpectra, SpecDetails
 from gui.dbWin import ClassEntry
 
 
-def testRaiseFunc():
-    raise FileNotFoundError("Config not found")
+class TestDatabase(TestCase):
+    def testConnection(self):
+        conn: DBConnection = DBConnection()
+        self.assertTrue(conn._connection is None)
+        conn.connect()
+        self.assertEqual(type(conn._connection), mysql.connector.connection.MySQLConnection)
+        conn.disconnect()
+        self.assertTrue(conn._connection is None)
+
+    def testUpload(self):
+        def getNumSpectraOfSample(conn: DBConnection, samplename: 'str') -> int:
+            cursor = conn._getCursor()
+            cursor.execute(f"SELECT sample FROM spectra WHERE sample='{samplename}'")
+            sampleNames: List[str] = [row[0] for row in cursor]
+            numSpectra = len(sampleNames)
+            if numSpectra > 0:
+                self.assertEqual(sampleNames, [samplename]*numSpectra)
+            return numSpectra
+
+        specLength: int = 10
+        nameCls1, numCls1 = "TestClass1", 3
+        nameCls2, numCls2 = "TestClass2", 2
+        specDict: Dict[str, np.ndaray] = {nameCls1: np.random.rand(numCls1, specLength),
+                                          nameCls2: np.random.rand(numCls2, specLength)}
+        wavelengths: np.ndarray = np.arange(specLength)
+        details = SpecDetails(10, 0.5, 5.3, "SWIR_LM", "pristine", "unknown", "SQLTestSample")
+        connection: DBConnection = DBConnection()
+
+        self.assertTrue(details.sampleName not in connection.getSampleNames())
+        # Create the sample entry
+        connection.createNewSample(details.sampleName, details.sampleName)
+        self.assertTrue(details.sampleName in connection.getSampleNames())
+
+        # Upload the spectra
+        self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), 0)
+        uploadSpectra(specDict, wavelengths, details, Queue())
+
+        # reconnect, to get a fresh connection that sees all the uploaded spectra (sometimes failed otherwise..)
+        connection.disconnect()
+        connection.connect()
+        self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), numCls2+numCls1)
+
+        # # Cleanup...
+        cursor = connection._getCursor()
+        cursor.execute(f"DELETE FROM spectra WHERE sample='{details.sampleName}'")
+        cursor.execute(f"DELETE FROM samples WHERE sample_name='{details.sampleName}'")
+        cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls1}'")
+        cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls2}'")
+        connection._connection.commit()
+        self.assertTrue(details.sampleName not in connection.getSampleNames())
+        self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), 0)
+        connection.disconnect()
 
 
-# class TestDatabase(TestCase):
-#
-#     def testConnection(self):
-#         conn: DBConnection = DBConnection()
-#         self.assertTrue(conn._connection is None)
-#         conn.connect()
-#         self.assertEqual(type(conn._connection), mysql.connector.connection.MySQLConnection)
-#         conn.disconnect()
-#         self.assertTrue(conn._connection is None)
-#
-#         conn._getConfigDict = testRaiseFunc
-#         self.assertRaises(ConnectionError, conn.connect)
-#
-#     def testUpload(self):
-#         def getNumSpectraOfSample(conn: DBConnection, samplename: 'str') -> int:
-#             cursor = conn._getCursor()
-#             cursor.execute(f"SELECT sample FROM spectra WHERE sample='{samplename}'")
-#             sampleNames: List[str] = [row[0] for row in cursor]
-#             numSpectra = len(sampleNames)
-#             if numSpectra > 0:
-#                 self.assertEqual(sampleNames, [samplename]*numSpectra)
-#             return numSpectra
-#
-#         specLength: int = 10
-#         nameCls1, numCls1 = "TestClass1", 3
-#         nameCls2, numCls2 = "TestClass2", 2
-#         specDict: Dict[str, np.ndaray] = {nameCls1: np.random.rand(numCls1, specLength),
-#                                           nameCls2: np.random.rand(numCls2, specLength)}
-#         wavelengths: np.ndarray = np.arange(specLength)
-#         details = SpecDetails(10, 0.5, 5.3, "SWIR_LM", "SQLTestSample")
-#         connection: DBConnection = DBConnection()
-#
-#         self.assertTrue(details.sampleName not in connection.getSampleNames())
-#         # Create the sample entry
-#         connection.createNewSample(details.sampleName, details.sampleName)
-#         self.assertTrue(details.sampleName in connection.getSampleNames())
-#
-#         # Upload the spectra
-#         self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), 0)
-#         uploadSpectra(specDict, wavelengths, details, Queue())
-#
-#         # reconnect, to get a fresh connection that sees all the uploaded spectra (sometimes failed otherwise..)
-#         connection.disconnect()
-#         connection.connect()
-#         self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), numCls2+numCls1)
-#
-#         # # Cleanup...
-#         cursor = connection._getCursor()
-#         cursor.execute(f"DELETE FROM spectra WHERE sample='{details.sampleName}'")
-#         cursor.execute(f"DELETE FROM samples WHERE sample_name='{details.sampleName}'")
-#         cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls1}'")
-#         cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls2}'")
-#         connection._connection.commit()
-#         self.assertTrue(details.sampleName not in connection.getSampleNames())
-#         self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), 0)
-#         connection.disconnect()
-#
-#
-# class TestDBUI(TestCase):
-#     @classmethod
-#     def setUpClass(cls) -> None:
-#         cls.app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
-#
-#     def test_ClassEntry(self):
-#         sqlClasses: List[str] = ['class1', 'class2', 'class3']
-#         clsEntry: ClassEntry = ClassEntry("newClass", sqlClasses)
-#
-#         self.assertEqual(len(clsEntry._typeCombo), len(sqlClasses))
-#         entriesInComboBox: List[str] = []
-#         for i in range(clsEntry._typeCombo.count()):
-#             entriesInComboBox.append(clsEntry._typeCombo.itemText(i))
-#
-#         self.assertEqual(entriesInComboBox, sqlClasses)
-#         self.assertTrue(clsEntry.getTargetName() in sqlClasses)
-#
-#         clsEntry._newNameRadioBtn.setChecked(True)
-#         self.assertRaises(AssertionError, clsEntry.getTargetName)  # No new name indicated..
-#         clsEntry._lineEdit.setText("newClass")
-#         self.assertEqual(clsEntry.getTargetName(), "newClass")
+class TestDBUI(TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
+
+    def test_ClassEntry(self):
+        sqlClasses: List[str] = ['class1', 'class2', 'class3']
+        clsEntry: ClassEntry = ClassEntry("newClass", sqlClasses)
+
+        self.assertEqual(len(clsEntry._typeCombo), len(sqlClasses))
+        entriesInComboBox: List[str] = []
+        for i in range(clsEntry._typeCombo.count()):
+            entriesInComboBox.append(clsEntry._typeCombo.itemText(i))
+
+        self.assertEqual(entriesInComboBox, sqlClasses)
+        self.assertTrue(clsEntry.getTargetName() in sqlClasses)
+
+        clsEntry._newNameRadioBtn.setChecked(True)
+        self.assertRaises(AssertionError, clsEntry.getTargetName)  # No new name indicated..
+        clsEntry._lineEdit.setText("newClass")
+        self.assertEqual(clsEntry.getTargetName(), "newClass")
 

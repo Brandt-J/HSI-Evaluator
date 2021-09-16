@@ -96,7 +96,8 @@ class TestSpecObject(TestCase):
 
         reconstructedCube: np.ndarray = specObj._specArr2cube(specArr, ignoreBackground=True)
         numHundreds = len(np.where(reconstructedCube == 100)[0])
-        self.assertEqual(numHundreds, 0)
+        self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
+        self.assertTrue(np.array_equal(reconstructedCube, testCube))
 
 
 class TestSpecCollection(TestCase):

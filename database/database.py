@@ -78,6 +78,22 @@ class DBConnection:
         types: List[str] = [row[0] for row in cursor]
         return types
 
+    def getParticleStates(self) -> List[str]:
+        """
+        Returns a list of particle states.
+        """
+        cursor = self._getCursor()
+        cursor.execute("SELECT particle_state FROM particle_states")
+        return [row[0] for row in cursor]
+
+    def getParticleSizes(self) -> List[str]:
+        """
+        Returns a list of particle size classes
+        """
+        cursor = self._getCursor()
+        cursor.execute("SELECT size_class FROM size_classes")
+        return [row[0] for row in cursor]
+
     def getCommentOfSample(self, sampleName: str) -> str:
         """
         Returns the comment associated to the specified sample.
@@ -126,10 +142,11 @@ class DBConnection:
         """
         cursor = self._getCursor()
         specstring: str = specToString(wavelengths, intensities)
-        sqlcommand = f"""INSERT INTO spectra (spec_type, assignment, specdata, num_accumulations, acquisition_time, pxScale, sample) 
+        sqlcommand = f"""INSERT INTO spectra (spec_type, assignment, specdata, num_accumulations, acquisition_time, pxScale, sample, particle_state, size_class) 
                                         VALUES ("{spectraDetail.specType}", 
                                         "{clsname}", "{specstring}", "{spectraDetail.numAcc}", "{spectraDetail.accTime}",
-                                        "{spectraDetail.resolution}", "{spectraDetail.sampleName}");"""
+                                        "{spectraDetail.resolution}", "{spectraDetail.sampleName}", "{spectraDetail.particleState}", 
+                                        "{spectraDetail.sizeClass}");"""
         cursor.execute(sqlcommand)
         if directcommit:
             self._connection.commit()
@@ -190,6 +207,8 @@ class SpecDetails:
     accTime: float
     resolution: float
     specType: str
+    particleState: str = ""
+    sizeClass: str = ""
     sampleName: str = ""
 
 
@@ -205,6 +224,9 @@ def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, s
     logger: 'Logger' = getLogger("SQL Upload")
     conn: DBConnection = DBConnection()
     spectraUploaded: int = 0
+    print(spectraDetail)
+    assert spectraDetail.particleState in conn.getParticleStates()
+    assert spectraDetail.sizeClass in conn.getParticleSizes()
     for clsname, spectra in spectraDict.items():
         logger.info(f"Uploading {len(spectra)} spectra for class '{clsname}'")
         conn.assertClassNameisPresent(clsname)

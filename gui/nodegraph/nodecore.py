@@ -317,13 +317,14 @@ class Input(QtWidgets.QGraphicsObject):
         Sets a color that is then used for drawing, representing the datatypes.
         """
         if len(self._types) == 1:
-            rgb: np.ndarray = self._types[0].getColor()
+            rgb: np.ndarray = self._types[0].getColor().astype(int)
             self._color: QtGui.QColor = QtGui.QColor(rgb[0], rgb[1], rgb[2])
         else:
             rgb: np.ndarray = np.zeros(3)
             for dtype in self._types:
                 rgb += dtype.getColor()
-            rgb = rgb / len(self._types)
+            rgb: np.ndarray = rgb / len(self._types)
+            rgb = rgb.astype(int)
             self._color: QtGui.QColor = QtGui.QColor(rgb[0], rgb[1], rgb[2])
 
 

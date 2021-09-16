@@ -28,7 +28,7 @@ from typing import List, Dict, TYPE_CHECKING, cast, Union
 from logger import getLogger
 from preprocessing.preprocessors import Background
 from gui.scatterPlot import ScatterPlot
-from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
+# from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -100,11 +100,11 @@ class ResultPlots(QtWidgets.QWidget):
         self._scatterPlot.updatePlot(spectra)
         self._scatterPlot.finishPlotting()
 
-    def getDecsriptorLibrary(self) -> DescriptorLibrary:
-        return self._specPlot.getDecsriptorLibrary()
-
-    def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
-        self._specPlot.setDescriptorLibrary(descLib)
+    # def getDecsriptorLibrary(self) -> DescriptorLibrary:
+    #     return self._specPlot.getDecsriptorLibrary()
+    #
+    # def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
+    #     self._specPlot.setDescriptorLibrary(descLib)
 
     def getShowAllSamples(self) -> bool:
         """
@@ -121,7 +121,7 @@ class ResultPlots(QtWidgets.QWidget):
 
     def updatePlots(self) -> None:
         """
-        Updating the spec plot
+        Update the scatter and spectra plot.
         :return:
         """
         print("called update plots")
@@ -260,8 +260,8 @@ class SpecPlot(QtWidgets.QWidget):
         # self._descAx: plt.Axes = self._specAx.twinx()
         self._cursorSpec: Union[plt.Line2D, None] = None
 
-        self._descLib: DescriptorLibrary = DescriptorLibrary()
-        self._activeDescSet: Union[None, DescriptorSet] = None
+        # self._descLib: DescriptorLibrary = DescriptorLibrary()
+        # self._activeDescSet: Union[None, DescriptorSet] = None
 
         self._labels: Union[None, np.ndarray] = None
         self._sampleNames: Union[None, np.ndarray] = None
@@ -296,25 +296,25 @@ class SpecPlot(QtWidgets.QWidget):
         self._labels = classLabels
         self._sampleNames = sampleNames
 
-    def getDecsriptorLibrary(self) -> DescriptorLibrary:
-        return self._descLib
-
-    def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
-        self._descLib = descLib
-        self._activeDescSet = None
-        self._plotDescriptors()
-        self._figure.tight_layout()
-
-    def switchToDescriptorSet(self, descSetName: str) -> None:
-        presentNames: List[str] = [descSet.name for descSet in self._descLib.get_descriptorSets()]
-        if descSetName in presentNames:
-            self._activeDescSet = self._descLib.get_descriptorSets()[presentNames.index(descSetName)]
-        else:
-            newDescSet: DescriptorSet = DescriptorSet(descSetName)
-            self._descLib.add_descriptorSet(newDescSet)
-            self._activeDescSet = newDescSet
-
-        self._plotDescriptors()
+    # def getDecsriptorLibrary(self) -> DescriptorLibrary:
+    #     return self._descLib
+    #
+    # def setDescriptorLibrary(self, descLib: 'DescriptorLibrary') -> None:
+    #     self._descLib = descLib
+    #     self._activeDescSet = None
+    #     self._plotDescriptors()
+    #     self._figure.tight_layout()
+    #
+    # def switchToDescriptorSet(self, descSetName: str) -> None:
+    #     presentNames: List[str] = [descSet.name for descSet in self._descLib.get_descriptorSets()]
+    #     if descSetName in presentNames:
+    #         self._activeDescSet = self._descLib.get_descriptorSets()[presentNames.index(descSetName)]
+    #     else:
+    #         newDescSet: DescriptorSet = DescriptorSet(descSetName)
+    #         self._descLib.add_descriptorSet(newDescSet)
+    #         self._activeDescSet = newDescSet
+    #
+    #     self._plotDescriptors()
 
     def resetPlots(self) -> None:
         """
@@ -434,15 +434,16 @@ class SpecPlot(QtWidgets.QWidget):
         self._plotDescriptors()
 
     def _movePoints(self, event: MouseEvent) -> None:
-        if self._selectedDescIndex != -1 and self._selectedPoint != -1 and self._activeDescSet is not None:
-            desc: TriangleDescriptor = self._activeDescSet.getDescriptors()[self._selectedDescIndex]
-            startPeakEnd: List[float] = [desc.start, desc.peak, desc.end]
-            startPeakEnd[self._selectedPoint] = event.xdata
-            startPeakEnd = sorted(np.abs(startPeakEnd))  # avoid points getting negative and/or out of order
-
-            desc.start, desc.peak, desc.end = startPeakEnd[0], startPeakEnd[1], startPeakEnd[2]
-
-            self._plotDescriptors()
+        pass
+        # if self._selectedDescIndex != -1 and self._selectedPoint != -1 and self._activeDescSet is not None:
+        #     desc: TriangleDescriptor = self._activeDescSet.getDescriptors()[self._selectedDescIndex]
+        #     startPeakEnd: List[float] = [desc.start, desc.peak, desc.end]
+        #     startPeakEnd[self._selectedPoint] = event.xdata
+        #     startPeakEnd = sorted(np.abs(startPeakEnd))  # avoid points getting negative and/or out of order
+        #
+        #     desc.start, desc.peak, desc.end = startPeakEnd[0], startPeakEnd[1], startPeakEnd[2]
+        #
+        #     self._plotDescriptors()
 
     def _releasePoints(self, _event: MouseEvent) -> None:
         self._selectedPoint = -1

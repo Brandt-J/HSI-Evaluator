@@ -42,6 +42,7 @@ class DBUploadWin(QtWidgets.QWidget):
         self._sampleview: Union[None, 'SampleView'] = None
         self._sampleEntry: Union[None, SampleEntry] = None
         self._detailsEntry: Union[None, 'SpecDetailEntry'] = None
+        self._partDetails: Union[None, 'ParticleDetails'] = None
 
         self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Upload")
         self._uploadBtn.setFixedWidth(150)
@@ -75,6 +76,7 @@ class DBUploadWin(QtWidgets.QWidget):
 
         self._sampleEntry = SampleEntry(self._conn)
         self._detailsEntry = SpecDetailEntry(specTypes)
+        self._partDetails = ParticleDetails(self._conn)
 
         clsScrollArea: QtWidgets.QScrollArea = QtWidgets.QScrollArea()
         clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Select Classes to upload")
@@ -88,8 +90,12 @@ class DBUploadWin(QtWidgets.QWidget):
 
         clsScrollArea.setWidget(clsGroup)
 
+        detailsLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        detailsLayout.addWidget(self._detailsEntry)
+        detailsLayout.addWidget(self._partDetails)
+
         self._layout.addWidget(self._sampleEntry)
-        self._layout.addWidget(self._detailsEntry)
+        self._layout.addLayout(detailsLayout)
         self._layout.addWidget(clsScrollArea)
         self._layout.addWidget(self._uploadBtn)
         self._conn.disconnect()
@@ -114,6 +120,8 @@ class DBUploadWin(QtWidgets.QWidget):
             self._assertSampleInDB(sampleName)
             specdetails: SpecDetails = self._detailsEntry.getDetails()
             specdetails.sampleName = sampleName
+            specdetails.sizeClass = self._partDetails.getSizeClass()
+            specdetails.particleState = self._partDetails.getParticleState()
 
             specDict: Dict[str, np.ndarray] = self._getSpecsToUpload()
             wavelengths: np.ndarray = self._sampleview.getWavelengths()
@@ -441,6 +449,36 @@ class SpecDetailEntry(QtWidgets.QGroupBox):
         return details
 
 
+class ParticleDetails(QtWidgets.QGroupBox):
+    """
+    Groupbox for setting particle relevant information
+    """
+    def __init__(self, sqlConn: 'DBConnection'):
+        super(ParticleDetails, self).__init__("Particle Information")
+        self._stateSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._stateSelector.addItems(sqlConn.getParticleStates())
+
+        self._sizeSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._sizeSelector.addItems(sqlConn.getParticleSizes())
+
+        layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        layout.addRow("Select Particle State", self._stateSelector)
+        layout.addRow("Select Size Class", self._sizeSelector)
+        self.setLayout(layout)
+
+    def getParticleState(self) -> str:
+        """
+        Returns the selected particle state.
+        """
+        return self._stateSelector.currentText()
+
+    def getSizeClass(self) -> str:
+        """
+        Returns the selected size class.
+        """
+        return self._sizeSelector.currentText()
+
+
 class ProgressWindow(QtWidgets.QWidget):
     def __init__(self):
         super(ProgressWindow, self).__init__()
@@ -463,13 +501,6 @@ class ProgressWindow(QtWidgets.QWidget):
         self._progressbar.setMaximum(numSpectra)
         self._updateInfoLabel()
 
-    # def increment(self) -> None:
-    #     """
-    #     Increments the progressbar.
-    #     """
-    #     self._progressbar.setValue(self._progressbar.value()+1)
-    #     self._updateInfoLabel()
-
     def setValue(self, newValue: int) -> None:
         """
         Sets a new status value
@@ -486,3 +517,12 @@ class ProgressWindow(QtWidgets.QWidget):
         """
         numDone, maxNum = self._progressbar.value(), self._progressbar.maximum()
         self._infoLabel.setText(f"Finished {numDone} of {maxNum} spectra.")
+
+
+if __name__ == '__main__':
+    import sys
+    app = QtWidgets.QApplication(sys.argv)
+    dbWin = DBUploadWin()
+    dbWin.recreateLayout()
+    dbWin.show()
+    app.exec_()
