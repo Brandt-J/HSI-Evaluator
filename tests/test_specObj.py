@@ -20,9 +20,32 @@ If not, see <https://www.gnu.org/licenses/>.
 from unittest import TestCase
 from typing import *
 import numpy as np
+from PyQt5 import QtWidgets
+import sys
 
 from spectraObject import SpectraObject, splitUpArray, SpectraCollection
-from preprocessing.preprocessors import getPreprocessors
+from gui.nodegraph.nodes import nodeTypes, NodeDimReduct
+from gui.nodegraph.nodegraph import NodeGraph
+if TYPE_CHECKING:
+    from preprocessing.preprocessors import Preprocessor
+    from gui.nodegraph.nodecore import BaseNode
+
+
+def getContinuousSpecPreprocessors() -> List['Preprocessor']:
+    """
+    Gets the Preprocessors for continuous spectral data.
+    """
+    graph: NodeGraph = NodeGraph()
+    preprocList: List['Preprocessor'] = []
+    for nodetype in nodeTypes.values():
+        node: 'BaseNode' = nodetype(graph, None)
+        if type(node) != NodeDimReduct:
+            if node.getPreprocessor() is not None:
+                preprocList.append(node.getPreprocessor())
+    return preprocList
+
+
+app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
 
 
 class TestSpecObject(TestCase):
@@ -30,13 +53,13 @@ class TestSpecObject(TestCase):
         specObj: SpectraObject = SpectraObject()
         cubeShape: Tuple[int, int, int] = (100, 3, 3)
         specObj.setCube(np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2]))
-        specObj.preparePreprocessing(getPreprocessors(), np.zeros(cubeShape[0]))
+        specObj.preparePreprocessing(getContinuousSpecPreprocessors(), np.zeros(cubeShape[0]))
         specObj.applyPreprocessing()  # Make sure all preprocessors run nicely. Here we do single process
 
         specObj: SpectraObject = SpectraObject()
         cubeShape: Tuple[int, int, int] = (100, 50, 50)
         specObj.setCube(np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2]))
-        specObj.preparePreprocessing(getPreprocessors(), np.zeros(cubeShape[0]))
+        specObj.preparePreprocessing(getContinuousSpecPreprocessors(), np.zeros(cubeShape[0]))
         specObj.applyPreprocessing()  # Make sure all preprocessors run nicely. Now we run multiprocessing
 
     def test_SplitSpecArr(self):

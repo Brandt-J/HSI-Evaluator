@@ -26,8 +26,7 @@ from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from spectraObject import SpectraCollection
-    from gui.spectraPlots import ResultPlots, SpecPlot
-    from gui.scatterPlot import ScatterPlot
+    from gui.spectraPlots import ResultPlots
     from preprocessing.preprocessors import Preprocessor
 
 

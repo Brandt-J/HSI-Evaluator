@@ -206,9 +206,8 @@ class MainWindow(QtWidgets.QMainWindow):
         viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
         viewObj.processingGraph = self._preprocSelector.getProcessingGraph()
         viewObj.title = os.path.basename(savePath.split(".")[0])
-        print('not saving view to', savePath)
-        # with open(savePath, "wb") as fp:
-        #     pickle.dump(viewObj, fp)
+        with open(savePath, "wb") as fp:
+            pickle.dump(viewObj, fp)
 
     def _loadView(self, fname: str) -> None:
         """

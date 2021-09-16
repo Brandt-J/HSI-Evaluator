@@ -82,10 +82,11 @@ class SpectraObject:
 
         self._resetPreprocessing()
 
-    def _preprocessSpectraMultiProcessing(self, specArr: np.ndarray) -> np.ndarray:
+    def _preprocessSpectraMultiProcessing(self, specArr: np.ndarray, maxWorkers: int = 8) -> np.ndarray:
         """
         Preprocesses the given spectra array using a Process Pool Executor.
         :param specArr: (NxM) array of N spectra with M wavelengths
+        :param maxWorkers: Max number of Workers for multiprocessing.
         :return: processed (NxM) array
         """
         self._logger.debug(f"Preprocessing {len(specArr)} spectra with pool process executor.")
@@ -93,7 +94,7 @@ class SpectraObject:
         splitArrays: List[np.ndarray] = splitUpArray(specArr, numParts=10)
         for partArray in splitArrays:
             preprocDatas.append(PreprocessData(partArray, self._preprocQueue, self._background))
-        maxWorkers: int = 6
+
         with ProcessPoolExecutor(max_workers=maxWorkers) as executor:
             result: List[np.ndarray] = list(executor.map(applyPreprocessing, preprocDatas))
 

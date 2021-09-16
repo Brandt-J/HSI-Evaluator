@@ -16,10 +16,9 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-
+import functools
 
 from gui.nodegraph.nodecore import *
 from preprocessing.processing import *
@@ -155,6 +154,7 @@ class NodeDimReduct(BaseNode):
         numComps: int = self._numcompSpin.value()
         if self._pcaBtn.isChecked():
             dimRed: PCA = PCA(n_components=numComps)
+            self._preprocessor.label = f"PCA, {numComps} components"
         else:
             if numComps > 3:
                 QtWidgets.QMessageBox.about(self._parentGraph, "Info",
@@ -162,8 +162,9 @@ class NodeDimReduct(BaseNode):
                                             "Calculating only three components.")
                 numComps = 3
             dimRed: TSNE = TSNE(n_components=numComps)
+            self._preprocessor.label = f"t-SNE, {numComps} components"
 
-        self._preprocessor.applyToSpectra = lambda x: applyPreproc(x, dimRed)
+        self._preprocessor.applyToSpectra = functools.partial(applyPreproc, dimRedObj=dimRed)
 
 
 class NodeSNV(BaseNode):
@@ -174,6 +175,7 @@ class NodeSNV(BaseNode):
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._preprocessor = Preprocessor()
+        self._preprocessor.label = "SNV"
         self._preprocessor.applyToSpectra = snv
         self._populateLayoutAndCreateIO()
 
@@ -190,6 +192,7 @@ class NodeNormalize(BaseNode):
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._preprocessor = Preprocessor()
+        self._preprocessor.label = "Normalize"
         self._preprocessor.applyToSpectra = normalizeIntensities
         self._populateLayoutAndCreateIO()
 
@@ -206,6 +209,7 @@ class NodeDetrend(BaseNode):
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._preprocessor = Preprocessor()
+        self._preprocessor.label = "Detrend"
         self._preprocessor.applyToSpectra = detrend
         self._populateLayoutAndCreateIO()
 
@@ -222,6 +226,7 @@ class NodeMSC(BaseNode):
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         self._preprocessor = Preprocessor()
+        self._preprocessor.label = "MSC"
         self._preprocessor.applyToSpectra = msc
         self._populateLayoutAndCreateIO()
 
@@ -238,6 +243,7 @@ class NodeBackground(BaseNode):
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
         # self._preprocessor = Preprocessor()
+        # self._preprocessor.label = "Background"
         # self._preprocessor.applyToSpectra = msc
         self._populateLayoutAndCreateIO()
 
@@ -293,9 +299,9 @@ class NodeSmoothDeriv(BaseNode):
         self._winSizeSpin.setValue(paramsDict["winSize"])
 
     def _updatePreprocessor(self) -> None:
-        self._preprocessor.applyToSpectra = lambda x: deriv_smooth(x,
-                                                                   self._derivSpin.value(),
-                                                                   self._winSizeSpin.value())
+        deriv, winSize = self._derivSpin.value(), self._winSizeSpin.value()
+        self._preprocessor.applyToSpectra = functools.partial(deriv_smooth, derivative=deriv, windowSize=winSize)
+        self._preprocessor.label = f"Smooth {winSize} + Derivative {deriv}"
 
 
 nodeTypes: List[Type['BaseNode']] = [val for key, val in locals().items() if key.startswith('Node')]

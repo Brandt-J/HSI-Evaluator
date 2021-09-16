@@ -135,7 +135,10 @@ class NodeGraph(QtWidgets.QGraphicsView):
         Returns a stack of Preprocessors for the current classficiation setup.
         """
         preprocStack: List['Preprocessor'] = []
-
+        for node in self._getClassificationPath():
+            preproc: Union[None, 'Preprocessor'] = node.getPreprocessor()
+            if preproc is not None:
+                preprocStack.append(preproc)
 
         return preprocStack
 
