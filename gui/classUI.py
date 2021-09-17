@@ -27,7 +27,7 @@ from multiprocessing import Process, Queue
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 from dataObjects import Sample
-from classification.classifyProcedures import getClassifiers, trainAndClassify
+from classification.classifyProcedures import getClassifiers, trainClassifier, classifySamples
 from classification.classifiers import ClassificationError, BaseClassifier
 
 if TYPE_CHECKING:
@@ -294,7 +294,9 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
-        self._updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Update Classification")
+        self._trainBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Train Classifier")
+        self._applyBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply Classifier")
+
         self._transpSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
@@ -312,6 +314,21 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._configureWidgets()
         self._createLayout()
         self._selectFirstClassifier()
+
+    def _trainClassifier(self) -> None:
+        """
+        Trains the selected classifier.
+        """
+        self._applyBtn.setDisabled(True)
+        # Run Training
+        trainClassifier()
+        self._applyBtn.setEnabled(True)
+
+    def _runClassification(self) -> None:
+        """
+        Applies the classifier and runs classification on the selected samples.
+        """
+        pass
 
     def _classifyImage(self) -> None:
         """
@@ -398,7 +415,9 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._testFracSpinBox.setMaximum(0.99)
         self._testFracSpinBox.setValue(0.1)
 
-        self._updateBtn.released.connect(self._classifyImage)
+        self._trainBtn.released.connect(self._trainClassifier)
+        self._applyBtn.released.connect(self._runClassification)
+        self._applyBtn.setDisabled(True)
 
         self._excludeBackgroundCheckbox.setChecked(True)
         self._validationLabel.setText("Not yet validated.")
@@ -412,18 +431,23 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addWidget(self._activeClfControls)
         self._layout.addStretch()
 
-        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Options:")
+        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options:")
         optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         optnGroup.setLayout(optnLayout)
         optnLayout.addRow("Test Fraction", self._testFracSpinBox)
         optnLayout.addRow("Exlude Background", self._excludeBackgroundCheckbox)
-        optnLayout.addRow(self._updateBtn)
+
+        runLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        runLayout.addWidget(self._trainBtn)
+        runLayout.addWidget(self._applyBtn)
+
         self._layout.addWidget(optnGroup)
-        self._layout.addStretch()
-        validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Result")
+        self._layout.addLayout(runLayout)
+        validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Results")
         validationGroup.setLayout(QtWidgets.QHBoxLayout())
         validationGroup.layout().addWidget(self._validationLabel)
         self._layout.addWidget(validationGroup)
+        self._layout.addStretch()
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
         self._layout.addWidget(self._transpSlider)
 

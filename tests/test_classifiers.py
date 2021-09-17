@@ -48,9 +48,15 @@ class TestClassifiers(TestCase):
                                                  'class2': 1,
                                                  'class3': 2})
 
-    def test_runClassification(self) -> None:
+    # def test_runClassification(self) -> None:
+    #     classUI: ClassificationUI = ClassificationUI(MockMainWin())
+    #     classUI.show()
+    #     self.app.exec_()
+    #     # classUI._classifyImage()  # Make sure it does not fail
+
+    def testTrainAndClassify(self) -> None:
         classUI: ClassificationUI = ClassificationUI(MockMainWin())
-        classUI._classifyImage()  # Make sure it does not fail
+        classUI._trainClassifier()
 
 
 class MockMainWin:
@@ -62,10 +68,24 @@ class MockMainWin:
         data1.classes2Indices = {"class1": np.arange(20),
                                  "class2": np.arange(20)+20}
         sample1: SampleView = SampleView()
+        sample1._trainCheckBox.setChecked(True)
+        sample1._inferenceCheckBox.setChecked(True)
         sample1.setSampleData(data1)
-        sample1.setCube(np.random.rand(self.cubeShape[0], self.cubeShape[1], self.cubeShape[2]),
-                        np.arange(self.cubeShape[0]))
-        self._samples: List['SampleView'] = [sample1]
+
+        noiseCube = np.random.rand(self.cubeShape[0], self.cubeShape[1], self.cubeShape[2])
+        sample1.setCube(np.ones(self.cubeShape) + noiseCube*0.1, np.arange(self.cubeShape[0]))
+
+        data2: Sample = Sample()
+        data2.name = 'Sample2'
+        data2.classes2Indices = {"class1": np.arange(20),
+                                 "class2": np.arange(20) + 20}
+        sample2: SampleView = SampleView()
+        sample2._trainCheckBox.setChecked(True)
+        sample2._inferenceCheckBox.setChecked(True)
+        sample2.setSampleData(data2)
+        sample2.setCube(np.ones(self.cubeShape) + 1 + noiseCube * 0.1, np.arange(self.cubeShape[0]))
+
+        self._samples: List['SampleView'] = [sample1, sample2]
 
     def disableWidgets(self):
         pass

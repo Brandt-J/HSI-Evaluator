@@ -39,17 +39,35 @@ def getClassifiers() -> List['BaseClassifier']:
     return [SVM(), KNN()]
 
 
-def trainAndClassify(trainSampleList: List['Sample'], inferenceSampleList: List['Sample'], preprocessingRequired: bool,
-                     ignoreBackground: bool, classifier: 'BaseClassifier', testSize: float,
-                     colorDict: Dict[str, Tuple[int, int, int]], queue: Queue) -> None:
+def trainClassifier(trainSampleList: List['Sample'], preprocessingRequired: bool,
+                    ignoreBackground: bool, classifier: 'BaseClassifier', testSize: float, queue: Queue) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param trainSampleList: List of Sample objects used for classifier training
-    :param inferenceSampleList: List of Samples on which we want to run classification.
     :param preprocessingRequired: Whether or not preprocessing needs to be done.
     :param ignoreBackground: Whether or not background pixels shall be processed
     :param classifier: The Classifier to use
     :param testSize: Fraction of the data used for testing
+    :param queue: Dataqueue for communication between processes.
+    """
+    trainingSpectra: Dict[str, np.ndarray] = {}
+    for sample in trainSampleList:
+        for cls, specs in sample.getLabelledSpectra().items():
+            if cls not in trainingSpectra:
+                trainingSpectra[cls] = specs
+            else:
+                trainingSpectra[cls] = np.vstack((trainingSpectra[cls], specs))
+
+
+def classifySamples(inferenceSampleList: List['Sample'], preprocessingRequired: bool,
+                    ignoreBackground: bool, classifier: 'BaseClassifier', colorDict: Dict[str, Tuple[int, int, int]],
+                    queue: Queue) -> None:
+    """
+    Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
+    :param inferenceSampleList: List of Samples on which we want to run classification.
+    :param preprocessingRequired: Whether or not preprocessing needs to be done.
+    :param ignoreBackground: Whether or not background pixels shall be processed
+    :param classifier: The Classifier to use
     :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
     :param queue: Dataqueue for communication between processes.
     """

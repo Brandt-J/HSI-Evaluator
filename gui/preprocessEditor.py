@@ -48,9 +48,19 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
 
         updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Update Preview")
         updateBtn.released.connect(self.updatePreviewSpectra)
-        updateBtn.setMaximumWidth(100)
+        updateBtn.setMaximumWidth(130)
+
+        applyToSamplesBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply to Samples")
+        applyToSamplesBtn.released.connect(self._applyPreprocessingToSpectra)
+        applyToSamplesBtn.setMaximumWidth(130)
+
+        btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(updateBtn)
+        btnLayout.addWidget(applyToSamplesBtn)
+        btnLayout.addStretch()
+
         self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        self._layout.addWidget(updateBtn)
+        self._layout.addLayout(btnLayout)
         self._layout.addWidget(self._nodeGraph)
         self.setLayout(self._layout)
 
@@ -76,6 +86,9 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
             self._nodeGraph.updatePlotNodes()
         else:
             self._showNoSpectraWarning()
+
+    def _applyPreprocessingToSpectra(self) -> None:
+        pass
 
     def _showNoSpectraWarning(self) -> None:
         QtWidgets.QMessageBox.about(self, "Info", "Spectra Preprocessing cannot be previewed.\n"
