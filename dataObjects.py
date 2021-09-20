@@ -21,9 +21,8 @@ from typing import *
 import hashlib
 import os
 import numpy as np
-import numba
 
-from spectraObject import SpectraObject
+from spectraObject import SpectraObject, getSpectraFromIndices
 from legacyConvert import currentSampleVersion, currentViewVersion
 
 
@@ -47,6 +46,17 @@ class Sample:
     def getFileHash(self) -> str:
         """Used for saving the files"""
         return getFilePathHash(self.filePath)
+
+    def getBackroundIndices(self) -> Set[int]:
+        """
+        Returns the indices of background pixels.
+        """
+        indices: Set[int] = set()
+        for cls_name in self.classes2Indices:
+            if cls_name.lower() == 'background':
+                indices = self.classes2Indices[cls_name]
+                break
+        return indices
 
     def __eq__(self, other) -> bool:
         isEqual: bool = False
@@ -86,19 +96,3 @@ def getFilePathHash(fpath: str) -> str:
     before actually creating them..
     """
     return hashlib.sha1(fpath.encode()).hexdigest()
-
-
-@numba.njit()
-def getSpectraFromIndices(indices: np.ndarray, cube: np.ndarray) -> np.ndarray:
-    """
-    Retrieves the indices from the cube and returns an NxM array
-    :param indices: length N array of flattened indices
-    :param cube: XxYxZ spectral cube
-    :return: (NxX) array of spectra
-    """
-    spectra: np.ndarray = np.zeros((len(indices), cube.shape[0]))
-    for i, ind in enumerate(indices):
-        y = ind // cube.shape[2]
-        x = ind % cube.shape[2]
-        spectra[i, :] = cube[:, y, x]
-    return spectra

@@ -18,12 +18,14 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from unittest import TestCase
+from unittest.mock import Mock
 from typing import *
 import numpy as np
 from PyQt5 import QtWidgets
 import sys
 
-from spectraObject import SpectraObject, splitUpArray, SpectraCollection
+from spectraObject import SpectraObject, SpectraCollection
+from preprocessing.preprocessors import splitUpArray
 from gui.nodegraph.nodes import nodeTypes
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
@@ -47,19 +49,28 @@ def getPreprocessors() -> List['Preprocessor']:
 app: QtWidgets.QApplication = QtWidgets.QApplication(sys.argv)
 
 
+def fakeSpecProcess(spectra: np.ndarray) -> np.ndarray:
+    spectra += 1
+    return spectra
+
+
 class TestSpecObject(TestCase):
     def test_Preprocessing(self):
+        preprocessors: List['Preprocessor'] = getPreprocessors()
         specObj: SpectraObject = SpectraObject()
-        cubeShape: Tuple[int, int, int] = (100, 3, 3)
-        specObj.setCube(np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2]))
-        specObj.preparePreprocessing(getPreprocessors(), np.zeros(cubeShape[0]))
-        specObj.applyPreprocessing()  # Make sure all preprocessors run nicely. Here we do single process
 
-        specObj: SpectraObject = SpectraObject()
-        cubeShape: Tuple[int, int, int] = (100, 50, 50)
-        specObj.setCube(np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2]))
-        specObj.preparePreprocessing(getPreprocessors(), np.zeros(cubeShape[0]))
-        specObj.applyPreprocessing()  # Make sure all preprocessors run nicely. Now we run multiprocessing
+        for preproc in preprocessors:
+            preproc.applyToSpectra = fakeSpecProcess
+
+        cubeShape: Tuple[int, int, int] = (100, 3, 3)
+        randomCube: np.ndarray = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
+        specObj.setCube(randomCube)
+        backroundIndices: Set[int] = {0, 1, 2, 3, 4}
+        specObj.doPreprocessing(preprocessors, backroundIndices)
+
+        preprocCube: np.ndarray = specObj._preprocessedCube
+        expectedCube: np.ndarray = randomCube + len(preprocessors)  # each preprocessor adds 1 to the cube.
+        self.assertTrue(np.allclose(preprocCube, expectedCube))
 
     def test_SplitSpecArr(self):
         specArr: np.ndarray = np.random.rand(100, 30)

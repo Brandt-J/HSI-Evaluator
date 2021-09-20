@@ -27,8 +27,8 @@ from copy import deepcopy
 
 from logger import getLogger
 from projectPaths import getAppFolder
-from spectraObject import SpectraObject, SpectraCollection
-from dataObjects import Sample, getSpectraFromIndices
+from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
+from dataObjects import Sample
 from loadCube import loadCube
 from legacyConvert import assertUpToDateSample
 from gui.graphOverlays import GraphView
@@ -387,22 +387,19 @@ class SampleView(QtWidgets.QMainWindow):
     def getWavelengths(self) -> np.ndarray:
         return self._sampleData.specObj.getWavelengths()
 
-    def getAveragedBackground(self) -> np.ndarray:
+    def getAveragedBackground(self, classes2Ind: Dict[str, Set[int]]) -> np.ndarray:
         """
         Returns the averaged background spectrum of the sample. If no background was selected, a np.zeros array is returned.
         :return: np.ndarray of background spectrum
         """
-        cube: np.ndarray = self._sampleData.specObj.getNotPreprocessedCube()
+        cube: np.ndarray = self.getNotPreprocessedCube()
         background: np.ndarray = np.zeros(cube.shape[0])
-        backgroundFound: bool = False
-        for cls_name in self._classes2Indices:
-            if cls_name.lower() == 'background':
-                indices = self._classes2Indices[cls_name]
-                background = np.mean(getSpectraFromIndices(np.array(list(indices)), cube), axis=0)
-                backgroundFound = True
-                break
+        backgrounIndices: Set[int] = self._sampleData.getBackroundIndices()
+        if len(backgrounIndices) > 0:
+            indices: np.ndarray = np.array(list(backgrounIndices))
+            background = np.mean(getSpectraFromIndices(indices, cube), axis=0)
 
-        if not backgroundFound:
+        else:
             self._logger.warning(
                 f'Sample: {self._name}: No Background found, although it was requested.. '
                 f'Present Classes are: {list(self._classes2Indices.keys())}. Returning a np.zeros Background')

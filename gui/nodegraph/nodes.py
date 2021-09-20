@@ -21,7 +21,7 @@ from sklearn.manifold import TSNE
 import functools
 
 from gui.nodegraph.nodecore import *
-from preprocessing.processing import *
+from preprocessing.routines import *
 from preprocessing.preprocessors import Preprocessor
 
 if TYPE_CHECKING:

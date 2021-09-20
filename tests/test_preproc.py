@@ -22,9 +22,14 @@ import sys
 from typing import *
 import numpy as np
 from collections import Counter
+from copy import deepcopy
 
 from gui.preprocessEditor import PreprocessingSelector
 from gui.spectraPlots import ResultPlots
+from tests.test_classifiers import MockMainWin, getPreprocessors
+if TYPE_CHECKING:
+    from gui.sampleview import SampleView
+    from dataObjects import Sample
 
 
 class TestPreprocessingEditor(TestCase):
@@ -61,3 +66,31 @@ class TestPreprocessingEditor(TestCase):
         for i, (label, sampleName) in enumerate(zip(newLabels, newSampleNames)):
             indSampleName: int = int(sampleName.split('_')[1])
             self.assertTrue(np.array_equal(newSpecs[i, :], specs[indSampleName, :]))
+
+    def test_PreprocessUI(self) -> None:
+        preprocEditor: PreprocessingSelector = PreprocessingSelector(MockMainWin(), MockResultsPlot())
+        preprocEditor.getPreprocessors = getPreprocessors
+
+        samples: List['SampleView'] = preprocEditor._mainWin.getAllSamples()
+        origSampleData: List['Sample'] = [sample.getSampleData() for sample in samples]
+        preprocSampleDatas: List['Sample'] = []
+        for data in origSampleData:
+            preprocData: 'Sample' = deepcopy(data)
+            cubeShape = preprocData.specObj._cube.shape
+            preprocData.specObj._preprocessedCube = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
+            preprocSampleDatas.append(preprocData)
+
+        preprocEditor._setPreprocessedData(preprocSampleDatas)
+
+        for sampleInMainWin, preprocData in zip(preprocEditor._mainWin.getAllSamples(), preprocSampleDatas):
+            sample: 'Sample' = sampleInMainWin.getSampleData()
+            self.assertTrue(preprocData == sample)
+            self.assertTrue(np.array_equal(preprocData.specObj._preprocessedCube, sample.specObj._preprocessedCube))
+
+
+class MockResultsPlot:
+    def updateScatterPlot(self) -> None:
+        pass
+
+    def updateSpecPlot(self) -> None:
+        pass

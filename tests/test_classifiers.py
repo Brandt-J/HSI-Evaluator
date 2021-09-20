@@ -54,10 +54,11 @@ class TestClassifiers(TestCase):
     #     self.app.exec_()
     #     # classUI._classifyImage()  # Make sure it does not fail
 
-    def testTrainAndClassify(self) -> None:
-        classUI: ClassificationUI = ClassificationUI(MockMainWin())
-        classUI._trainClassifier()
+    # def testTrainAndClassify(self) -> None:
+    #     classUI: ClassificationUI = ClassificationUI(MockMainWin())
+    #     classUI._trainClassifier()
 
+    
 
 class MockMainWin:
     cubeShape = (10, 20, 20)
@@ -65,8 +66,8 @@ class MockMainWin:
     def __init__(self):
         data1: Sample = Sample()
         data1.name = 'Sample1'
-        data1.classes2Indices = {"class1": np.arange(20),
-                                 "class2": np.arange(20)+20}
+        data1.classes2Indices = {"class1": set(np.arange(20)),
+                                 "class2": set(np.arange(20)+20)}
         sample1: SampleView = SampleView()
         sample1._trainCheckBox.setChecked(True)
         sample1._inferenceCheckBox.setChecked(True)
@@ -77,8 +78,8 @@ class MockMainWin:
 
         data2: Sample = Sample()
         data2.name = 'Sample2'
-        data2.classes2Indices = {"class1": np.arange(20),
-                                 "class2": np.arange(20) + 20}
+        data2.classes2Indices = {"class1": set(np.arange(20)),
+                                 "class2": set(np.arange(20) + 20)}
         sample2: SampleView = SampleView()
         sample2._trainCheckBox.setChecked(True)
         sample2._inferenceCheckBox.setChecked(True)

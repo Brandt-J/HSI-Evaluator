@@ -60,7 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._configureWidgets()
         self._createMenuBar()
         self._createLayout()
-        # self.disableWidgets()
+        self.disableWidgets()
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
         sampleView.Activated.connect(self._resultPlots.updatePlots)

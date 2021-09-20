@@ -27,9 +27,9 @@ import numpy as np
 import pickle
 
 from gui.HSIEvaluator import MainWindow
-from gui.sampleview import MultiSampleView, SampleView, getSpectraFromIndices, Sample
+from gui.sampleview import MultiSampleView, SampleView, Sample
 from gui.graphOverlays import GraphView
-from spectraObject import SpectraObject, SpectraCollection
+from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
 
 if TYPE_CHECKING:
     from gui.classUI import ClassCreator

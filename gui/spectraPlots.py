@@ -26,13 +26,11 @@ import numpy as np
 from typing import List, Dict, TYPE_CHECKING, cast, Union
 
 from logger import getLogger
-from preprocessing.preprocessors import Background
 from gui.scatterPlot import ScatterPlot
 # from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
-    from preprocessing.preprocessors import Preprocessor
     from logging import Logger
 
 

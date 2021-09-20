@@ -318,12 +318,18 @@ class NodeGraph(QtWidgets.QGraphicsView):
 
         newNode: 'BaseNode' = nodeClass(self, self._logger, pos=pos)
         newNode.id = self._getNewNodeID()
+        newNode.ParamsChanged.connect(self._makeCheckForChangedClassificationPathLambda(newNode))
 
         self._nodes.append(newNode)
         self.scene().addItem(newNode)
         return newNode
 
+    def _makeCheckForChangedClassificationPathLambda(self, node: 'BaseNode'):
+        return lambda: self._checkForChangedClassification(node)
 
+    def _checkForChangedClassification(self, changedNode: 'BaseNode'):
+        if changedNode in self._getClassificationPath():
+            self.ClassificationPathHasChanged.emit()
 
     def _deleteAllNodesAndConnections(self) -> None:
         """
