@@ -17,11 +17,10 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 import time
-from copy import copy
-from multiprocessing import Queue
-
+from multiprocessing import Queue, Event
 import numpy as np
 from typing import *
+from dataclasses import dataclass
 
 from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM
 from logger import getLogger
@@ -39,16 +38,26 @@ def getClassifiers() -> List['BaseClassifier']:
     return [SVM(), KNN()]
 
 
-def trainClassifier(trainSampleList: List['Sample'], preprocessingRequired: bool,
-                    ignoreBackground: bool, classifier: 'BaseClassifier', testSize: float, queue: Queue) -> None:
+@dataclass
+class TrainingResult:
+    """
+    Object for transferring classification training (and validation) result
+    """
+    classifier: 'BaseClassifier'
+    validReportString: str
+    validReportDict: dict
+
+
+def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', testSize: float, queue: Queue,
+                    stopEvent: Event) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
+    The classifier will be put back in the queue after training and validation.
     :param trainSampleList: List of Sample objects used for classifier training
-    :param preprocessingRequired: Whether or not preprocessing needs to be done.
-    :param ignoreBackground: Whether or not background pixels shall be processed
     :param classifier: The Classifier to use
     :param testSize: Fraction of the data used for testing
     :param queue: Dataqueue for communication between processes.
+    :param stopEvent: Event that is set if computation should be stopped.
     """
     trainingSpectra: Dict[str, np.ndarray] = {}
     for sample in trainSampleList:
@@ -58,40 +67,12 @@ def trainClassifier(trainSampleList: List['Sample'], preprocessingRequired: bool
             else:
                 trainingSpectra[cls] = np.vstack((trainingSpectra[cls], specs))
 
+    if stopEvent.is_set():
+        return
 
-def classifySamples(inferenceSampleList: List['Sample'], preprocessingRequired: bool,
-                    ignoreBackground: bool, classifier: 'BaseClassifier', colorDict: Dict[str, Tuple[int, int, int]],
-                    queue: Queue) -> None:
-    """
-    Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
-    :param inferenceSampleList: List of Samples on which we want to run classification.
-    :param preprocessingRequired: Whether or not preprocessing needs to be done.
-    :param ignoreBackground: Whether or not background pixels shall be processed
-    :param classifier: The Classifier to use
-    :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
-    :param queue: Dataqueue for communication between processes.
-    """
     logger: 'Logger' = getLogger("TrainingProcess")
-
-    if preprocessingRequired:
-        # preprocessing
-        allSamples: List['Sample'] = copy(trainSampleList)
-        for sample in inferenceSampleList:
-            if sample not in allSamples:
-                allSamples.append(sample)
-
-        numSamplesTotal = len(allSamples)
-        for i, sample in enumerate(allSamples):
-            t0 = time.time()
-            specObj: 'SpectraObject' = sample.specObj
-            specObj.applyPreprocessing(ignoreBackground=ignoreBackground)
-            classifier.setWavelengths(specObj.getWavelengths())  # TODO: HERE WE ASSUME ALL SAMPLES HAVE IDENTICAL WAVELENGTHS!!!
-            logger.debug(f"Preprocessing sample {sample.name} took {round(time.time()-t0, 2)} seconds ({i+1} of {numSamplesTotal} samples finished)")
-    else:
-        logger.debug("No Preprocessing required, skipping it.")
-
     # training
-    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize, ignoreBackground)
+    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize)
     t0 = time.time()
     try:
         classifier.train(xtrain, xtest, ytrain, ytest)
@@ -99,31 +80,54 @@ def classifySamples(inferenceSampleList: List['Sample'], preprocessingRequired: 
         queue.put(ClassificationError(f"Error during classifier Trining: {e}"))
         raise ClassificationError(f"Error during classifier Trining: {e}")
     logger.debug(f'Training {classifier.title} on {xtrain.shape[0]} spectra took {round(time.time() - t0, 2)} seconds')
+    if stopEvent.is_set():
+        return
 
     # validation
     ypredicted = classifier.predict(xtest)
-    report = classification_report(ytest, ypredicted)
-    logger.info(report)
-    queue.put(report)
+    reportDict: dict = classification_report(ytest, ypredicted, output_dict=True)
+    reportStr: str = classification_report(ytest, ypredicted, output_dict=False)
+    logger.info(reportStr)
+    queue.put(TrainingResult(classifier, reportStr, reportDict))
 
-    # inference
+
+def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassifier', colorDict: Dict[str, Tuple[int, int, int]],
+                    queue: Queue, stopEvent: Event) -> None:
+    """
+    Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
+    :param inferenceSampleList: List of Samples on which we want to run classification.
+    :param classifier: The Classifier to use
+    :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
+    :param queue: Dataqueue for communication between processes.
+    :param stopEvent: Event that is Set if the process should be cancelled
+    """
+    logger: 'Logger' = getLogger("Classifier Application")
+    finishedSamples: List['Sample'] = []
     for i, sample in enumerate(inferenceSampleList):
         t0 = time.time()
         logger.debug(f"Starting classifcation on {sample.name}")
         specObj = sample.specObj
+        if stopEvent.is_set():
+            return
+
         try:
-            assignments: List[str] = getClassesForPixels(specObj, classifier, ignoreBackground)
+            assignments: List[str] = getClassesForPixels(specObj, classifier, ignoreBackground=False)
         except Exception as e:
             queue.put(ClassificationError(e))
             raise ClassificationError(e)
 
+        if stopEvent.is_set():
+            return
+
         cubeShape = specObj.getCube().shape
-        skipIndices: Set[int] = specObj.getBackgroundIndices() if ignoreBackground else set([])
-        clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict, skipIndices)
+        clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
         sample.setClassOverlay(clfImg)
         logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
                      f' ({i+1} of {len(inferenceSampleList)} samples done)')
-        queue.put(sample)
+        finishedSamples.append(sample)
+        queue.put("finished sample")
+
+    queue.put(finishedSamples)
 
 
 def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier', ignoreBackground: bool) -> List[str]:
@@ -153,7 +157,7 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float,
-                                   ignoreBackground: bool) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                                   ignoreBackground: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
     :param sampleList: List of sampleviews to use
@@ -181,7 +185,7 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float,
 
 
 def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]],
-                   ignoreIndices: Set[int]) -> np.ndarray:
+                   ignoreIndices: Set[int] = set()) -> np.ndarray:
     """
     Creates an overlay image of the current classification
     :param cubeShape: Shape of the cube array

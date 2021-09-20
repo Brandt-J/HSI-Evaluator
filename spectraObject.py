@@ -35,8 +35,8 @@ class SpectraObject:
         self._wavelengths: Union[None, np.ndarray] = None
         self._cube: Union[None, np.ndarray] = None
         self._preprocessedCube: Union[None, np.ndarray] = None
-        self._classes: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}  # classname, (y-coordinages, x-coordinates)
         self._logger: 'Logger' = getLogger("SpectraObject")
+        self._backgroundIndices: Set[int] = set()
 
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray = None) -> None:
         self._cube = cube
@@ -58,24 +58,6 @@ class SpectraObject:
         preprocessedSpectra: np.ndarray = preprocessSpectra(self._cube2SpecArr(), preprocessors, backgroundSpec)
         self._preprocessedCube = self._specArr2cube(preprocessedSpectra)
 
-    def getClassSpectra(self, maxSpecPerClas: int, preprocessed: bool = True) -> Dict[str, np.ndarray]:
-        """
-        Gets the a dictionary for the spectra per class.
-        :param maxSpecPerClas: Indicated for
-        :param preprocessed: Whether or not to return the preprocessed or, alternatively, the raw spectra.
-        :return:
-        """
-        spectra: Dict[str, np.ndarray] = {}
-        random.seed(42)
-        for cls_name, cls_indices in self._classes.items():
-            curIndices: List[Tuple[int, int]] = list(zip(cls_indices[0], cls_indices[1]))
-            if len(curIndices) > 0:
-                if len(curIndices) > maxSpecPerClas:
-                    curIndices = random.sample(curIndices, maxSpecPerClas)
-                spectra[cls_name] = self._getSpecArray(curIndices, preprocessed)
-
-        return spectra
-
     def getCube(self) -> np.ndarray:
         cube: np.ndarray = self._preprocessedCube
         if cube is None:
@@ -89,13 +71,6 @@ class SpectraObject:
         assert self._wavelengths is not None, 'Wavenumbers have not yet been set! Cannot return them!'
         return self._wavelengths
 
-    def getAverageSpectra(self) -> Dict[str, np.ndarray]:
-        specs: Dict[str, np.ndarray] = self.getClassSpectra(maxSpecPerClas=np.inf)
-        avgSpecs: Dict[str, np.ndarray] = {}
-        for cls_name, spectra in specs.items():
-            avgSpecs[cls_name] = np.mean(spectra, axis=0)
-        return avgSpecs
-
     def getSpectrumaAtXY(self, x: int, y: int) -> np.ndarray:
         if type(x) != int or type(y) != int:
             x, y = int(round(x)), int(round(y))
@@ -103,21 +78,14 @@ class SpectraObject:
         y = np.clip(y, 0, self._cube.shape[2]-1)
         return self._cube[:, x, y]
 
-    def getNumberOfClasses(self) -> int:
-        return len(self._classes)
+    def getBackgroundIndices(self) -> Set[int]:
+        return self._backgroundIndices
 
     def getNumberOfFeatures(self) -> int:
         return self._cube.shape[0]
 
     def setWavelengths(self, wavelengths: np.ndarray) -> None:
         self._wavelengths = wavelengths
-
-    def setClasses(self, classes: Dict[str, Tuple[np.ndarray, np.ndarray]]) -> None:
-        """
-        :param classes: Tuple: ClassName: Tuple[array of y-coordinates, array of x-coordinates]
-        :return:
-        """
-        self._classes = classes
 
     def _specArr2cube(self, specArr: np.ndarray, ignoreBackground: bool = False) -> np.ndarray:
         """

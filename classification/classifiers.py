@@ -16,12 +16,17 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-from typing import Dict, List, Union
+from typing import Dict, List, Union, TYPE_CHECKING
 
 import numpy as np
 from PyQt5 import QtWidgets
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
+
+from logger import getLogger
+
+if TYPE_CHECKING:
+    from logging import Logger
 
 
 class ClassificationError(Exception):
@@ -42,6 +47,7 @@ class BaseClassifier:
     title: str = ''
 
     def __init__(self):
+        self._logger: Logger = getLogger(f"classifier {self.title}")
         self._uniqueLabels: Dict[str, int] = {}  # Dictionary mapping class names to their unique indices
 
     def getControls(self) -> QtWidgets.QGroupBox:
@@ -58,7 +64,16 @@ class BaseClassifier:
         pass
 
     def restoreNotPickleable(self) -> None:
-        """Restores the originale version, see comment to makePickleable method"""
+        """
+        Restores the originale version, see comment to makePickleable method
+        """
+        pass
+
+    def updateClassifierFromTrained(self, trainedClf: 'BaseClassifier') -> None:
+        """
+        Updates the classifier from training. Should copy the actual classifier object and the unique labels!
+        """
+        raise NotImplementedError
 
     def setWavelengths(self, wavelengths: np.ndarray) -> None:
         """
@@ -86,6 +101,7 @@ class BaseClassifier:
         """
         Takes an array of text number and returns the corresponding array of text labels, according to the unique labels.
         """
+        assert len(self._uniqueLabels) > 0
         key_list = list(self._uniqueLabels.keys())
         val_list = list(self._uniqueLabels.values())
 
@@ -135,6 +151,13 @@ class KNN(BaseClassifier):
     def restoreNotPickleable(self) -> None:
         self._recreateSpinBox()
 
+    def updateClassifierFromTrained(self, trainedClassifier: 'KNN') -> None:
+        assert type(trainedClassifier) == KNN, f"Trained classifier is of wrong type. Expected KNN, " \
+                                               f"got {type(trainedClassifier)}"
+        self._clf = trainedClassifier._clf
+        self._uniqueLabels = trainedClassifier._uniqueLabels
+        self._logger.info("Updated classifier after training")
+
     def _recreateSpinBox(self) -> None:
         self._kSpinBox = QtWidgets.QSpinBox()
         self._kSpinBox.setMinimum(2)
@@ -180,6 +203,13 @@ class SVM(BaseClassifier):
 
     def restoreNotPickleable(self) -> None:
         self._recreateComboBox()
+
+    def updateClassifierFromTrained(self, trainedClassifier: 'SVM') -> None:
+        assert type(trainedClassifier) == SVM, f"Trained classifier is of wrong type. Expected SVM, " \
+                                               f"got {type(trainedClassifier)}"
+        self._clf = trainedClassifier._clf
+        self._uniqueLabels = trainedClassifier._uniqueLabels
+        self._logger.info("Updated classifier after training")
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         self._clf = svm.SVC(kernel=self._kernel)

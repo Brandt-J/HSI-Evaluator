@@ -20,7 +20,7 @@ import random
 import time
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, TYPE_CHECKING, Union, Set
+from typing import List, TYPE_CHECKING, Union, Set, Callable, Tuple
 import numpy as np
 from collections import Counter
 from multiprocessing import Process, Queue, Event
@@ -236,14 +236,10 @@ class PreprocessingPerformer(QtWidgets.QWidget):
             if type(queueContent) == Sample:
                 self._preprocessedSamples.append(queueContent)
                 self._incrementProgressbar()
-                print('finished one sample')
 
             if len(self._preprocessedSamples) == self._progressbar.maximum():
-                print('finished all samples')
                 self.PreprocessingFinished.emit(self._preprocessedSamples)
                 self._finishProcessing()
-        else:
-            print('queue is empty')
 
     def _incrementProgressbar(self) -> None:
         """

@@ -18,24 +18,22 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, Tuple, Dict, Union, TYPE_CHECKING, cast
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast
 import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.pyplot import rcParams
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Event
 
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 from dataObjects import Sample
-from classification.classifyProcedures import getClassifiers, trainClassifier, classifySamples
+from classification.classifyProcedures import getClassifiers, trainClassifier, classifySamples, TrainingResult
 from classification.classifiers import ClassificationError, BaseClassifier
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from gui.sampleview import SampleView
     from gui.graphOverlays import GraphView
-    from preprocessing.preprocessors import Preprocessor
-    from spectraObject import SpectraObject
     from logging import Logger
 
 
@@ -284,13 +282,14 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
     def __init__(self, parent: 'MainWindow'):
         super(ClassificationUI, self).__init__()
-        self._parent: 'MainWindow' = parent
+        self._mainWin: 'MainWindow' = parent
         self._logger: 'Logger' = getLogger("ClassificationUI")
-        self._preprocessingRequired: bool = True
         self._classifiers: List['BaseClassifier'] = getClassifiers()  # all available classifiers
         self._activeClf: Union[None, 'BaseClassifier'] = None  # the currently selected classifier
-        self._samplesToClassify: List['SampleView'] = []  # List for keeping track of opened samples to classify
         self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
+
+        self._trainProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
+        self._inferenceProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
 
         self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
@@ -301,13 +300,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
         self._progressbar.setWindowTitle("Classification in Progress")
-        self._validationLabel: QtWidgets.QLabel = QtWidgets.QLabel()
-
-        self._process: Process = Process()
-        self._queue: Queue = Queue()
-        self._timer: QtCore.QTimer = QtCore.QTimer()
-        self._timer.setSingleShot(False)
-        self._timer.timeout.connect(self._checkOnComputation)
+        self._validationLabel: QtWidgets.QLabel = QtWidgets.QLabel("No Validation results yet")
 
         self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         self.setLayout(self._layout)
@@ -319,62 +312,96 @@ class ClassificationUI(QtWidgets.QGroupBox):
         """
         Trains the selected classifier.
         """
-        self._applyBtn.setDisabled(True)
-        # Run Training
-        trainClassifier()
-        self._applyBtn.setEnabled(True)
+        trainSamples: List['Sample'] = self._getTrainingSamples()
+        errMsg: str = ''
+        if self._activeClf is None:
+            errMsg = "No Classifier selected."
+        if len(trainSamples) == 0:
+            errMsg += "\nNo Samples for Training selected"
+
+        if len(errMsg) > 0:
+            QtWidgets.QMessageBox.about(self, "Error", f"Cannot train classifier:\n{errMsg}")
+        else:
+            self._mainWin.disableWidgets()
+            self._applyBtn.setDisabled(True)
+            self._activeClf.makePickleable()
+            self._trainProcessWindow = ProcessWithStatusBarWindow(trainClassifier,
+                                                                  (trainSamples, self._activeClf,
+                                                                   self._testFracSpinBox.value()),
+                                                                  str, TrainingResult)
+            self._trainProcessWindow.setWindowTitle(f"Training on {len(trainSamples)} samples.")
+            self._trainProcessWindow.ProcessFinished.connect(self._onTrainingFinishedOrAborted)
+            self._trainProcessWindow.setProgressBarMaxVal(0)
+            self._trainProcessWindow.startProcess()
+            self._activeClf.restoreNotPickleable()
 
     def _runClassification(self) -> None:
         """
         Applies the classifier and runs classification on the selected samples.
         """
-        pass
+        self._mainWin.disableWidgets()
 
-    def _classifyImage(self) -> None:
-        """
-        Classifies the current image based on the selected pixels and their classes
-        :return:
-        """
-        self._parent.disableWidgets()
-        preprocessors: List['Preprocessor'] = self._parent.getPreprocessors()
-        trainingSamples: List['SampleView'] = self._getTrainSamples()
-        self._samplesToClassify = self._getInferenceSamples()
-        allBackgrounds: Dict[str, np.ndarray] = self._parent.getBackgroundsOfAllSamples()
+        inferenceSamples: List['Sample'] = self._getInferenceSamples()
+        errMsg: str = ''
+        if self._activeClf is None:
+            errMsg = "No Classifier selected."
+        if len(inferenceSamples) == 0:
+            errMsg += "\nNo Samples for Inference selected"
 
-        trainSampleDataList: List['Sample'] = []
-        inferenceSampleDataList: List['Sample'] = []
-        for i, sample in enumerate(set(self._samplesToClassify + trainingSamples)):
-            if sample in trainingSamples:
-                trainSampleDataList.append(sample.getSampleData())
-            if sample in self._samplesToClassify:
-                inferenceSampleDataList.append(sample.getSampleData())
-                sample.resetClassificationOverlay()
+        if len(errMsg) > 0:
+            QtWidgets.QMessageBox.about(self, "Error", f"Cannot apply classifier:\n{errMsg}")
+        else:
+            self._mainWin.disableWidgets()
+            self._activeClf.makePickleable()
+            self._inferenceProcessWindow = ProcessWithStatusBarWindow(classifySamples,
+                                                                      (inferenceSamples, self._activeClf,
+                                                                       self._mainWin.getClassColorDict()),
+                                                                       str, list)
+            self._inferenceProcessWindow.setWindowTitle(f"Inference on {len(inferenceSamples)} samples.")
+            self._inferenceProcessWindow.ProcessFinished.connect(self._onClassificationFinishedOrAborted)
+            self._inferenceProcessWindow.setProgressBarMaxVal(len(inferenceSamples))
+            self._inferenceProcessWindow.startProcess()
+            self._activeClf.restoreNotPickleable()
 
-            specObj: 'SpectraObject' = sample.getSpecObj()
-            specObj.preparePreprocessing(preprocessors, allBackgrounds[sample.getName()], sample.getBackgroundPixelIndices())
+    @QtCore.pyqtSlot(bool)
+    def _onClassificationFinishedOrAborted(self, properlyFinished: bool) -> None:
+        if properlyFinished:
+            classifiedSamples: Union[None, List['Sample']] = self._inferenceProcessWindow.getResult()
+            assert type(classifiedSamples) == list
+            self._updateClassifiedSamples(classifiedSamples)
+        else:
+            self._logger.info("Classifier Inference finished without getting a result")
 
-        assert len(trainSampleDataList) > 0 and len(self._samplesToClassify) > 0, 'Either no training or no inference data..'
+        self._mainWin.enableWidgets()
 
-        self._progressbar.show()
-        self._progressbar.setValue(0)
-        self._progressbar.setMaximum(0)  # TODO: Implement a more fine-grained monitoring
-        # self._progressbar.setMaximum(len(self._samplesToClassify))
-        self._activeClf.makePickleable()
-        self._queue = Queue()  # recreate queue object, it could have been closed previously.
-        self._process = Process(target=trainAndClassify, args=(trainSampleDataList,
-                                                               inferenceSampleDataList,
-                                                               self._preprocessingRequired,
-                                                               self._excludeBackgroundCheckbox.isChecked(),
-                                                               self._activeClf,
-                                                               self._testFracSpinBox.value(),
-                                                               self._parent.getClassColorDict(),
-                                                               self._queue))
-        self._process.start()
-        self._timer.start()
-        self._activeClf.restoreNotPickleable()
+    @QtCore.pyqtSlot(bool)
+    def _onTrainingFinishedOrAborted(self, properlyFinished: bool) -> None:
+        if properlyFinished:
+            result: Union[None, TrainingResult] = self._trainProcessWindow.getResult()
+            assert result is not None
+            self._activeClf.updateClassifierFromTrained(result.classifier)
+            self._validationLabel.setText(result.validReportString)
+            self.setFixedWidth(self._validationLabel.sizeHint().width())
+            self._applyBtn.setEnabled(True)
+        else:
+            self._logger.info("Training finished without getting a result.")
+
+        self._mainWin.enableWidgets()
 
     def _emitTransparencyUpdate(self) -> None:
         self.ClassTransparencyUpdated.emit(self._transpSlider.value() / 100)
+
+    def _getTrainingSamples(self) -> List['Sample']:
+        """
+        Returns a list of SampleData objects from all samples selected for training.
+        """
+        return [sample.getSampleData() for sample in self._mainWin.getAllSamples() if sample.isSelectedForTraining()]
+
+    def _getInferenceSamples(self) -> List['Sample']:
+        """
+        Returns a list of SampleData objects from all samples selected for inference.
+        """
+        return [sample.getSampleData() for sample in self._mainWin.getAllSamples() if sample.isSelectedForInference()]
 
     @QtCore.pyqtSlot(str)
     def _activateClassifier(self, clfName: str) -> None:
@@ -398,13 +425,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         if len(self._classifiers) > 0:
             self._activateClassifier(self._classifiers[0].title)
 
-    @QtCore.pyqtSlot()
-    def forcePreprocessing(self) -> None:
-        """
-        Called when the preprocessing stack was updated or the background selection has changed...
-        """
-        self._preprocessingRequired = True
-
     def _configureWidgets(self) -> None:
         self._transpSlider.setMinimum(0)
         self._transpSlider.setValue(80)
@@ -419,9 +439,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._applyBtn.released.connect(self._runClassification)
         self._applyBtn.setDisabled(True)
 
-        self._excludeBackgroundCheckbox.setChecked(True)
-        self._validationLabel.setText("Not yet validated.")
-
         self._clfCombo.addItems([clf.title for clf in self._classifiers])
         self._clfCombo.currentTextChanged.connect(self._activateClassifier)
 
@@ -431,17 +448,14 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addWidget(self._activeClfControls)
         self._layout.addStretch()
 
-        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options:")
         optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        optnGroup.setLayout(optnLayout)
         optnLayout.addRow("Test Fraction", self._testFracSpinBox)
-        optnLayout.addRow("Exlude Background", self._excludeBackgroundCheckbox)
 
         runLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         runLayout.addWidget(self._trainBtn)
         runLayout.addWidget(self._applyBtn)
 
-        self._layout.addWidget(optnGroup)
+        self._layout.addLayout(optnLayout)
         self._layout.addLayout(runLayout)
         validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Results")
         validationGroup.setLayout(QtWidgets.QHBoxLayout())
@@ -451,22 +465,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
         self._layout.addWidget(self._transpSlider)
 
-    def _getTrainSamples(self) -> List['SampleView']:
-        """Gets a list of the samples that shall be used for classifier training."""
-        trainSamples: List['SampleView'] = []
-        for sample in self._parent.getAllSamples():
-            if sample.isSelectedForTraining():
-                trainSamples.append(sample)
-        return trainSamples
-
-    def _getInferenceSamples(self) -> List['SampleView']:
-        """Gets a list of the samples that shall be used for classifier inference."""
-        trainSamples: List['SampleView'] = []
-        for sample in self._parent.getAllSamples():
-            if sample.isSelectedForInference():
-                trainSamples.append(sample)
-        return trainSamples
-
     def _placeClfControlsToLayout(self) -> None:
         """Places the controls of the currently selected classifier into the layout."""
         indexOfControlElement: int = 2  # has to be matched with the layout contruction in the _createLayout method.
@@ -474,53 +472,136 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.removeWidget(item.widget())
         self._layout.insertWidget(indexOfControlElement, self._activeClfControls)
 
-    def _checkOnComputation(self) -> None:
+    def _updateClassifiedSamples(self, finishedSamples: List['Sample']) -> None:
         """
-        Checks the state of computation and updates the interface accordingly.
+        Takes Sample data(s) from finished classification and updates the according sampleView(s).
         """
+        allSamples: List['SampleView'] = self._mainWin.getAllSamples()
+        for finishedSample in finishedSamples:
+            sampleFound: bool = False
+            for sample in allSamples:
+                if sample.getName() == finishedSample.name:
+                    graphView: 'GraphView' = sample.getGraphView()
+                    graphView.updateClassImage(finishedSample.classOverlay)
+                    sampleFound = True
+                    break
+            assert sampleFound, f'Could not find sample {sample.getName()} in present samples'
+
+
+class ProcessWithStatusBarWindow(QtWidgets.QWidget):
+    ProcessFinished: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)  # True, if finished properly, false if aborted
+
+    def __init__(self, targetFunc: Callable, args: Tuple, statusbarIncrementType: type, queueReturnType: type) -> None:
+        """
+        :param targetFunc: Callable function as target for the process.
+        Last arguments to the function have to be dataQueue and stopEvent.
+        :param args: Tuple of input arguments to the function. DataQueue and StopEvent will be added automatically
+        :param statusbarIncrementType: DataType coming back from the queue that is used for incrementing the statusbar
+        :param queueReturnType: DataType coming back from the queue to be used as "result" from the process.
+        Can be retrieved with "getResult()" method.
+        """
+        super(ProcessWithStatusBarWindow, self).__init__()
+        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+
+        self._func: Callable = targetFunc
+        self._args: Tuple = args
+        self._progressBarMaxVal: int = 0
+        self._statusIncrementType: type = statusbarIncrementType
+        self._queueReturnType: type = queueReturnType
+        self._result = None
+
+        self._logger: 'Logger' = getLogger("ProcessWindow")
+
+        self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
+        self._progressbar.setFixedWidth(600)
+        self._progressLabel: QtWidgets.QLabel = QtWidgets.QLabel()
+        self._btnCancel: QtWidgets.QPushButton = QtWidgets.QPushButton("Cancel")
+        self._btnCancel.setMaximumWidth(150)
+        self._btnCancel.released.connect(self._promptForCancel)
+        layout.addWidget(self._progressbar)
+        layout.addWidget(self._progressLabel)
+        layout.addWidget(self._btnCancel)
+
+        self._process: Process = Process()
+        self._queue: Queue = Queue()
+        self._stopEvent: Event = Event()
+
+        self._timer: QtCore.QTimer = QtCore.QTimer()
+        self._timer.setSingleShot(False)
+        self._timer.timeout.connect(self._checkOnProcess)
+
+    def startProcess(self) -> None:
+        self._queue = Queue()
+        self._stopEvent = Event()
+        self._process = Process(target=self._func, args=(*self._args, self._queue, self._stopEvent))
+        self._progressbar.setValue(0)
+        self._progressbar.setMaximum(self._progressBarMaxVal)
+        self._timer.start(100)
+        self._process.start()
+        self._btnCancel.setEnabled(True)
+        self.show()
+
+    def setProgressBarMaxVal(self, maxVal: int) -> None:
+        self._progressBarMaxVal = maxVal
+
+    def getResult(self) -> object:
+        return self._result
+
+    def _checkOnProcess(self) -> None:
         if not self._queue.empty():
             queueContent = self._queue.get()
-            errorOccured: bool = False
-            if type(queueContent) is ClassificationError:
+            if type(queueContent) == self._statusIncrementType:
+                self._incrementProgressbar()
+
+            elif type(queueContent) == ClassificationError:
                 error: ClassificationError = cast(ClassificationError, queueContent)
-                QtWidgets.QMessageBox.critical(self, "Error in classification", f"The following error occured:\n"
-                                                                                f"{error.errorText}")
-                errorOccured = True
+                self._logger.error(f"Error in Training/Classification: {error.errorText}")
+                QtWidgets.QMessageBox.critical(self, "Error", f"Error on Training/Classification: {error.errorText}")
+                self._cancelProcess()
 
-            elif type(queueContent) == str:
-                self._setValidationResult(cast(str, queueContent))
+            elif type(queueContent) == self._queueReturnType:
+                self._result = queueContent
+                assert self._result is not None
+                self._finishProcessing()
 
-            elif type(queueContent) == Sample:
-                finishedData: 'Sample' = cast('Sample', queueContent)
-                self._updateClassifiedSample(finishedData)
-                # self._progressbar.setValue(self._progressbar.value()+1)  # TODO: Implement a more fine-grained monitoring...
-
-            if len(self._samplesToClassify) == 0 or errorOccured:
-                self._finishComputation()
-                # if errorOccured:
-                #     raise ClassificationError("An error during classification occurred")
-
-    def _updateClassifiedSample(self, finishedData: 'Sample') -> None:
+    def _incrementProgressbar(self) -> None:
         """
-        Takes Sample data from finished classification and updates the according sampleView.
+        Increments the progressbar's status by one.
         """
-        for sample in self._samplesToClassify:
-            if sample.getName() == finishedData.name:
-                graphView: 'GraphView' = sample.getGraphView()
-                graphView.updateClassImage(finishedData.classOverlay)
-                self._samplesToClassify.remove(sample)
-                break
+        self._progressbar.setValue(self._progressbar.value() + 1)
 
-    def _setValidationResult(self, report: str) -> None:
+    def _promptForCancel(self) -> None:
         """
-        Adjusts the validation lable with the latest classification report.
+        Prompts the user whether or not to cancel the process..
         """
-        self._validationLabel.setText(report)
+        if self._process.is_alive():
+            reply = QtWidgets.QMessageBox.question(self, "Abort?", "Abort the preprocessing?",
+                                                   QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                                                   QtWidgets.QMessageBox.No)
 
-    def _finishComputation(self) -> None:
-        self._preprocessingRequired = False
-        self._progressbar.hide()
-        self._parent.enableWidgets()
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._cancelProcess()
+
+    def _cancelProcess(self) -> None:
+        """
+        Actually cancels the process.
+        """
+        self._stopEvent.set()
+        self._progressbar.setMaximum(0)
+        self._progressbar.setValue(0)
+        self.setWindowTitle("Aborting Preprocessing, please wait..")
+        self._btnCancel.setEnabled(False)
+        self._finishProcessing(aborted=True)
+
+    def _finishProcessing(self, aborted: bool = False) -> None:
         self._timer.stop()
         self._queue.close()
-        self._process.join()
+        self._process.join(timeout=2 if aborted else None)
+        self._progressbar.setValue(0)
+        self._preprocessedSamples = []
+        if aborted:
+            self.ProcessFinished.emit(False)
+        else:
+            self.ProcessFinished.emit(True)
+        self.hide()
