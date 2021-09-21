@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import random
 import time
 from multiprocessing import Queue, Event
 import numpy as np
@@ -48,37 +49,31 @@ class TrainingResult:
     validReportDict: dict
 
 
-def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', testSize: float, queue: Queue,
-                    stopEvent: Event) -> None:
+def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', maxSpecsPerClass: int,
+                    testSize: float, queue: Queue, stopEvent: Event) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     The classifier will be put back in the queue after training and validation.
     :param trainSampleList: List of Sample objects used for classifier training
     :param classifier: The Classifier to use
+    :param maxSpecsPerClass: The maximum number of spectra per class to use
     :param testSize: Fraction of the data used for testing
     :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is set if computation should be stopped.
     """
-    trainingSpectra: Dict[str, np.ndarray] = {}
-    for sample in trainSampleList:
-        for cls, specs in sample.getLabelledSpectra().items():
-            if cls not in trainingSpectra:
-                trainingSpectra[cls] = specs
-            else:
-                trainingSpectra[cls] = np.vstack((trainingSpectra[cls], specs))
-
     if stopEvent.is_set():
         return
 
     logger: 'Logger' = getLogger("TrainingProcess")
     # training
-    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, testSize)
+    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, maxSpecsPerClass, testSize)
+    logger.debug(f"starting training on {xtrain.shape[0]} spectra")
     t0 = time.time()
     try:
         classifier.train(xtrain, xtest, ytrain, ytest)
     except Exception as e:
-        queue.put(ClassificationError(f"Error during classifier Trining: {e}"))
-        raise ClassificationError(f"Error during classifier Trining: {e}")
+        queue.put(ClassificationError(f"Error during classifier Training: {e}"))
+        raise ClassificationError(f"Error during classifier Training: {e}")
     logger.debug(f'Training {classifier.title} on {xtrain.shape[0]} spectra took {round(time.time() - t0, 2)} seconds')
     if stopEvent.is_set():
         return
@@ -156,15 +151,17 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
     return list(result)
 
 
-def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float,
+def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float,
                                    ignoreBackground: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
     :param sampleList: List of sampleviews to use
+    :param maxSpecsPerClass: Max. number of spectra per class
     :param testSize: Fraction of the data to use as test size
     :param ignoreBackground: Whether or not to skip background pixels
     :return: Tuple[Xtrain, Xtest, ytrain, ytest]
     """
+    logger: 'Logger' = getLogger("PrepareSpecsForTraining")
     labels: List[str] = []
     spectra: Union[None, np.ndarray] = None
     for sample in sampleList:
@@ -174,6 +171,12 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], testSize: float,
                 continue
 
             numSpecs = specs.shape[0]
+            if numSpecs > maxSpecsPerClass:
+                randInd: np.ndarray = np.array(random.sample(list(np.arange(numSpecs)), maxSpecsPerClass))
+                specs = specs[randInd, :]
+                logger.debug(f"Reduced {numSpecs} spectra from {name} to {specs.shape[0]} spectra")
+                numSpecs = maxSpecsPerClass
+
             labels += [name]*numSpecs
             if spectra is None:
                 spectra = specs

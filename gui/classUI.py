@@ -293,6 +293,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._maxNumSpecsSpinBox: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
         self._trainBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Train Classifier")
         self._applyBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply Classifier")
 
@@ -327,6 +328,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
             self._activeClf.makePickleable()
             self._trainProcessWindow = ProcessWithStatusBarWindow(trainClassifier,
                                                                   (trainSamples, self._activeClf,
+                                                                   self._maxNumSpecsSpinBox.value(),
                                                                    self._testFracSpinBox.value()),
                                                                   str, TrainingResult)
             self._trainProcessWindow.setWindowTitle(f"Training on {len(trainSamples)} samples.")
@@ -435,6 +437,10 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._testFracSpinBox.setMaximum(0.99)
         self._testFracSpinBox.setValue(0.1)
 
+        self._maxNumSpecsSpinBox.setMinimum(100)
+        self._maxNumSpecsSpinBox.setMaximum(100000)
+        self._maxNumSpecsSpinBox.setValue(20000)
+
         self._trainBtn.released.connect(self._trainClassifier)
         self._applyBtn.released.connect(self._runClassification)
         self._applyBtn.setDisabled(True)
@@ -448,14 +454,17 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addWidget(self._activeClfControls)
         self._layout.addStretch()
 
+        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options")
         optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        optnGroup.setLayout(optnLayout)
+        optnLayout.addRow("Max. Num. of Spectra per class", self._maxNumSpecsSpinBox)
         optnLayout.addRow("Test Fraction", self._testFracSpinBox)
 
         runLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         runLayout.addWidget(self._trainBtn)
         runLayout.addWidget(self._applyBtn)
 
-        self._layout.addLayout(optnLayout)
+        self._layout.addWidget(optnGroup)
         self._layout.addLayout(runLayout)
         validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Results")
         validationGroup.setLayout(QtWidgets.QHBoxLayout())

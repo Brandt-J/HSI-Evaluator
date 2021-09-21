@@ -59,6 +59,9 @@ class SpectraObject:
         self._preprocessedCube = self._specArr2cube(preprocessedSpectra)
 
     def getCube(self) -> np.ndarray:
+        """
+        Returns the spec cube. If any preprocessing was done, the preprocessed group is returned.
+        """
         cube: np.ndarray = self._preprocessedCube
         if cube is None:
             cube = self._cube
