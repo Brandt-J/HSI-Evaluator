@@ -251,12 +251,14 @@ class SpecPlot(QtWidgets.QWidget):
         self._parent: 'ResultPlots' = parent
         self._mainWin: Union[None, 'MainWindow'] = None
         self._showDescCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._legendOutsideCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._stackSpinner: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
 
         self._specAx: plt.Axes = self._figure.add_subplot()
         # self._descAx: plt.Axes = self._specAx.twinx()
         self._cursorSpec: Union[plt.Line2D, None] = None
+        self._currentSpectra: Union[None, np.ndarray] = None
 
         # self._descLib: DescriptorLibrary = DescriptorLibrary()
         # self._activeDescSet: Union[None, DescriptorSet] = None
@@ -275,8 +277,11 @@ class SpecPlot(QtWidgets.QWidget):
         self._createLayout()
 
     def updatePlot(self, spectra: np.ndarray) -> None:
+        self._currentSpectra = spectra.copy()
         uniqueLabels: np.ndarray = np.unique(self._labels)
         uniqueSamples: np.ndarray = np.unique(self._sampleNames)
+        offsets: np.ndarray = self._getoffsetsFromLabelsAndSpectra()
+        spectra += offsets
         for uniqueLbl in uniqueLabels:
             self._legendItems.append(uniqueLbl)
             ind: np.ndarray = np.where(self._labels == uniqueLbl)[0]
@@ -322,21 +327,21 @@ class SpecPlot(QtWidgets.QWidget):
         self._legendItems = []
         self._canvas.draw()
 
-    def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
-                     color: List[float], legendName: str) -> None:
-        """
-        Plots the spectra array.
-        :param spectra: (NxM) array of N spectra with M wavelengths
-        :param index: index of specset, used for optional offset.
-        :param linestyle: the linestyle code to use
-        :param color: The rgb color to use (or rgba)
-        :param legendName: The legendname of the given spec set.
-        """
-        spectra: np.ndarray = self._prepareSpecsForPlot(spectra)
-        self._specAx.plot(self._mainWin.getWavelengths(), spectra - index * self._stackSpinner.value(),
-                          linestyle=linestyle, color=color)
-
-        self._legendItems.append(legendName)
+    # def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
+    #                  color: List[float], legendName: str) -> None:
+    #     """
+    #     Plots the spectra array.
+    #     :param spectra: (NxM) array of N spectra with M wavelengths
+    #     :param index: index of specset, used for optional offset.
+    #     :param linestyle: the linestyle code to use
+    #     :param color: The rgb color to use (or rgba)
+    #     :param legendName: The legendname of the given spec set.
+    #     """
+    #     spectra: np.ndarray = self._prepareSpecsForPlot(spectra)
+    #     self._specAx.plot(self._mainWin.getWavelengths(), spectra - index * self._stackSpinner.value(),
+    #                       linestyle=linestyle, color=color)
+    #
+    #     self._legendItems.append(legendName)
 
     def finishPlotting(self) -> None:
         """
@@ -348,7 +353,11 @@ class SpecPlot(QtWidgets.QWidget):
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")
-        self._specAx.legend(self._legendItems)
+        if self._legendOutsideCheckBox.isChecked():
+            self._specAx.legend(self._legendItems, bbox_to_anchor=(1, 1), loc="upper left")
+        else:
+            self._specAx.legend(self._legendItems)
+        self._figure.tight_layout()
         self._plotDescriptors()
         self._canvas.draw()
 
@@ -357,7 +366,8 @@ class SpecPlot(QtWidgets.QWidget):
         optionsLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         optionsLayout.addRow("Average spectra per class", self._avgCheckBox)
         optionsLayout.addRow("Stack amount", self._stackSpinner)
-        optionsLayout.addRow("Show descriptors", self._showDescCheckBox)
+        optionsLayout.addRow("Show legend outside plot", self._legendOutsideCheckBox)
+        # optionsLayout.addRow("Show descriptors", self._showDescCheckBox)
 
         layout.addLayout(optionsLayout)
         layout.addWidget(self._canvas)
@@ -368,15 +378,15 @@ class SpecPlot(QtWidgets.QWidget):
         self._stackSpinner.setMaximum(2)
         self._stackSpinner.setDecimals(2)
         self._stackSpinner.setSingleStep(0.1)
+        self._stackSpinner.valueChanged.connect(self._onPlotSettingsChanged)
+        self._stackSpinner.setMaximumWidth(50)
 
         self._avgCheckBox.setChecked(True)
+        self._avgCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._showDescCheckBox.setChecked(True)
 
-        self._stackSpinner.setMaximumWidth(50)
-        self._stackSpinner.valueChanged.connect(self._parent.updatePlots)
 
-        for checkbox in [self._avgCheckBox, self._showDescCheckBox]:
-            checkbox.stateChanged.connect(self._parent.updatePlots)
+        self._legendOutsideCheckBox.toggled.connect(self._onPlotSettingsChanged)
 
         self._noClickTimer.timeout.connect(self._enableOnClick)
 
@@ -385,11 +395,11 @@ class SpecPlot(QtWidgets.QWidget):
         self._canvas.mpl_connect('motion_notify_event', self._movePoints)
         self._canvas.mpl_connect('button_release_event', self._releasePoints)
 
-    def _prepareSpecsForPlot(self, specArr: np.ndarray) -> np.ndarray:
-        specArr = specArr.copy()
-        if self._avgCheckBox.isChecked():
-            specArr = np.mean(specArr, axis=0)
-        return specArr.transpose()
+    # def _prepareSpecsForPlot(self, specArr: np.ndarray) -> np.ndarray:
+    #     specArr = specArr.copy()
+    #     if self._avgCheckBox.isChecked():
+    #         specArr = np.mean(specArr, axis=0)
+    #     return specArr.transpose()
 
     def _plotDescriptors(self) -> None:
         pass
@@ -464,3 +474,24 @@ class SpecPlot(QtWidgets.QWidget):
         if self._selectedDescIndex > -1:
             self._activeDescSet.remove_descriptor_of_index(self._selectedDescIndex)
             self._deselectDescriptor()
+
+    def _onPlotSettingsChanged(self) -> None:
+        if self._currentSpectra is not None:
+            self.resetPlots()
+            self.updatePlot(self._currentSpectra)
+            self.finishPlotting()
+
+    def _getoffsetsFromLabelsAndSpectra(self) -> np.ndarray:
+        """
+        Gets an offset array for the current spectra according to the set labels.
+        """
+        assert self._currentSpectra is not None
+        offsets = np.zeros_like(self._currentSpectra)
+        offsetVal: float = self._stackSpinner.value()
+        if offsetVal != 0:
+            uniquelabels: List[str] = list(np.unique(self._labels))
+            for lbl in uniquelabels:
+                lblInd: np.ndarray = np.where(self._labels == lbl)[0]
+                offsets[lblInd, :] = offsetVal * uniquelabels.index(lbl)
+
+        return offsets
