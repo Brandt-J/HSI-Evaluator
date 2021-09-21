@@ -1,3 +1,23 @@
+"""
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program, see COPYING.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
+
 from unittest import TestCase
 import numpy as np
 import sys
@@ -5,7 +25,7 @@ from typing import Dict, Union
 from PyQt5 import QtWidgets
 
 from gui.spectraPlots import ResultPlots
-from gui.pcaPlot import getXYOfName
+from gui.scatterPlot import getXYOfName
 from gui.HSIEvaluator import MainWindow
 
 
@@ -19,57 +39,6 @@ class TestSpectraPreview(TestCase):
         self._plotWin: ResultPlots = ResultPlots()
         self._plotWin.setMainWinRef(self._mainWin)
         self._specPlot = self._plotWin._specPlot
-
-    def test_limitSpecNumber(self):
-        maxSpecs: int = 10  # not more than 10 spectra can be taken
-        self._plotWin._numSpecSpinner.setValue(maxSpecs)
-
-        fewSpecs: np.ndarray = np.random.rand(5, 10)
-        fewSpecsClipped: np.ndarray = self._plotWin._limitSpecNumber(fewSpecs)
-        self.assertTrue(np.array_equal(fewSpecs, fewSpecsClipped))
-
-        moreSpecs: np.ndarray = np.random.rand(30, 10)
-        moreSpecsClipped: np.ndarray = self._plotWin._limitSpecNumber(moreSpecs)
-        self.assertTrue(moreSpecsClipped.shape[0] == maxSpecs)
-        self.assertTrue(moreSpecsClipped.shape[1] == moreSpecs.shape[1])
-
-    def test_plotActiveSpectra(self):
-        # create fake data and override main win functions
-        numWavenums, numSpecs = 10, 30
-        sample1: Dict[str, np.ndarray] = {'class1': np.random.rand(numSpecs, numWavenums),
-                                          'class2': np.random.rand(numSpecs, numWavenums)}
-        sample2: Dict[str, np.ndarray] = {'class1': np.random.rand(numSpecs, numWavenums),
-                                          'class2': np.random.rand(numSpecs, numWavenums),
-                                          'class3': np.random.rand(numSpecs, numWavenums)}
-
-        self._mainWin.getWavenumbers = lambda: np.arange(numWavenums)
-        self._mainWin.getBackgroundOfActiveSample = lambda: np.zeros(numWavenums)
-        self._mainWin.getBackgroundsOfAllSamples = lambda: {'sample1': np.zeros(numWavenums),
-                                                            'sample2': np.zeros(numWavenums),
-                                                            'sample3': np.zeros(numWavenums)}
-        self._mainWin.getLabelledSpectraFromActiveView = lambda: sample1
-        self._mainWin.getLabelledSpectraFromAllViews = lambda: {'sample1': sample1,
-                                                                'sample2': sample2}
-
-        self._mainWin.getPreprocessors = lambda: []  # we don't take any here...
-
-        self._plotWin._numSpecSpinner.setValue(numSpecs)
-        self._plotWin._showAllCheckBox.setChecked(False)
-        self._plotWin.updatePlots()  # make sure no errors occur
-
-        self._plotWin._showAllCheckBox.setChecked(True)
-        self._plotWin.updatePlots()  # make sure no errors occur
-
-    def test_prepareSpectraForPLotting(self) -> None:
-        specs: np.ndarray = np.random.rand(20, 10)
-        self._specPlot._avgCheckBox.setChecked(False)
-        prepared: np.ndarray = self._specPlot._prepareSpecsForPlot(specs)
-        self.assertTrue(np.array_equal(specs, prepared.transpose()))
-
-        self._specPlot._avgCheckBox.setChecked(True)
-        prepared: np.ndarray = self._specPlot._prepareSpecsForPlot(specs)
-        meanSpec: np.ndarray = np.mean(specs, axis=0)
-        self.assertTrue(np.array_equal(meanSpec, prepared))
 
     def test_getXYOfColor(self) -> None:
         numDifferentColors: int = 4

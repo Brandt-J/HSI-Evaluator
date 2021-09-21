@@ -17,20 +17,26 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from PyQt5 import QtCore, QtWidgets
+
+from unittest import TestCase
+import numpy as np
 import os
+import tempfile
+
+from loadCube import loadCube
 
 
-def getAppFolder() -> str:
-    """
-    Returns a writable locatione, specific for the HSI Evaluator App.
-    """
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        # if it does not exist then a QApplication is created
-        app = QtWidgets.QApplication([])
+class TestImportNumpy(TestCase):
+    def test_importNumpy(self) -> None:
+        cube: np.ndarray = np.random.rand(20, 100, 100)
+        cube[5, 3, 6] = 1e34
+        cube[2, 5, 7] = 2e34
 
-    app.setApplicationName("HSI Evaluator")
-    appFolder: str = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppLocalDataLocation)
-    os.makedirs(appFolder, exist_ok=True)
-    return appFolder
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            savePath: str = os.path.join(tmpdirname, "testcube.npy")
+            np.save(savePath, cube)
+
+            loadedCube, wavelengths = loadCube(savePath)
+            self.assertEqual(loadedCube[5, 3, 6], 0)
+            self.assertEqual(loadedCube[2, 5, 7], 0)
+            self.assertTrue(np.array_equal(wavelengths, np.arange(cube.shape[0])))

@@ -17,20 +17,28 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from PyQt5 import QtCore, QtWidgets
+import configparser
 import os
 
+__all__ = ["sampleDirectory", "snapScanFolder", "sqlLogin"]
 
-def getAppFolder() -> str:
-    """
-    Returns a writable locatione, specific for the HSI Evaluator App.
-    """
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        # if it does not exist then a QApplication is created
-        app = QtWidgets.QApplication([])
+from typing import Dict
 
-    app.setApplicationName("HSI Evaluator")
-    appFolder: str = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppLocalDataLocation)
-    os.makedirs(appFolder, exist_ok=True)
-    return appFolder
+defaultPath: str = "config_default.cfg"
+customPath: str = "config.cfg"
+
+config = configparser.ConfigParser()
+if os.path.exists(customPath):
+    config.read(customPath)
+else:
+    config.read(defaultPath)
+
+sampleDirectory: str = config["PATHS"]["SampleDirectory"]
+snapScanFolder: str = config["PATHS"]["SnapscanFolder"]
+
+
+sqlLogin: Dict[str, str] = {"user": config["SQL Credentials"]["Username"],
+                            "password": config["SQL Credentials"]["Password"],
+                            "host": config["SQL Credentials"]["Host"],
+                            "database": config["SQL Credentials"]["Database"]}
+

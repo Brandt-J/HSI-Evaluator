@@ -1,8 +1,26 @@
+"""
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program, see COPYING.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from typing import List, Union, Dict, TYPE_CHECKING
-from sklearn.decomposition import PCA
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
 
@@ -10,65 +28,62 @@ from logger import getLogger
 
 if TYPE_CHECKING:
     from logging import Logger
+    from gui.HSIEvaluator import MainWindow
 
 
-class PCAPlot(FigureCanvas):
+class ScatterPlot(FigureCanvas):
     def __init__(self):
         self._figure: plt.Figure = plt.Figure()
-        super(PCAPlot, self).__init__(self._figure)
-        self._logger: 'Logger' = getLogger("PCA-Plot")
+        super(ScatterPlot, self).__init__(self._figure)
+        self._logger: 'Logger' = getLogger("Scatter-Plot")
+        self._mainWin: Union[None, 'MainWindow'] = None
         self._ax: plt.Axes = self._figure.add_subplot()
-        self._spectraForPCA: Union[None, np.ndarray] = None
+
+        self._sampleNames: Union[None, np.ndarray] = None
+
+        self._labels: Union[None, np.ndarray] = None  # lists the label names of each data point
         self._colors: List[List[float]] = []  # lists the color of each data point
-        self._allNames: List[str] = []  # lists the label names of each data point
         self._name2colors: Dict[str, List[float]] = {}  # connects legend label to plot color
-        self._name2lines: Dict[str, Union[str, tuple]] = {}  # connects legend label to line style
+        # self._name2lines: Dict[str, Union[str, tuple]] = {}  # connects legend label to line style
+
+    def setMainWindow(self, mainWin: 'MainWindow') -> None:
+        self._mainWin = mainWin
 
     def resetPlots(self) -> None:
         """
         Called before starting to plot a new set of spectra.
         """
         self._ax.clear()
-        self._spectraForPCA = None
-        self._colors = []
-        self._allNames = []
         self._name2colors = {}
-        self._name2lines = {}
+        self.draw()
 
-    def addSpectraToPCA(self, spectra: np.ndarray, linestyle: Union[str, tuple], color: List[float], legendName: str) -> None:
-        """
-        Plots the spectra array.
-        :param spectra: (NxM) array of N spectra with M wavenumbers
-        :param linestyle: the linestyle code to use
-        :param color: The rgb color to use (or rgba)
-        :param legendName: The legendname of the given spec set.
-        """
-        if self._spectraForPCA is None:
-            self._spectraForPCA = spectra
+    def setClassAndSampleNames(self, classLabels: np.ndarray, sampleNames: np.ndarray) -> None:
+        self._labels = classLabels
+        self._sampleNames = sampleNames
+
+    def updatePlot(self, points: np.ndarray) -> None:
+        if self._mainWin is not None:
+            uniqueLabels: np.ndarray = np.unique(self._labels)
+            uniqueSamples: np.ndarray = np.unique(self._sampleNames)
+            for uniqueLbl in uniqueLabels:
+                ind: np.ndarray = np.where(self._labels == uniqueLbl)[0]
+                color = [i / 255 for i in self._mainWin.getColorOfClass(uniqueLbl)]
+                self._ax.scatter(points[ind, 0], points[ind, 1], color=color)
+
+                self._name2colors[uniqueLbl] = color
+                confidence_ellipse(points[ind, :2], self._ax, edgecolor=color, linestyle='-')  # re-include: linestyle=self._name2lines[name]
         else:
-            self._spectraForPCA = np.vstack((self._spectraForPCA, spectra))
-
-        self._colors += [color] * spectra.shape[0]
-        self._allNames += [legendName] * spectra.shape[0]
-        self._name2colors[legendName] = color
-        self._name2lines[legendName] = linestyle
+            self._logger.warning("Cannot update scatter plot, Main Window Reference was not yet set.")
 
     def finishPlotting(self) -> None:
         """
         Called after finishing plotting a set of spectra.
         """
-        if self._spectraForPCA is not None:
-            if self._spectraForPCA.shape[0] <= 2:
-                self._logger.warning(f"Not doing PCA, because only {self._spectraForPCA.shape[0]} spectra were obtained.")
-            else:
-                pca = PCA(n_components=2)
-                princComps: np.ndarray = pca.fit_transform(self._spectraForPCA)
-                self._ax.scatter(princComps[:, 0], princComps[:, 1], color=self._colors)
-                self._ax.set_xlabel("Scores on PC1")
-                self._ax.set_ylabel("Scores on PC2")
-                self._drawLegend()
-                self._drawConfidenceEllipses(princComps)
-                self.draw()
+        self._drawLegend()
+        try:
+            self.draw()
+        except ValueError as e:
+            self._logger.warning(f"Could not update scatter plot: {e}")
 
     def _drawLegend(self) -> None:
         """
@@ -77,23 +92,28 @@ class PCAPlot(FigureCanvas):
         lines = []
         # draw a point for each label
         for name, color in self._name2colors.items():
-            line,  = self._ax.plot(0, 0, linestyle=self._name2lines[name], color=color, label=name)
+            line,  = self._ax.plot(0, 0, color=color, label=name)  # re-include: linestyle=self._name2lines[name]
+            lines.append(line)
         self._ax.legend()  # create the legend based on that
 
         for line in lines:
             line.remove()
 
-    def _drawConfidenceEllipses(self, princComps: np.ndarray) -> None:
-        """
-        Draws the confidence ellipses for the data.
-        """
-        nameArr: np.ndarray = np.array(self._allNames)
-        for name, color in self._name2colors.items():
-            points: np.ndarray = getXYOfName(np.array(name), nameArr, princComps)
-            confidence_ellipse(points, self._ax, edgecolor=color, linestyle=self._name2lines[name])
+    # def _drawConfidenceEllipses(self, princComps: np.ndarray) -> None:
+    #     """
+    #     Draws the confidence ellipses for the data.
+    #     """
+    #     nameArr: np.ndarray = np.array(self._allNames)
+    #     for name, color in self._name2colors.items():
+    #         points: np.ndarray = getXYOfName(np.array(name), nameArr, princComps)
+    #         confidence_ellipse(points, self._ax, edgecolor=color, linestyle='-')  # re-include: linestyle=self._name2lines[name]
+
 
 
 def getXYOfName(name: np.ndarray, allNames: np.ndarray, datapoints: np.ndarray) -> np.ndarray:
+    """
+    Returns X, Y coordinates of points from the datapoints, where allNames == name.
+    """
     indices: np.ndarray = np.unique(np.where(allNames == name)[0])
     return datapoints[indices, :]
 

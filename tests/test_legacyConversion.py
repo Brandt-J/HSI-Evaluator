@@ -17,20 +17,19 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-from PyQt5 import QtCore, QtWidgets
-import os
+
+from unittest import TestCase
+
+from legacyConvert import _preprocNames2NodeClasses
+from gui.nodegraph.nodes import *
 
 
-def getAppFolder() -> str:
-    """
-    Returns a writable locatione, specific for the HSI Evaluator App.
-    """
-    app = QtWidgets.QApplication.instance()
-    if app is None:
-        # if it does not exist then a QApplication is created
-        app = QtWidgets.QApplication([])
-
-    app.setApplicationName("HSI Evaluator")
-    appFolder: str = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppLocalDataLocation)
-    os.makedirs(appFolder, exist_ok=True)
-    return appFolder
+class TestLegacyConvert(TestCase):
+    def test_convertProcessStackToNodeGraph(self) -> None:
+        preprocNames: List[str] = ['Derivative1', 'Detrend', 'SNV', 'Normalize']
+        correpondingTypes: list = _preprocNames2NodeClasses(preprocNames)
+        self.assertEqual(len(correpondingTypes), len(preprocNames))
+        self.assertEqual(correpondingTypes[0], NodeSmoothDeriv)
+        self.assertEqual(correpondingTypes[1], NodeDetrend)
+        self.assertEqual(correpondingTypes[2], NodeSNV)
+        self.assertEqual(correpondingTypes[3], NodeNormalize)

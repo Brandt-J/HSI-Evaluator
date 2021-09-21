@@ -1,13 +1,40 @@
+"""
+HSI Classifier
+Copyright (C) 2021 Josef Brandt, University of Gothenburg <josef.brandt@gu.se>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program, see COPYING.
+If not, see <https://www.gnu.org/licenses/>.
+"""
+
+import os.path
+import tempfile
 from unittest import TestCase
 import sys
 from PyQt5 import QtWidgets
-from typing import List, Dict
+from typing import List, Dict, TYPE_CHECKING, Set
 import numpy as np
+import pickle
 
 from gui.HSIEvaluator import MainWindow
-from gui.sampleview import MultiSampleView, SampleView, getSpectraFromIndices
+from gui.sampleview import MultiSampleView, SampleView, Sample
 from gui.graphOverlays import GraphView
-from spectraObject import SpectraObject
+from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
+
+if TYPE_CHECKING:
+    from gui.classUI import ClassCreator
+    from dataObjects import View
+    from gui.preprocessEditor import PreprocessingSelector
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -53,12 +80,13 @@ class TestSampleView(TestCase):
 
     def testSetupSampleView(self) -> None:
         sampleView: SampleView = SampleView()
-        name, cube = "testName", np.ones((3, 5, 5))
-        sampleView.setUp(name, cube)
+        fname, cube, wavelenghts = "testName.npy", np.ones((3, 5, 5)), np.arange(3)
+        sampleView.setUp(fname, cube, wavelenghts)
 
-        self.assertEqual(sampleView._name, name)
+        self.assertEqual(sampleView._name, fname.split('.npy')[0])
         self.assertTrue(sampleView.getGraphView()._origCube is cube)
-        self.assertTrue(sampleView._specObj.getCube() is cube)
+        self.assertTrue(sampleView.getSampleData().specObj.getCube() is cube)
+        self.assertTrue(np.array_equal(sampleView.getWavelengths(), np.arange(3)))
 
     def testGetSpectra(self) -> None:
         imgClf: MainWindow = MainWindow()
@@ -66,14 +94,14 @@ class TestSampleView(TestCase):
 
         sample1: SampleView = multiView.addSampleView()
         sample1._name = 'Sample1'
-        specObj1: SpectraObject = sample1._specObj
+        specObj1: SpectraObject = sample1._sampleData.specObj
         specObj1.setCube(np.zeros((3, 10, 10)))
         sample1._classes2Indices = {"class1": set(np.arange(5)),
                                     "class2": set(np.arange(7))}  # the indices overlap here, but we only check that the amount is correct..
 
         sample2: SampleView = multiView.addSampleView()
         sample2._name = 'Sample2'
-        specObj2: SpectraObject = sample2._specObj
+        specObj2: SpectraObject = sample2._sampleData.specObj
         specObj2.setCube(np.ones((3, 10, 10)))
         sample2._classes2Indices = {"class1": set(np.arange(5)),
                                     "class2": set(np.arange(3)),
@@ -83,7 +111,8 @@ class TestSampleView(TestCase):
         sample1._activeBtn.setChecked(True)
         sample2._activeBtn.setChecked(False)
 
-        spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView()
+        spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
+
         self.assertEqual(len(spectraSample1), 2)
         self.assertTrue("class1" in spectraSample1.keys() and "class2" in spectraSample1.keys())
         self.assertTrue(np.array_equal(spectraSample1["class1"].shape, np.array([5, 3])))
@@ -93,7 +122,7 @@ class TestSampleView(TestCase):
         sample1._activeBtn.setChecked(False)
         sample2._activeBtn.setChecked(True)
 
-        spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView()
+        spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
         self.assertEqual(len(spectraSample2), 3)
         self.assertTrue("class1" in spectraSample2.keys() and "class2" in spectraSample2.keys() and "class3" in spectraSample2.keys())
         self.assertTrue(np.array_equal(spectraSample2["class1"].shape, np.array([5, 3])))
@@ -101,7 +130,7 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(spectraSample2["class3"].shape, np.array([9, 3])))
 
         # not get both samples:
-        allSpecs: Dict[Dict[str, :]] = multiView.getLabelledSpectraFromAllViews()
+        allSpecs: Dict[Dict[str, :]] = multiView.getLabelledSpectraFromAllViews().getSampleDictionary()
         self.assertEqual(len(allSpecs), 2)
         self.assertTrue(specDictEqual(allSpecs["Sample1"], spectraSample1))
         self.assertTrue(specDictEqual(allSpecs["Sample2"], spectraSample2))
@@ -137,3 +166,121 @@ class TestSampleView(TestCase):
             self.assertEqual(len(multiView.getSampleViews()), i)
             remainingSampleNames = [view.getName() for view in multiView.getSampleViews()]
             self.assertTrue(getSampleName(i) not in remainingSampleNames)
+
+    def test_saveSample(self) -> None:
+        imgClf: MainWindow = MainWindow()
+        imgClf._resultPlots.updatePlots = lambda: print("Fake updating plots")
+        classesSample1: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4},
+                                               'class2': {5, 6, 7, 8}}
+        classesSample2: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4, 5, 7},
+                                               'class2': {8, 9, 10, 11},
+                                               'class3': {12, 13, 14}}
+
+        # Create MultiView and two SampleViews.
+        multiView: MultiSampleView = imgClf._multiSampleView
+        sample1: SampleView = multiView.addSampleView()
+        sample1._name = 'Sample1'
+        sample1._sampleData.filePath = os.path.join(r'FakeDir/Sample1.npy')
+        sample1._classes2Indices = classesSample1
+
+        sample2: SampleView = multiView.addSampleView()
+        sample2._name = 'Sample2'
+        sample2._sampleData.filePath = os.path.join(r'FakeDir/Sample2.npy')
+        sample2._classes2Indices = classesSample2
+
+        # Test saving the individual samples
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            multiView.getSampleSaveDirectory = lambda: tmpdirname
+            multiView._saveSampleView(sample1)
+            savename: str = os.path.join(multiView.getSampleSaveDirectory(), sample1.getSaveFileName())
+            self.assertTrue(os.path.exists(savename))
+            with open(savename, "rb") as fp:
+                savedData: 'Sample' = pickle.load(fp)
+            self.assertDictEqual(savedData.classes2Indices, classesSample1)
+            self.assertEqual(savedData.name, 'Sample1')
+            self.assertEqual(savedData.filePath, r'FakeDir/Sample1.npy')
+
+            multiView._saveSampleView(sample2)
+            savename: str = os.path.join(multiView.getSampleSaveDirectory(), sample2.getSaveFileName())
+            self.assertTrue(os.path.exists(savename))
+            with open(savename, "rb") as fp:
+                savedData: 'Sample' = pickle.load(fp)
+            self.assertDictEqual(savedData.classes2Indices, classesSample2)
+            self.assertEqual(savedData.name, 'Sample2')
+            self.assertEqual(savedData.filePath, r'FakeDir/Sample2.npy')
+
+        # Test saving the view:
+        # Set a preprocessing stack
+        # TODO: REIMPLEMENT
+        # preprocSelector: 'PreprocessingSelector' = imgClf._preprocSelector
+        # preprocSelector._selected = preprocSelector._available  # just select them all
+        # selectedNames: List[str] = [lbl.text() for lbl in preprocSelector._selected]
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            multiView.getViewSaveDirectory = lambda: tmpdirname
+            sample1.getSampleData().filePath = os.path.join(tmpdirname, "cube1.npy")
+            sample2.getSampleData().filePath = os.path.join(tmpdirname, "cube2.npy")
+            # create fake datacubes
+            np.save(sample1.getSampleData().filePath, np.random.rand(3, 5, 5))
+            np.save(sample2.getSampleData().filePath, np.random.rand(3, 5, 5))
+
+            viewPath: str = os.path.join(tmpdirname, "NewView.view")
+            imgClf._saveView(viewPath)
+            self.assertTrue(os.path.exists(viewPath))
+
+            with open(viewPath, "rb") as fp:
+                savedView: View = pickle.load(fp)
+
+            self.assertEqual(len(savedView.samples), 2)
+            self.assertEqual(savedView.samples[0], sample1._sampleData)
+            self.assertEqual(savedView.samples[1], sample2._sampleData)
+
+            # TODO: REIMPLEMENT
+            # self.assertEqual(len(savedView.processStack), len(preprocSelector._selected))
+            # for i in range(len(savedView.processStack)):
+            #     processorName: str = savedView.processStack[i]
+            #     self.assertEqual(processorName, preprocSelector._selected[i].text())
+
+            # reset preprocessing selector and multiview, then load the view
+            # multiView._sampleviews = []
+            # imgClf._loadView(viewPath)
+            # self.assertEqual(len(multiView._sampleviews), 2)
+            # self.assertEqual(multiView._sampleviews[0].getSampleData(), savedView.samples[0])
+            # self.assertEqual(multiView._sampleviews[1].getSampleData(), savedView.samples[1])
+            # self.assertEqual([lbl.text() for lbl in preprocSelector._selected], selectedNames)
+
+    def test_loadFromSample(self) -> None:
+        imgClf: MainWindow = MainWindow()
+        imgClf._preprocSelector._showNoSpectraWarning = lambda: print('no spectra, no preprocessed spectra preview..')
+        sample: Sample = Sample()
+        sample.name = 'Sample1'
+        sample.classes2Indices = {'Background': {1, 2, 3, 4},
+                                  'class2': {5, 6, 7, 8}}
+        testCube: np.ndarray = np.random.rand(3, 10, 10)
+
+        multiView: MultiSampleView = MultiSampleView(imgClf)
+        self.assertTrue(len(multiView._sampleviews) == 0)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            sample.filePath = os.path.join(tmpdirname, "testCube.npy")
+            saveName: str = os.path.join(tmpdirname, sample.getFileHash() + '.pkl')
+            with open(saveName, "wb") as fp:
+                pickle.dump(sample, fp)
+            np.save(sample.filePath, testCube)
+            multiView.loadSampleViewFromFile(saveName)
+
+        self.assertTrue(len(multiView._sampleviews) == 1)
+        createdSample: SampleView = multiView._sampleviews[0]
+        self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getCube(), testCube))
+        self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
+
+        createdSample._sampleData.specObj = None  # We now se these specObjs to None. These are at different memory locations...
+        sample.specObj = None
+        self.assertDictEqual(sample.__dict__, createdSample.getSampleData().__dict__)
+        classCreator: ClassCreator = imgClf._clsCreator
+        presentClasses: List[str] = [cls.name for cls in classCreator._classes]
+        for cls in sample.classes2Indices.keys():
+            self.assertTrue(cls in presentClasses)
+
+
+
