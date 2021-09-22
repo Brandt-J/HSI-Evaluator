@@ -318,7 +318,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
         self._progressbar.setWindowTitle("Classification in Progress")
-        self._validationLabel: QtWidgets.QLabel = QtWidgets.QLabel("No Validation results yet")
+        self._validGroup: ValidationResult = ValidationResult()
 
         self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         self.setLayout(self._layout)
@@ -399,8 +399,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
             result: Union[None, TrainingResult] = self._trainProcessWindow.getResult()
             assert result is not None
             self._activeClf.updateClassifierFromTrained(result.classifier)
-            self._validationLabel.setText(result.validReportString)
-            self.setFixedWidth(self._validationLabel.sizeHint().width())
+            self._validGroup.showResult(result.validReportDict)
             self._applyBtn.setEnabled(True)
         else:
             self._logger.info("Training finished without getting a result.")
@@ -456,7 +455,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._maxNumSpecsSpinBox.setMinimum(100)
         self._maxNumSpecsSpinBox.setMaximum(100000)
-        self._maxNumSpecsSpinBox.setValue(20000)
+        self._maxNumSpecsSpinBox.setValue(5000)
 
         self._trainBtn.released.connect(self._trainClassifier)
         self._applyBtn.released.connect(self._runClassification)
@@ -485,7 +484,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addLayout(runLayout)
         validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Results")
         validationGroup.setLayout(QtWidgets.QHBoxLayout())
-        validationGroup.layout().addWidget(self._validationLabel)
+        validationGroup.layout().addWidget(self._validGroup)
         self._layout.addWidget(validationGroup)
         self._layout.addStretch()
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
@@ -631,3 +630,101 @@ class ProcessWithStatusBarWindow(QtWidgets.QWidget):
         else:
             self.ProcessFinished.emit(True)
         self.hide()
+
+
+class ValidationResult(QtWidgets.QGroupBox):
+    def __init__(self):
+        super(ValidationResult, self).__init__()
+        self._layout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
+        self._defaultLabel: QtWidgets.QLabel = QtWidgets.QLabel("No results yet.")
+        self._lblPrec: QtWidgets.QLabel = QtWidgets.QLabel("Precision")
+        self._lblRecall: QtWidgets.QLabel = QtWidgets.QLabel("Recall")
+        self._lblF1: QtWidgets.QLabel = QtWidgets.QLabel("F1")
+        self._lblSupport: QtWidgets.QLabel = QtWidgets.QLabel("Support")
+        self._lblAccuracy: QtWidgets.QLabel = QtWidgets.QLabel("Accuracy")
+        self._lblMacroAvg: QtWidgets.QLabel = QtWidgets.QLabel("Macro Avg")
+        self._lblWeightedAvg: QtWidgets.QLabel = QtWidgets.QLabel("Weighted Avg")
+        self._resultLabels: List[QtWidgets.QLabel] = []
+        self._layout.addWidget(self._defaultLabel, 0, 0)
+        self.setLayout(self._layout)
+
+    def showResult(self, reportDict: dict) -> None:
+        """
+        Takes a validation report dict and adapts to show its content.
+        """
+        self._clearLayout()
+        self._defaultLabel.setText("")
+        self._resultLabels = []
+
+        # Header
+        for i, lbl in enumerate(self._getHeaderLabels(), start=1):
+            self._layout.addWidget(lbl, 0, i)
+        clsList: List[str] = [key for key in reportDict.keys() if key not in ["accuracy", "macro avg", "weighted avg"]]
+        for row, cls in enumerate(clsList, start=1):
+            clsDict: Dict[str, float] = reportDict[cls]
+            newLbl: QtWidgets.QLabel = QtWidgets.QLabel(cls)
+            self._resultLabels.append(newLbl)
+            self._layout.addWidget(newLbl, row, 0)
+            for col, entry in enumerate(["precision", "recall", "f1-score", "support"], start=1):
+                newLbl: QtWidgets.QLabel = QtWidgets.QLabel(str(round(clsDict[entry], 2)))
+                self._resultLabels.append(newLbl)
+                self._layout.addWidget(newLbl, row, col)
+
+        row += 1
+        self._layout.addWidget(self._defaultLabel, row, 0)  # the empty default label as blank line
+
+        row += 1  # the accuracy row
+        self._layout.addWidget(self._lblAccuracy, row, 0)
+        accLbl: QtWidgets.QLabel = QtWidgets.QLabel(str(round(reportDict["accuracy"], 2)))
+        suppLbl: QtWidgets.QLabel = QtWidgets.QLabel(str(round(reportDict["macro avg"]["support"], 2)))
+        self._layout.addWidget(accLbl, row, 3)
+        self._layout.addWidget(suppLbl, row, 4)
+        for lbl in [accLbl, suppLbl]:
+            self._resultLabels.append(lbl)
+
+        row += 1  # now the macro avg row
+        self._layout.addWidget(self._lblMacroAvg, row, 0)
+        macroAvgDict: Dict[str, float] = reportDict["macro avg"]
+        for col, entry in enumerate(["precision", "recall", "f1-score", "support"], start=1):
+            newLbl: QtWidgets.QLabel = QtWidgets.QLabel(str(round(macroAvgDict[entry], 2)))
+            self._resultLabels.append(newLbl)
+            self._layout.addWidget(newLbl, row, col)
+
+        row += 1  # now the weighted avg row
+        self._layout.addWidget(self._lblWeightedAvg, row, 0)
+        weightedAvgDict: Dict[str, float] = reportDict["weighted avg"]
+        for col, entry in enumerate(["precision", "recall", "f1-score", "support"], start=1):
+            newLbl: QtWidgets.QLabel = QtWidgets.QLabel(str(round(weightedAvgDict[entry], 2)))
+            self._resultLabels.append(newLbl)
+            self._layout.addWidget(newLbl, row, col)
+
+    def _getHeaderLabels(self) -> List[QtWidgets.QLabel]:
+        return [self._lblPrec, self._lblRecall, self._lblF1, self._lblSupport]
+
+    def _getAllLabels(self) -> List[QtWidgets.QLabel]:
+        return self._resultLabels + self._getHeaderLabels() + [self._defaultLabel] + self._getRowLabels()
+
+    def _getRowLabels(self) -> List[QtWidgets.QLabel]:
+        return [self._lblAccuracy, self._lblMacroAvg, self._lblWeightedAvg]
+
+    def _clearLayout(self) -> None:
+        for lbl in self._getAllLabels():
+            self._layout.removeWidget(lbl)
+
+
+if __name__ == '__main__':
+    import sys
+    from sklearn.metrics import classification_report
+    app = QtWidgets.QApplication(sys.argv)
+    win = ValidationResult()
+    win.show()
+    a = ['bus'] * 5 + ['auto'] * 3 + ['fahrrad'] * 9
+    b = ['bus'] * 4 + ['auto'] * 4 + ['fahrrad'] * 9
+    rep = classification_report(a, b, output_dict=True)
+    win.showResult(rep)
+
+    a = ['nö'] * 15 + ['doch'] * 13 + ['vielleicht'] * 19
+    b = ['nö'] * 14 + ['doch'] * 14 + ['vielleicht'] * 19
+    rep = classification_report(a, b, output_dict=True)
+    win.showResult(rep)
+    app.exec_()
