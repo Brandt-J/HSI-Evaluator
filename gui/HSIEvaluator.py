@@ -213,6 +213,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Loads a view.
         :fname: full path to the file to load.
         """
+        assert os.path.exists(fname), f"The specified file to load: {fname} does not exist."
         with open(fname, "rb") as fp:
             loadedView: View = pickle.load(fp)
             loadedView = assertUpToDateView(loadedView)  # TODO: map from processStack to processingGraph
@@ -221,6 +222,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if view.title != '':
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
+        self._clsCreator.deleteAllClasses()
         self._multiSampleView.createListOfSamples(view.samples)
         self._preprocSelector.applyPreprocessingConfig(view.processingGraph)
         self._preprocSelector.updatePreviewSpectra()
@@ -328,6 +330,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multiSampleView.saveSamples()
             self._multiSampleView.closeAllSamples()
             a0.accept()
+        else:
+            a0.ignore()
 
 
 def main():

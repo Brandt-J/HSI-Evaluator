@@ -58,6 +58,7 @@ class ResultPlots(QtWidgets.QWidget):
         self._scatterPlot: 'ScatterPlot' = ScatterPlot()
 
         self._tabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
+        self.setMinimumWidth(100)
         self._configureWidgets()
         self._createLayout()
 
@@ -84,7 +85,8 @@ class ResultPlots(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot(str)
     def switchToDescriptorSet(self, descSetName: str) -> None:
-        self._specPlot.switchToDescriptorSet(descSetName)
+        pass
+        # self._specPlot.switchToDescriptorSet(descSetName)
 
     @QtCore.pyqtSlot(np.ndarray)
     def updateSpecPlot(self, spectra: np.ndarray) -> None:
