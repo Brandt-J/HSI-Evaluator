@@ -51,7 +51,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._mainWinParent: 'MainWindow' = mainWinParent
         self._sampleviews: List['SampleView'] = []
         self._logger: 'Logger' = getLogger('MultiSampleView')
-        self.setMinimumWidth(850)
+        self.setMinimumWidth(750)
 
     def addSampleView(self) -> 'SampleView':
         """
@@ -85,6 +85,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._logger.info("Closing all samples, opening the following new ones..")
         for sample in self._sampleviews:
             sample.close()
+        self._sampleviews = []
         for sample in sampleList:
             self._createNewSampleFromSampleData(sample)
             self._logger.info(f"Creating sample {sample.name}")

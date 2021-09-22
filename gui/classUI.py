@@ -113,6 +113,14 @@ class ClassCreator(QtWidgets.QGroupBox):
                 self._addClass(cls)
         self._recreateLayout()
 
+    def deleteAllClasses(self) -> None:
+        """
+        Deletes all currently present classes.
+        """
+        self._classes = []
+        self._colorHandler.deleteAllClasses()
+        self._recreateLayout()
+
     def getCurrentColor(self) -> Tuple[int, int, int]:
         color: Union[None, tuple] = None
         for cls in self._classes:
@@ -199,8 +207,9 @@ class ClassCreator(QtWidgets.QGroupBox):
                 self._classes.remove(cls)
                 break
 
-        self._recreateLayout()
         self.ClassDeleted.emit(groupname)
+        self._colorHandler.removeClass(groupname)
+        self._recreateLayout()
 
     def _recreateLayout(self) -> None:
         for i in reversed(range(self._layout.count())):
@@ -252,26 +261,34 @@ class ColorHandler:
     def __init__(self):
         self._name2color: Dict[str, Tuple[int, int, int]] = {}  # Dictionary storing the colors
 
-    def getColorOfClassName(self, groupName: str) -> Tuple[int, int, int]:
-        if groupName not in self._name2color:
-            self._defineNewColor(groupName)
+    def removeClass(self, className: str) -> None:
+        del self._name2color[className]
 
-        return self._name2color[groupName]
+    def deleteAllClasses(self) -> None:
+        self._name2color = {}
 
-    def _defineNewColor(self, name: str) -> None:
+    def getColorOfClassName(self, className: str) -> Tuple[int, int, int]:
+        if className not in self._name2color:
+            self._defineNewColor(className)
+            # raise KeyError(f"The requested className does not exist in dictionary. "
+            #                f"Available entries: {self._name2color.keys()}")
+
+        return self._name2color[className]
+
+    def _defineNewColor(self, className: str) -> None:
         """
-        Determines a new color and saves it to the dictionary.
-        :param name: new name
-        :return:
-        """
+                Determines a new color and saves it to the dictionary.
+                :param className: new name
+                :return:
+                """
         colorCycle = rcParams['axes.prop_cycle'].by_key()['color']
         newIndex: int = len(self._name2color)
-        if newIndex > len(colorCycle)-1:
+        if newIndex > len(colorCycle) - 1:
             newIndex -= len(colorCycle)
-            
+
         color = colorCycle[newIndex]
         color = tuple([int(round(v * 255)) for v in to_rgb(color)])
-        self._name2color[name] = color
+        self._name2color[className] = color
 
 
 class ClassificationUI(QtWidgets.QGroupBox):
@@ -585,7 +602,7 @@ class ProcessWithStatusBarWindow(QtWidgets.QWidget):
         Prompts the user whether or not to cancel the process..
         """
         if self._process.is_alive():
-            reply = QtWidgets.QMessageBox.question(self, "Abort?", "Abort the preprocessing?",
+            reply = QtWidgets.QMessageBox.question(self, "Abort?", "Abort the processing?",
                                                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                                                    QtWidgets.QMessageBox.No)
 
@@ -599,7 +616,7 @@ class ProcessWithStatusBarWindow(QtWidgets.QWidget):
         self._stopEvent.set()
         self._progressbar.setMaximum(0)
         self._progressbar.setValue(0)
-        self.setWindowTitle("Aborting Preprocessing, please wait..")
+        self.setWindowTitle("Aborting process, please wait..")
         self._btnCancel.setEnabled(False)
         self._finishProcessing(aborted=True)
 
