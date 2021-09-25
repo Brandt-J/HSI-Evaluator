@@ -24,14 +24,40 @@ __all__ = ["sampleDirectory", "snapScanFolder", "sqlLogin"]
 
 from typing import Dict
 
-defaultPath: str = "config_default.cfg"
-customPath: str = "config.cfg"
+from logger import getLogger
+
+logger = getLogger("ConfigReader")
+
+defaultFile: str = "config_default.cfg"
+customFile: str = "config.cfg"
 
 config = configparser.ConfigParser()
-if os.path.exists(customPath):
-    config.read(customPath)
-else:
-    config.read(defaultPath)
+configLoaded, maxAttempts = False, 5
+counter: int = 0
+folder: str = os.getcwd()
+while not configLoaded and counter < maxAttempts:
+    defaultPath: str = os.path.join(folder, defaultFile)
+    customPath: str = os.path.join(folder, customFile)
+
+    if os.path.exists(customPath):
+        config.read(customPath)
+        configLoaded = True
+        logger.info(f"Reading config from custom file.")
+    elif os.path.exists(defaultPath):
+        config.read(defaultPath)
+        configLoaded = True
+        logger.info(f"Reading config from default file.")
+
+    if not configLoaded:
+        folder = os.path.dirname(folder)
+        logger.info(f"Could not find config files in directory {folder}, retrying in parent dir.")
+    counter += 1
+
+if not configLoaded:
+    logger.critical(f"Did not find custom or default logfile. These should be in the HSI-Evaluator main diretory.\n"
+                    f"Please do not move them, especially not the default file. They should be named:\n"
+                    f"'{defaultFile}' for the default config and '{customFile}' for the custom config.")
+    raise FileNotFoundError("Config Files could not be laoded. See readConfig.py for details.")
 
 sampleDirectory: str = config["PATHS"]["SampleDirectory"]
 snapScanFolder: str = config["PATHS"]["SnapscanFolder"]
