@@ -24,8 +24,12 @@ import numpy as np
 from collections import Counter
 from copy import deepcopy
 
+from logger import getLogger
+from preprocessing.routines import NormMode
+from gui.nodegraph.nodegraph import NodeGraph
 from gui.preprocessEditor import PreprocessingSelector
 from gui.spectraPlots import ResultPlots
+from gui.nodegraph.nodes import NodeNormalize
 from tests.test_classifiers import MockMainWin, getPreprocessors
 if TYPE_CHECKING:
     from gui.sampleview import SampleView
@@ -86,6 +90,36 @@ class TestPreprocessingEditor(TestCase):
             sample: 'Sample' = sampleInMainWin.getSampleData()
             self.assertTrue(preprocData == sample)
             self.assertTrue(np.array_equal(preprocData.specObj._preprocessedCube, sample.specObj._preprocessedCube))
+
+
+class TestPreprocNodes(TestCase):
+    def setUp(self) -> None:
+        self._nodegraph: NodeGraph = NodeGraph()
+
+    def testNormalize(self) -> None:
+        normNode: NodeNormalize = NodeNormalize(self._nodegraph, getLogger("TestNodeNormalize"))
+        data: np.ndarray = np.random.rand(10, 20)
+        normNode._inputs[0].getValue = lambda: data  # overwrite input function to pipe in the data array
+
+        for modeStr, mode in normNode.lbl2Mode.items():
+            normNode._modeCombo.setCurrentText(modeStr)
+            preprocData: np.ndarray = normNode.getOutput()
+            self.assertTrue(np.array_equal(data.shape, preprocData.shape))
+            for i in range(preprocData.shape[0]):
+                if mode == NormMode.Max:
+                    self.assertEqual(preprocData[i, :].max(), 1.0)
+                elif mode == NormMode.Area:
+                    self.assertAlmostEqual(getArea(preprocData[i, :]), 1.0)
+                elif mode == NormMode.Length:
+                    self.assertAlmostEqual(getLength(preprocData[i, :]), 1.0)
+
+
+def getLength(arr: np.ndarray) -> float:
+    return np.linalg.norm(arr)
+
+
+def getArea(arr: np.ndarray) -> float:
+    return np.trapz(arr)
 
 
 class MockResultsPlot:

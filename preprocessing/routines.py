@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+from enum import Enum
 
 import numpy as np
 from scipy.signal import savgol_filter
@@ -94,10 +94,11 @@ def mapSpecToWavenumbers(spec: np.ndarray, targetWavenumbers: np.ndarray) -> np.
     return newSpec
 
 
-def normalizeIntensities(input_data: np.ndarray) -> np.ndarray:
+def normalizeIntensities(input_data: np.ndarray, mode: 'NormMode') -> np.ndarray:
     """
     Normalizes each set of intensities
     :param input_data: (NxM) array of N spectra with M features
+    :param mode: Mode for the normalization.
     :return:
     """
     if len(input_data.shape) == 1:
@@ -105,8 +106,17 @@ def normalizeIntensities(input_data: np.ndarray) -> np.ndarray:
 
     normalized: np.ndarray = np.zeros_like(input_data)
     for i in range(input_data.shape[0]):
-        data: np.ndarray = input_data[i, :]
-        normalized[i, :] = (data - data.min()) / (data.max() - data.min())
+
+        if mode == NormMode.Area:
+            divisor = np.trapz(input_data[i, :])
+        elif mode == NormMode.Length:
+            divisor = np.linalg.norm(input_data[i, :])
+        elif mode == NormMode.Max:
+            divisor = np.max(input_data[i, :])
+        else:
+            raise NotImplementedError(f"The normalization mode {mode} was not implemented.")
+
+        normalized[i, :] = input_data[i, :] / divisor
 
     return normalized
 
@@ -223,3 +233,9 @@ def msc(spectra: np.ndarray):
 
     assert np.all(np.isfinite(data_msc))
     return data_msc
+
+
+class NormMode(Enum):
+    Area = 0
+    Length = 1
+    Max = 2

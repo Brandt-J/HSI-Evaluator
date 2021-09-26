@@ -188,6 +188,9 @@ class NodeSNV(BaseNode):
 
 class NodeNormalize(BaseNode):
     label = 'Normalize'
+    lbl2Mode: Dict[str, NormMode] = {"Area (1-Norm)": NormMode.Area,
+                                     "Length (2-Norm)": NormMode.Length,
+                                     "Max (Inf-Norm)": NormMode.Max}
 
     def __init__(self, nodeGraphParent: 'NodeGraph', logger: 'Logger', pos: QtCore.QPointF = QtCore.QPointF()):
         super(NodeNormalize, self).__init__(nodeGraphParent, logger, pos)
@@ -196,11 +199,36 @@ class NodeNormalize(BaseNode):
         self._preprocessor = Preprocessor()
         self._preprocessor.label = "Normalize"
         self._preprocessor.applyToSpectra = normalizeIntensities
+
+        self._modeCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._modeCombo.addItems(self.lbl2Mode.keys())
+        self._modeCombo.currentTextChanged.connect(lambda: self.ParamsChanged.emit())
+        self.ParamsChanged.connect(self._updatePreprocessor)
+        self._updatePreprocessor()
+
+        self._bodywidget: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self._modeCombo)
+        self._bodywidget.setLayout(layout)
+
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> np.ndarray:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
         return self._preprocessor.applyToSpectra(inputSpectra)
+
+    def toDict(self) -> dict:
+        configDict: dict = super(NodeNormalize, self).toDict()
+        configDict["params"] = {"mode": self._modeCombo.currentText()}
+        return configDict
+
+    def fromDict(self, paramsDict: dict) -> None:
+        self._modeCombo.setCurrentText(paramsDict["mode"])
+
+    def _updatePreprocessor(self) -> None:
+        mode: NormMode = self.lbl2Mode[self._modeCombo.currentText()]
+        self._preprocessor.applyToSpectra = functools.partial(normalizeIntensities, mode=mode)
+        self._preprocessor.label = f"Normalize: {mode}"
 
 
 class NodeDetrend(BaseNode):
