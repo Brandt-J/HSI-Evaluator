@@ -29,12 +29,11 @@ import pickle
 from gui.HSIEvaluator import MainWindow
 from gui.sampleview import MultiSampleView, SampleView, Sample
 from gui.graphOverlays import GraphView
-from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
+from spectraObject import SpectraObject, getSpectraFromIndices
 
 if TYPE_CHECKING:
     from gui.classUI import ClassCreator
     from dataObjects import View
-    from gui.preprocessEditor import PreprocessingSelector
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -75,7 +74,7 @@ class TestSampleView(TestCase):
         graphView: GraphView = newView.getGraphView()
         self.assertTrue(graphView._mainWin, imgClf)
 
-        sample2: SampleView = multiView.addSampleView()
+        _: SampleView = multiView.addSampleView()
         self.assertEqual(len(multiView.getSampleViews()), 2)
 
     def testSetupSampleView(self) -> None:
@@ -85,7 +84,7 @@ class TestSampleView(TestCase):
 
         self.assertEqual(sampleView._name, fname.split('.npy')[0])
         self.assertTrue(sampleView.getGraphView()._origCube is cube)
-        self.assertTrue(sampleView.getSampleData().specObj.getCube() is cube)
+        self.assertTrue(sampleView.getSampleData().specObj.getPreprocessedCubeIfPossible() is cube)
         self.assertTrue(np.array_equal(sampleView.getWavelengths(), np.arange(3)))
 
     def testGetSpectra(self) -> None:
@@ -111,7 +110,7 @@ class TestSampleView(TestCase):
         sample1._activeBtn.setChecked(True)
         sample2._activeBtn.setChecked(False)
 
-        spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
+        spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView(preprocessed=False).getDictionary()
 
         self.assertEqual(len(spectraSample1), 2)
         self.assertTrue("class1" in spectraSample1.keys() and "class2" in spectraSample1.keys())
@@ -122,7 +121,7 @@ class TestSampleView(TestCase):
         sample1._activeBtn.setChecked(False)
         sample2._activeBtn.setChecked(True)
 
-        spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
+        spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView(preprocessed=False).getDictionary()
         self.assertEqual(len(spectraSample2), 3)
         self.assertTrue("class1" in spectraSample2.keys() and "class2" in spectraSample2.keys() and "class3" in spectraSample2.keys())
         self.assertTrue(np.array_equal(spectraSample2["class1"].shape, np.array([5, 3])))
@@ -130,7 +129,7 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(spectraSample2["class3"].shape, np.array([9, 3])))
 
         # not get both samples:
-        allSpecs: Dict[Dict[str, :]] = multiView.getLabelledSpectraFromAllViews().getSampleDictionary()
+        allSpecs: Dict[Dict[str, :]] = multiView.getLabelledSpectraFromAllViews(preprocessed=False).getSampleDictionary()
         self.assertEqual(len(allSpecs), 2)
         self.assertTrue(specDictEqual(allSpecs["Sample1"], spectraSample1))
         self.assertTrue(specDictEqual(allSpecs["Sample2"], spectraSample2))
@@ -271,7 +270,7 @@ class TestSampleView(TestCase):
 
         self.assertTrue(len(multiView._sampleviews) == 1)
         createdSample: SampleView = multiView._sampleviews[0]
-        self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getCube(), testCube))
+        self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getPreprocessedCubeIfPossible(), testCube))
         self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
 
         createdSample._sampleData.specObj = None  # We now se these specObjs to None. These are at different memory locations...
@@ -281,6 +280,3 @@ class TestSampleView(TestCase):
         presentClasses: List[str] = [cls.name for cls in classCreator._classes]
         for cls in sample.classes2Indices.keys():
             self.assertTrue(cls in presentClasses)
-
-
-

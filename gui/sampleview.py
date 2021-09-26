@@ -128,27 +128,29 @@ class MultiSampleView(QtWidgets.QScrollArea):
     def getWavelengths(self) -> np.ndarray:
         return self._sampleviews[0].getWavelengths()
 
-    def getLabelledSpectraFromActiveView(self) -> SpectraCollection:
+    def getLabelledSpectraFromActiveView(self, preprocessed) -> SpectraCollection:
         """
         Gets the labelled Spectra, in form of a dictionary, from the active sampleview
+        :param preprocessed: Whether or not to retrieve preprocessed spectra.
         :return: SpectraCollection with all the daata
         """
         specColl: SpectraCollection = SpectraCollection()
         for view in self._sampleviews:
             if view.isActive():
-                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra()
+                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra(preprocessed)
                 specColl.addSpectraDict(spectra, view.getName())
                 break
         return specColl
 
-    def getLabelledSpectraFromAllViews(self) -> SpectraCollection:
+    def getLabelledSpectraFromAllViews(self, preprocessed) -> SpectraCollection:
         """
         Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
+        :param preprocessed: Whether or not to retrieve preprocessed spectra.
         :return: SpectraCollectionObject
         """
         specColl: SpectraCollection = SpectraCollection()
         for view in self._sampleviews:
-            specColl.addSpectraDict(view.getVisibleLabelledSpectra(), view.getName())
+            specColl.addSpectraDict(view.getVisibleLabelledSpectra(preprocessed), view.getName())
         return specColl
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
@@ -430,15 +432,19 @@ class SampleView(QtWidgets.QMainWindow):
         saveSample.classOverlay = None
         return saveSample
 
-    def getVisibleLabelledSpectra(self) -> Dict[str, np.ndarray]:
+    def getVisibleLabelledSpectra(self, preprocessed: bool) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra that are currently set as visible, in form of a dictionary.
+        :param preprocessed: Whether or not to retrieve preprocessed spectra.
         :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             if self._mainWindow.classIsVisible(name):
-                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getCube())
+                if preprocessed:
+                    spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getPreprocessedCubeIfPossible())
+                else:
+                    spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getNotPreprocessedCube())
         return spectra
 
     def getAllLabelledSpectra(self) -> Dict[str, np.ndarray]:
@@ -449,7 +455,7 @@ class SampleView(QtWidgets.QMainWindow):
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             spectra[name] = getSpectraFromIndices(np.array(list(indices)),
-                                                  self._sampleData.specObj.getCube())
+                                                  self._sampleData.specObj.getPreprocessedCubeIfPossible())
         return spectra
 
     def getSelectedMaxBrightness(self) -> float:

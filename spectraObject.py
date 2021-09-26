@@ -58,7 +58,7 @@ class SpectraObject:
         preprocessedSpectra: np.ndarray = preprocessSpectra(self._cube2SpecArr(), preprocessors, backgroundSpec)
         self._preprocessedCube = self._specArr2cube(preprocessedSpectra)
 
-    def getCube(self) -> np.ndarray:
+    def getPreprocessedCubeIfPossible(self) -> np.ndarray:
         """
         Returns the spec cube. If any preprocessing was done, the preprocessed group is returned.
         """
@@ -148,7 +148,7 @@ class SpectraObject:
         :return: Shape (N x M) array of N spectra with M wavelengths
         """
         if preprocessed:
-            cube: np.ndarray = self.getCube()
+            cube: np.ndarray = self.getPreprocessedCubeIfPossible()
         else:
             cube: np.ndarray = self._cube
 

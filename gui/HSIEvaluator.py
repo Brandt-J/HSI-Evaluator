@@ -99,25 +99,28 @@ class MainWindow(QtWidgets.QMainWindow):
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
-    def getLabelledSpectraFromActiveView(self) -> 'SpectraCollection':
+    def getLabelledSpectraFromActiveView(self, preprocessed) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from the currently active sampleview.
+        :param preprocessed: Whether or not to retrieve preprocessed data.
         :return: Spectra Collection with all data
         """
-        return self._multiSampleView.getLabelledSpectraFromActiveView()
+        return self._multiSampleView.getLabelledSpectraFromActiveView(preprocessed)
 
-    def getLabelledSpectraFromAllViews(self) -> 'SpectraCollection':
+    def getLabelledSpectraFromAllViews(self, preprocessed) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
+        :param preprocessed: Whether or not to retrieve preprocessed data.
         :return: Spectra Collection with all data
         """
-        return self._multiSampleView.getLabelledSpectraFromAllViews()
+        return self._multiSampleView.getLabelledSpectraFromAllViews(preprocessed)
 
     def getBackgroundOfActiveSample(self) -> np.ndarray:
         """
         Returns the averaged background spectrum of the currently active sample.
         """
-        return self._multiSampleView.getBackgroundOfActiveSample()
+        raise NotImplementedError
+        # return self._multiSampleView.getBackgroundOfActiveSample()
 
     def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
         """

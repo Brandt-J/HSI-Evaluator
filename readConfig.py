@@ -67,4 +67,3 @@ sqlLogin: Dict[str, str] = {"user": config["SQL Credentials"]["Username"],
                             "password": config["SQL Credentials"]["Password"],
                             "host": config["SQL Credentials"]["Host"],
                             "database": config["SQL Credentials"]["Database"]}
-

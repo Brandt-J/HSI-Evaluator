@@ -67,14 +67,14 @@ class Sample:
 
         return isEqual
 
-    def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
+    def getLabelledPreprocessedSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
         :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self.classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getCube())
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getPreprocessedCubeIfPossible())
         return spectra
 
     def setClassOverlay(self, classImage: np.ndarray) -> None:

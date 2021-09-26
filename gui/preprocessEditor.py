@@ -81,9 +81,9 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         self._plots.clearPlots()
 
         if self._plots.getShowAllSamples():
-            specColl: SpectraCollection = self._mainWin.getLabelledSpectraFromAllViews()
+            specColl: SpectraCollection = self._mainWin.getLabelledSpectraFromAllViews(preprocessed=True)
         else:
-            specColl: SpectraCollection = self._mainWin.getLabelledSpectraFromActiveView()
+            specColl: SpectraCollection = self._mainWin.getLabelledSpectraFromActiveView(preprocessed=True)
 
         if specColl.hasSpectra():
             spectra, labels = specColl.getXY()

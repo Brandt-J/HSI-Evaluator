@@ -114,7 +114,7 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
         if stopEvent.is_set():
             return
 
-        cubeShape = specObj.getCube().shape
+        cubeShape = specObj.getPreprocessedCubeIfPossible().shape
         clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
         sample.setClassOverlay(clfImg)
         logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
@@ -134,7 +134,7 @@ def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier
     :return: List of class names per spectrum
     """
     specList: List[np.ndarray] = []
-    cube: np.ndarray = specObject.getCube()
+    cube: np.ndarray = specObject.getPreprocessedCubeIfPossible()
     backgroundIndices: Set[int] = specObject.getBackgroundIndices()
     i: int = 0
     for y in range(cube.shape[1]):
@@ -165,7 +165,7 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
     labels: List[str] = []
     spectra: Union[None, np.ndarray] = None
     for sample in sampleList:
-        spectraDict: Dict[str, np.ndarray] = sample.getLabelledSpectra()
+        spectraDict: Dict[str, np.ndarray] = sample.getLabelledPreprocessedSpectra()
         for name, specs in spectraDict.items():
             if ignoreBackground and name.lower() == "background":
                 continue
