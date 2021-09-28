@@ -28,7 +28,7 @@ import pickle
 
 from gui.HSIEvaluator import MainWindow
 from gui.sampleview import MultiSampleView, SampleView, Sample
-from gui.graphOverlays import GraphView
+from gui.graphOverlays import GraphView, ThresholdSelector
 from spectraObject import SpectraObject, getSpectraFromIndices
 
 if TYPE_CHECKING:
@@ -280,3 +280,9 @@ class TestSampleView(TestCase):
         presentClasses: List[str] = [cls.name for cls in classCreator._classes]
         for cls in sample.classes2Indices.keys():
             self.assertTrue(cls in presentClasses)
+
+    def test_thresholdSelector(self) -> None:
+        avgImg: np.ndarray = np.random.rand(10, 10)
+        avgImg = avgImg*255
+        avgImg = avgImg.astype(np.uint8)
+        threshSelector: ThresholdSelector = ThresholdSelector(avgImg)  # just make sure nothing fails

@@ -31,7 +31,7 @@ from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndice
 from dataObjects import Sample
 from loadCube import loadCube
 from legacyConvert import assertUpToDateSample
-from gui.graphOverlays import GraphView
+from gui.graphOverlays import GraphView, ThresholdSelector
 from gui.dbWin import DBUploadWin
 
 if TYPE_CHECKING:
@@ -295,7 +295,8 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._mainWindow: Union[None, 'MainWindow'] = None
         self._graphView: 'GraphView' = GraphView()
-        self._dbWin: DBUploadWin = DBUploadWin()
+        self._threshSelector: Union[None, ThresholdSelector] = None
+        self._dbWin: Union[None, DBUploadWin] = None
         self._logger: 'Logger' = getLogger('SampleView')
 
         self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
@@ -316,8 +317,7 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
         self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
-        self._selectBrightBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Bright")
-        self._selectDarkBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Dark")
+        self._selectByBrightnessBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Brightness Select")
         self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
 
         self._toolbar = QtWidgets.QToolBar()
@@ -512,9 +512,8 @@ class SampleView(QtWidgets.QMainWindow):
         adjustLayout.addWidget(self._contrastSlider, 1, 1)
         adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
         adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
-        adjustLayout.addWidget(self._selectBrightBtn, 3, 0, 1, 2)
-        adjustLayout.addWidget(self._selectDarkBtn, 4, 0, 1, 2)
-        adjustLayout.addWidget(self._selectNoneBtn, 5, 0, 1, 2)
+        adjustLayout.addWidget(self._selectByBrightnessBtn, 3, 0, 1, 2)
+        adjustLayout.addWidget(self._selectNoneBtn, 4, 0, 1, 2)
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
@@ -547,7 +546,9 @@ class SampleView(QtWidgets.QMainWindow):
         self._toolbar.addWidget(toolGroup)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
-        self._dbWin.close()
+        for subwin in [self._dbWin, self._threshSelector]:
+            if subwin is not None:
+                subwin.close()
         a0.accept()
 
     def _renameSample(self) -> None:
@@ -563,9 +564,6 @@ class SampleView(QtWidgets.QMainWindow):
             self.Activated.emit(self._name)
 
     def _configureWidgets(self) -> None:
-        self._dbWin.setSampleView(self)
-        self._dbWin.UploadFinished.connect(self._sqlUploadFinished)
-
         self._brightnessSlider.setMinimum(-255)
         self._brightnessSlider.setMaximum(255)
         self._brightnessSlider.setValue(0)
@@ -606,8 +604,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._trainCheckBox.setChecked(True)
         self._inferenceCheckBox.setChecked(True)
 
-        self._selectBrightBtn.released.connect(self._selectBrightPixels)
-        self._selectDarkBtn.released.connect(self._selectDarkPixels)
+        self._selectByBrightnessBtn.released.connect(self._selectByBrightness)
         self._selectNoneBtn.released.connect(self._selectNone)
 
     def _establish_connections(self) -> None:
@@ -631,25 +628,47 @@ class SampleView(QtWidgets.QMainWindow):
         if selectedClass.lower() == 'background':
             self.BackgroundSelectionChanged.emit()
 
-    def _selectBrightPixels(self) -> None:
+    def _selectByBrightness(self) -> None:
         """
-        If confirmed, all "bright" pixles will be assigned to the current class (as obtained by Otsu thresholding).
+        Opens the Threshold Selector to select bright or dark areas of the image.
         """
-        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all bright pixels?",
-                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                                             QtWidgets.QMessageBox.Yes)
-        if ret == QtWidgets.QMessageBox.Yes:
-            self._graphView.selectAllBrightPixels()
+        self._mainWindow.disableWidgets()
+        self._threshSelector = ThresholdSelector(self._graphView.getAveragedImage())
+        self._threshSelector.ThresholdChanged.connect(self._graphView.previewPixelsAccordingThreshold)
+        self._threshSelector.ThresholdSelected.connect(self._finishThresholdSelection)
+        self._threshSelector.SelectionCancelled.connect(self._cancelThresholdSelection)
+        self._threshSelector.show()
 
-    def _selectDarkPixels(self) -> None:
+    @QtCore.pyqtSlot(int, bool)
+    def _finishThresholdSelection(self, thresh: int, bright: bool) -> None:
         """
-        If confirmed, all "dark" pixles will be assigned to the current class (as obtained by Otsu thresholding).
+        Called, when a threshold for image selection is defined and should be applied to the currently selected class.
+        :param thresh: Int Threshold (0...255)
+        :param bright: If True, the pixels brighter than the threshold are selected, otherwise the darker ones.
         """
-        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all dark pixels?",
-                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                                             QtWidgets.QMessageBox.Yes)
-        if ret == QtWidgets.QMessageBox.Yes:
-            self._graphView.selectAllDarkPixels()
+        self._graphView.selectPixelsAccordingThreshold(thresh, bright)
+        self._closeThresholdSelector()
+
+    @QtCore.pyqtSlot()
+    def _cancelThresholdSelection(self) -> None:
+        """
+        Triggered when the Threshold Selector is closed or the cancel btn is pressed.
+        """
+        self._graphView.hideSelections()
+        self._closeThresholdSelector()
+
+    def _closeThresholdSelector(self):
+        """
+        Closes and disconnects the threshold selector, re-enables widgets in main window and reset the selection
+        widget to the actual selected classes.
+        """
+        self._threshSelector.ThresholdSelected.disconnect()
+        self._threshSelector.ThresholdChanged.disconnect()
+        self._threshSelector.SelectionCancelled.disconnect()
+        self._threshSelector.close()
+        self._threshSelector = None
+        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+        self._mainWindow.enableWidgets()
 
     def _selectNone(self) -> None:
         """
@@ -667,6 +686,9 @@ class SampleView(QtWidgets.QMainWindow):
         Open the window for uploading sample spectra to the SQL database.
         """
         self._mainWindow.disableWidgets()
+        self._dbWin = DBUploadWin()
+        self._dbWin.setSampleView(self)
+        self._dbWin.UploadFinished.connect(self._sqlUploadFinished)
         self._dbWin.recreateLayout()
         self._dbWin.show()
 
@@ -675,7 +697,9 @@ class SampleView(QtWidgets.QMainWindow):
         Triggered when the SQL upload has finished.
         """
         self._mainWindow.enableWidgets()
-        self._dbWin.hide()
+        self._dbWin.UploadFinished.disconnect()
+        self._dbWin.close()
+        self._dbWin = None
 
 
 class VerticalLabel(QtWidgets.QLabel):

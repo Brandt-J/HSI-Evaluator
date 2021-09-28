@@ -16,11 +16,14 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import time
 
 import cv2
+import numpy as np
 import numba
 from PyQt5 import QtWidgets, QtCore, QtGui
-import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
 
@@ -79,6 +82,12 @@ class GraphView(QtWidgets.QGraphicsView):
         self._selectionOverlay.deselectAll()
         self.SelectionChanged.emit()
 
+    def hideSelections(self) -> None:
+        """
+        Hides current selections, without commiting a new selection.
+        """
+        self._selectionOverlay.deselectAll()
+
     def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
         """
         Updating the previewed image with new zero value and contrast factor
@@ -132,6 +141,13 @@ class GraphView(QtWidgets.QGraphicsView):
         """
         return self._selectionOverlay.getPixelsOfColor(rgb)
 
+    def getAveragedImage(self) -> np.ndarray:
+        """
+        Returns the averaged image of the original cube.
+        """
+        avgImg: np.ndarray = np.mean(cube2RGB(self._origCube, self._sampleView.getSelectedMaxBrightness()), axis=2)
+        return avgImg
+
     def removeColor(self, rgb: Tuple[int, int, int]) -> None:
         self._selectionOverlay.removeColor(rgb)
 
@@ -141,19 +157,28 @@ class GraphView(QtWidgets.QGraphicsView):
         self.removeColor(rgb)
         self.SelectionChanged.emit()
 
-    def selectAllBrightPixels(self) -> None:
+    @QtCore.pyqtSlot(int, bool)
+    def previewPixelsAccordingThreshold(self, threshold: int, bright: bool) -> None:
         """
-        Convienience function to automatically get all bright pixels and assign them to the currently selected class!
+        Selects pixels according a given brightnes threshold and previews with a default color.
+        :param threshold: The threshold (0...255)
+        :param bright: If True, the pixels brighter than the threshold are selected, otherwise the darker ones.
         """
-        indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(), bright=True)
-        self._emitNewSelection(indices)
-        self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
+        indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(),
+                                                   threshold, bright=bright)
+        self._selectionOverlay.deselectAll()
+        self._selectionOverlay.addPixelsToSelection(indices, (200, 200, 200))
 
-    def selectAllDarkPixels(self) -> None:
+    @QtCore.pyqtSlot(int, bool)
+    def selectPixelsAccordingThreshold(self, threshold: int, bright: bool) -> None:
         """
-        Convienience function to automatically get all bright pixels and assign them to the currently selected class!
+        Selects pixels according a given brightnes threshold with the color of the currently selected class.
+        :param threshold: The threshold (0...255)
+        :param bright: If True, the pixels brighter than the threshold are selected, otherwise the darker ones.
         """
-        indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(), bright=False)
+        self.deselectAll()
+        indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(),
+                                                   threshold, bright=bright)
         self._emitNewSelection(indices)
         self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
 
@@ -334,12 +359,20 @@ def getIndices(x0: int, x1: int, y0: int, y1: int, shape: np.ndarray) -> List[in
     return indices
 
 
-def getBrightOrDarkIndices(cube: np.ndarray, maxBrightness: float = 1.5, bright: bool = True) -> Set[int]:
-    avgImg: np.ndarray = cube2RGB(cube, maxBrightness)[:, :, 0]
+def getBrightOrDarkIndices(cube: np.ndarray, maxBrightness: float, threshold: int, bright: bool = True) -> Set[int]:
+    """
+    Returns bright or dark pixel indices accoriding to the given threshold.
+    :param cube: shape (K, M, N) cube of MxN spectra with K wavelenghts
+    :param maxBrightness: Max brightness value to use for clipping the cube while converting to grayscale image
+    :param threshold: The threshold value (0 - 255) to use for thresholding
+    :param bright: If True, the bright pixel indices are returned, otherwise the dark ones
+    :return Set of Pixel Indices
+    """
+    avgImg: np.ndarray = np.mean(cube2RGB(cube, maxBrightness), axis=2)
     if bright:
-        thresh, binImg = cv2.threshold(avgImg, 0, 255, cv2.THRESH_OTSU)
+        thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY)
     else:
-        thresh, binImg = cv2.threshold(avgImg, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
+        thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY_INV)
     return set(np.where(binImg.flatten())[0])
 
 
@@ -376,6 +409,78 @@ class ClassificationOverlay(QtWidgets.QGraphicsObject):
         painter.setOpacity(self._alpha)
         if self._overlayPix is not None:
             painter.drawPixmap(0, 0, self._overlayPix)
+
+            
+class ThresholdSelector(QtWidgets.QWidget):
+    """
+    Widget to determine a threshold for selecting bright or dark areas of the image.
+    """
+    ThresholdChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, bool)
+    ThresholdSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(int, bool)
+    SelectionCancelled: QtCore.pyqtSignal = QtCore.pyqtSignal()
+
+    def __init__(self, grayImage: np.ndarray):
+        super(ThresholdSelector, self).__init__()
+        self.setWindowTitle("Threshold Selector")
+        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+
+        fig: plt.Figure = plt.Figure(figsize=(3, 1.5))
+        self._canvas: FigureCanvas = FigureCanvas(fig)
+        axes: plt.Axes = fig.add_subplot()
+        abundancies, binLimits = np.histogram(grayImage, bins=64)
+        axes.plot(binLimits[0:-1], abundancies)
+
+        axes.set_xticks([])
+        axes.set_yticks([])
+        axes.set_xlim(0, 255)
+        axes.axis("off")
+        self._canvas.draw()
+        self._slider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._slider.setMaximum(255)
+        self._slider.valueChanged.connect(self._emitChangedSignal)
+
+        self._radioBright: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Bright")
+        self._radioBright.setChecked(True)
+        self._radioBright.toggled.connect(self._emitChangedSignal)
+        self._radioDark: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Dark")
+        self._radioDark.toggled.connect(self._emitChangedSignal)
+
+        radioLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        radioLayout.addWidget(self._radioDark)
+        radioLayout.addWidget(self._radioBright)
+        radioLayout.addStretch()
+
+        acceptBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Accept")
+        acceptBtn.released.connect(self._accept)
+        acceptBtn.setMaximumWidth(120)
+
+        cancelBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Cancel")
+        cancelBtn.released.connect(lambda: self.SelectionCancelled.emit())
+        cancelBtn.setMaximumWidth(120)
+
+        btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(acceptBtn)
+        btnLayout.addWidget(cancelBtn)
+        btnLayout.addStretch()
+
+        layout.addWidget(QtWidgets.QLabel("Use the slider to select the threshold."))
+        layout.addWidget(self._slider)
+        layout.addWidget(self._canvas)
+        layout.addWidget(QtWidgets.QLabel("Select Dark Or Bright Image Parts"))
+        layout.addLayout(radioLayout)
+        layout.addStretch()
+        layout.addLayout(btnLayout)
+
+    def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
+        self.SelectionCancelled.emit()
+        a0.accept()
+
+    def _emitChangedSignal(self) -> None:
+        self.ThresholdChanged.emit(self._slider.value(), self._radioBright.isChecked())
+
+    def _accept(self) -> None:
+        self.ThresholdSelected.emit(self._slider.value(), self._radioBright.isChecked())
 
 
 def npy2Pixmap(img: np.ndarray) -> QtGui.QPixmap:
