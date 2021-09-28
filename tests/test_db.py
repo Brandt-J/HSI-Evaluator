@@ -59,7 +59,7 @@ class TestDatabase(TestCase):
         connection: DBConnection = DBConnection()
 
         self.assertTrue(details.sampleName not in connection.getSampleNames())
-        # Create the sample entry
+        # # Create the sample entry
         connection.createNewSample(details.sampleName, details.sampleName)
         self.assertTrue(details.sampleName in connection.getSampleNames())
 
@@ -71,17 +71,72 @@ class TestDatabase(TestCase):
         connection.disconnect()
         connection.connect()
         self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), numCls2+numCls1)
+        wavelengthInd: int = connection._getIndexOfWavelenghtsWithoutUpload(wavelengths)
+        self.assertTrue(wavelengthInd != -1)
 
-        # # Cleanup...
+        # Cleanup...
         cursor = connection._getCursor()
         cursor.execute(f"DELETE FROM spectra WHERE sample='{details.sampleName}'")
         cursor.execute(f"DELETE FROM samples WHERE sample_name='{details.sampleName}'")
         cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls1}'")
         cursor.execute(f"DELETE FROM material_type WHERE material_name='{nameCls2}'")
+        cursor.execute(f"DELETE FROM wavelengths WHERE id_wavelengths='{wavelengthInd}'")
         connection._connection.commit()
+
         self.assertTrue(details.sampleName not in connection.getSampleNames())
         self.assertEqual(getNumSpectraOfSample(connection, details.sampleName), 0)
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths), -1)
         connection.disconnect()
+
+    def testUploadWavelengths(self) -> None:
+        def removeWavelengthsFromDB(ind: int, conn: DBConnection) -> None:
+            cursor = conn._getCursor()
+            cursor.execute(f"DELETE FROM wavelengths WHERE id_wavelengths='{ind}'")
+            connection._connection.commit()
+
+        lenSpec1, lenSpec2 = 10, 12
+        wavelengths1: np.ndarray = np.random.rand(lenSpec1)
+        wavelengths2: np.ndarray = np.random.rand(lenSpec2)
+        connection: DBConnection = DBConnection()
+        # Assert that wavelengths are not yet in DB
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths1), -1)
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths2), -1)
+
+        # Now upload and make sure the indices exist
+        connection._uploadWavelengths(wavelengths1)
+        connection._uploadWavelengths(wavelengths2)
+
+        connection.disconnect()  # Get a fresh connectionl
+        connection.connect()
+
+        ind1: int = connection._getIndexOfWavelenghtsWithoutUpload(wavelengths1)
+        ind2: int = connection._getIndexOfWavelenghtsWithoutUpload(wavelengths2)
+        self.assertTrue(ind1 != -1)
+        self.assertTrue(ind2 != -1)
+
+        removeWavelengthsFromDB(ind1, connection)
+        removeWavelengthsFromDB(ind2, connection)
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths1), -1)
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths2), -1)
+
+        connection.disconnect()  # Get a fresh connectionl
+        connection.connect()
+
+        # Now the combination of both. Directly get an index that is not -1
+        ind1 = connection._getIndexOfWavelengths(wavelengths1)
+        ind2 = connection._getIndexOfWavelengths(wavelengths2)
+        self.assertTrue(ind1 != -1)
+        self.assertTrue(ind2 != -1)
+
+        # final cleanup
+        removeWavelengthsFromDB(ind1, connection)
+        removeWavelengthsFromDB(ind2, connection)
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths1), -1)
+        self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths2), -1)
+        connection.disconnect()
+
+
+
 
 
 class TestDBUI(TestCase):
