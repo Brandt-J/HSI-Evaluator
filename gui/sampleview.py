@@ -27,12 +27,13 @@ from copy import deepcopy
 
 from logger import getLogger
 from projectPaths import getAppFolder
-from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
+from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices, WavelengthsNotSetError
 from dataObjects import Sample
 from loadCube import loadCube
 from legacyConvert import assertUpToDateSample
 from gui.graphOverlays import GraphView, ThresholdSelector
 from gui.dbWin import DBUploadWin
+from gui.dbQueryWin import DatabaseQueryWindow
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -63,12 +64,37 @@ class MultiSampleView(QtWidgets.QScrollArea):
         newView.SizeChanged.connect(self._recreateLayout)
         newView.Activated.connect(self._viewActivated)
         newView.Closed.connect(self._viewClosed)
+        newView.WavelenghtsChanged.connect(self._assertIdenticalWavelengths)
         newView.activate()
         self._mainWinParent.setupConnections(newView)
 
         self._sampleviews.append(newView)
         self._logger.debug("New Sampleview added")
+        self._recreateLayout()
         return newView
+
+    def _assertIdenticalWavelengths(self) -> None:
+        """
+        Asserts that all samples have identical wavelenghts. If multiple wavelength axes are present, the shortest
+        axis is used.
+        """
+        shortestWavelenghts, shortestWavelengthsLength = None, np.inf
+        for sample in self._sampleviews:
+            try:
+                curWavelenghts: np.ndarray = sample.getWavelengths()
+            except WavelengthsNotSetError:
+                pass  # we just skip it here
+            else:
+                if len(curWavelenghts) < shortestWavelengthsLength:
+                    shortestWavelengthsLength = len(curWavelenghts)
+                    shortestWavelenghts = curWavelenghts
+
+        if shortestWavelenghts is not None:
+            for sample in self._sampleviews:
+                try:
+                    sample.getSpecObj().remapToWavelenghts(shortestWavelenghts)
+                except WavelengthsNotSetError:
+                    pass  # We can safely ignore that here.
 
     def loadSampleViewFromFile(self, fpath: str) -> None:
         """Loads the sample configuration from the file and creates a sampleview accordingly"""
@@ -99,8 +125,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         newView.setSampleData(sampleData)
         newView.setupFromSampleData()
 
-        classes: List[str] = list(sampleData.classes2Indices.keys())
-        self._mainWinParent.checkForRequiredClasses(classes)
+        self._mainWinParent.updateClassCreatorClasses()
 
     def saveSamples(self) -> None:
         """
@@ -126,7 +151,32 @@ class MultiSampleView(QtWidgets.QScrollArea):
         return activeSample
 
     def getWavelengths(self) -> np.ndarray:
-        return self._sampleviews[0].getWavelengths()
+        """
+        Returns the wavelength axis.
+        """
+        wavelenghts: Union[None, np.ndarray] = None
+        for sample in self._sampleviews:
+            try:
+                sampleWavelengths: np.ndarray = sample.getWavelengths()
+            except WavelengthsNotSetError:
+                self._logger.warning(f"No wavelengths set in sample {sample.getName()}")
+            else:
+                if wavelenghts is None:
+                    wavelenghts = sampleWavelengths
+                else:
+                    assert np.array_equal(wavelenghts, sampleWavelengths)
+
+        assert wavelenghts is not None
+        return wavelenghts
+
+    def getClassNamesFromAllSamples(self) -> Set[str]:
+        """
+        Returns the class names that are used from all the samples that are currently loaded.
+        """
+        clsNames: List[str] = []
+        for sample in self._sampleviews:
+            clsNames += list(sample.getClassNames())
+        return set(clsNames)
 
     def getLabelledSpectraFromActiveView(self, preprocessed) -> SpectraCollection:
         """
@@ -288,6 +338,7 @@ class SampleView(QtWidgets.QMainWindow):
     Closed: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     BackgroundSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    WavelenghtsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         super(SampleView, self).__init__()
@@ -296,12 +347,11 @@ class SampleView(QtWidgets.QMainWindow):
         self._mainWindow: Union[None, 'MainWindow'] = None
         self._graphView: 'GraphView' = GraphView()
         self._threshSelector: Union[None, ThresholdSelector] = None
+        self._dbQueryWin: Union[None, DatabaseQueryWindow] = None
         self._dbWin: Union[None, DBUploadWin] = None
         self._logger: 'Logger' = getLogger('SampleView')
 
         self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        self._layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
-        self._group.setLayout(self._layout)
         self.setCentralWidget(self._group)
 
         self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
@@ -314,6 +364,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
         self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._downloadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
 
         self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
         self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
@@ -322,8 +373,12 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._toolbar = QtWidgets.QToolBar()
         self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
+
         self._configureWidgets()
         self._establish_connections()
+        self._createLayout()
+        self._createToolbar()
+        self._setupWidgetsFromSampleData()
 
     @property
     def _classes2Indices(self) -> Dict[str, Set[int]]:
@@ -354,16 +409,17 @@ class SampleView(QtWidgets.QMainWindow):
         self._sampleData.setDefaultName()
         self.setCube(cube, wavelengths)
         self._setupWidgetsFromSampleData()
+        self.WavelenghtsChanged.emit()
 
     def setupFromSampleData(self) -> None:
         cube, wavelengths = loadCube(self._sampleData.filePath)
         self.setCube(cube, wavelengths)
         self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
         self._setupWidgetsFromSampleData()
+        self._mainWindow.updateClassCreatorClasses()
 
     def _setupWidgetsFromSampleData(self) -> None:
         self._nameLabel.setText(self._sampleData.name)
-        self.createLayout()
         self.SizeChanged.emit()
 
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray) -> None:
@@ -390,7 +446,7 @@ class SampleView(QtWidgets.QMainWindow):
     def getWavelengths(self) -> np.ndarray:
         return self._sampleData.specObj.getWavelengths()
 
-    def getAveragedBackground(self, classes2Ind: Dict[str, Set[int]]) -> np.ndarray:
+    def getAveragedBackground(self) -> np.ndarray:
         """
         Returns the averaged background spectrum of the sample. If no background was selected, a np.zeros array is returned.
         :return: np.ndarray of background spectrum
@@ -446,6 +502,12 @@ class SampleView(QtWidgets.QMainWindow):
                 else:
                     spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getNotPreprocessedCube())
         return spectra
+
+    def getClassNames(self) -> List[str]:
+        """
+        Returns the used class names.
+        """
+        return list(self._classes2Indices.keys())
 
     def getAllLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
@@ -504,7 +566,10 @@ class SampleView(QtWidgets.QMainWindow):
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
 
-    def createLayout(self) -> None:
+    def _createLayout(self) -> None:
+        self._layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        self._group.setLayout(self._layout)
+
         adjustLayout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         adjustLayout.addWidget(VerticalLabel("Brightness"), 0, 0)
         adjustLayout.addWidget(self._brightnessSlider, 0, 1)
@@ -517,6 +582,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
+    def _createToolbar(self):
         nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
         nameGroup.setLayout(QtWidgets.QHBoxLayout())
         nameGroup.layout().addWidget(self._editNameBtn)
@@ -530,6 +596,7 @@ class SampleView(QtWidgets.QMainWindow):
         actionsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Actions")
         actionsGroup.setLayout(QtWidgets.QHBoxLayout())
         actionsGroup.layout().addWidget(self._uploadBtn)
+        actionsGroup.layout().addWidget(self._downloadBtn)
         actionsGroup.layout().addWidget(self._closeBtn)
 
         toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
@@ -600,6 +667,10 @@ class SampleView(QtWidgets.QMainWindow):
         self._uploadBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowUp')))
         self._uploadBtn.released.connect(self._uploadToSQL)
         self._uploadBtn.setToolTip("Upload Spectra to SQL Database.")
+
+        self._downloadBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowDown')))
+        self._downloadBtn.released.connect(self._downloadFromSQL)
+        self._downloadBtn.setToolTip("Download Spectra from SQL Database.")
 
         self._trainCheckBox.setChecked(True)
         self._inferenceCheckBox.setChecked(True)
@@ -700,6 +771,41 @@ class SampleView(QtWidgets.QMainWindow):
         self._dbWin.UploadFinished.disconnect()
         self._dbWin.close()
         self._dbWin = None
+
+    def _downloadFromSQL(self) -> None:
+        """
+        Open the window for SQL Query to download spectra.
+        """
+        self._mainWindow.disableWidgets()
+        self._dbQueryWin = DatabaseQueryWindow()
+        self._dbQueryWin.QueryFinished.connect(self._finishSQLDownload)
+        self._dbQueryWin.AcceptResult.connect(self._acceptSQLDownload)
+        self._dbQueryWin.show()
+
+    @QtCore.pyqtSlot(np.ndarray, np.ndarray, dict)
+    def _acceptSQLDownload(self, cube: np.ndarray, wavelengths: np.ndarray, classes2ind: Dict[str, Set[int]]) -> None:
+        """
+        Receives results from SQL download and sets up the sampleview accordingly.
+        :param cube: The spectra cube
+        :param wavelengths: The wavelengths axis
+        :param classes2ind: Dictionary with spectra labels
+        """
+        self.setCube(cube, wavelengths)
+        self._classes2Indices = classes2ind
+        self._setupWidgetsFromSampleData()
+        self.WavelenghtsChanged.emit()
+
+        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+
+    def _finishSQLDownload(self) -> None:
+        """
+        Triggered when closing the SQL Query Window.
+        """
+        self._mainWindow.enableWidgets()
+        self._dbQueryWin.QueryFinished.disconnect()
+        self._dbQueryWin.AcceptResult.disconnect()
+        self._dbQueryWin = None
+        self._mainWindow.updateClassCreatorClasses()
 
 
 class VerticalLabel(QtWidgets.QLabel):

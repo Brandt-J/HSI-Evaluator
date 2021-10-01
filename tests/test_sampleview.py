@@ -29,7 +29,7 @@ import pickle
 from gui.HSIEvaluator import MainWindow
 from gui.sampleview import MultiSampleView, SampleView, Sample
 from gui.graphOverlays import GraphView, ThresholdSelector
-from spectraObject import SpectraObject, getSpectraFromIndices
+from spectraObject import SpectraObject, getSpectraFromIndices, WavelengthsNotSetError
 
 if TYPE_CHECKING:
     from gui.classUI import ClassCreator
@@ -257,7 +257,7 @@ class TestSampleView(TestCase):
                                   'class2': {5, 6, 7, 8}}
         testCube: np.ndarray = np.random.rand(3, 10, 10)
 
-        multiView: MultiSampleView = MultiSampleView(imgClf)
+        multiView: MultiSampleView = imgClf._multiSampleView
         self.assertTrue(len(multiView._sampleviews) == 0)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -273,7 +273,7 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getPreprocessedCubeIfPossible(), testCube))
         self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
 
-        createdSample._sampleData.specObj = None  # We now se these specObjs to None. These are at different memory locations...
+        createdSample._sampleData.specObj = None  # We now set these specObjs to None. These are at different memory locations...
         sample.specObj = None
         self.assertDictEqual(sample.__dict__, createdSample.getSampleData().__dict__)
         classCreator: ClassCreator = imgClf._clsCreator
@@ -286,3 +286,57 @@ class TestSampleView(TestCase):
         avgImg = avgImg*255
         avgImg = avgImg.astype(np.uint8)
         threshSelector: ThresholdSelector = ThresholdSelector(avgImg)  # just make sure nothing fails
+
+    def test_getWavelenghts(self) -> None:
+        class MockSampleGood1:
+            def getWavelengths(self) -> np.ndarray:
+                return np.zeros(10)
+
+            def getName(self) -> str:
+                return "good sample"
+
+
+        class MockSampleGood2:
+            def getWavelengths(self) -> np.ndarray:
+                return np.zeros(12)
+
+            def getName(self) -> str:
+                return "good sample"
+
+        class MockSampleBad:
+            def getWavelengths(self) -> np.ndarray:
+                raise WavelengthsNotSetError
+
+            def getName(self) -> str:
+                return "bad sample"
+
+        multiView: MultiSampleView = MultiSampleView(None)
+        multiView._sampleviews = [MockSampleGood1(), MockSampleBad()]
+        self.assertTrue(np.array_equal(multiView.getWavelengths(), MockSampleGood1().getWavelengths()))
+
+        multiView._sampleviews = [MockSampleBad()]
+        self.assertRaises(AssertionError, multiView.getWavelengths)  # raise because no wavelengths set
+
+        multiView._sampleviews = [MockSampleGood1(), MockSampleGood2()]
+        self.assertRaises(AssertionError, multiView.getWavelengths)  # raise because inconsistent wavelengths
+
+    def test_adjustWavelenghts(self) -> None:
+        class MockMainWin:
+            def setupConnections(self, sampleView: 'SampleView') -> None:
+                pass
+
+        numWavelengthsShort, numWavelengthsLong = 10, 12
+
+        multiView: MultiSampleView = MultiSampleView(MockMainWin())
+        sampleShort: SampleView = multiView.addSampleView()
+        sampleLong: SampleView = multiView.addSampleView()
+        wavelenghtsShort: np.ndarray = np.arange(numWavelengthsShort)
+
+        sampleLong.setCube(np.random.rand(numWavelengthsLong, 10, 10), np.arange(numWavelengthsLong))
+        # now we add setup a cube that has a shorter wavelength axis
+        sampleShort.setCube(np.random.rand(numWavelengthsShort, 10, 10), wavelenghtsShort)
+
+        # we have to call that here manually, signals don't work here.
+        multiView._assertIdenticalWavelengths()
+        self.assertTrue(np.array_equal(wavelenghtsShort, sampleShort.getWavelengths()))
+        self.assertTrue(np.array_equal(wavelenghtsShort, sampleLong.getWavelengths()))

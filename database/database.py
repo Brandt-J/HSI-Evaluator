@@ -108,16 +108,38 @@ class DBConnection:
         assert sampleComment is not None, f"Sample {sampleName} was not found in Database."
         return sampleComment
 
+    def fetchSpectraWithStatement(self, sqlStatement: str) -> List['DownloadedSpectrum']:
+        cursor = self._getCursor()
+        try:
+            cursor.execute(sqlStatement)
+        except Exception as e:
+            self._logger.warning(f"Error on fetching with statement: {sqlStatement}:\n{e}")
+            raise e
+        else:  # only, when no exceptoin occurred
+            wavelenghts: Dict[int, np.ndarray] = self._getWavelenghtAxes()
+            spectra: List[DownloadedSpectrum] = []
+            for row in cursor:
+                clsName = row[2]
+                intens, wavel = arrFromBytes(row[3]), wavelenghts[row[4]]
+                assert len(intens) == len(wavel), f"Length spectrum ({len(intens)}) does not match length wavelengths ({len(wavel)})"
+                spectra.append(DownloadedSpectrum(className=clsName,
+                                                  intensities=intens,
+                                                  wavelengths=wavel))
+            return spectra
+
     def createNewSample(self, sampleName: str, commentString: str) -> None:
         """
         Creates a new sample with the given information.
         :param sampleName: Name of the sample
         :param commentString: Comment to add to the sample in the database.
         """
-        cursor = self._getCursor()
-        cursor.execute(f"""INSERT INTO samples (sample_name, COMMENT)  VALUES ("{sampleName}", "{commentString}")""")
-        self._connection.commit()
-        self._logger.info(f"Created sample '{sampleName}' with comment '{commentString}' in SQL Database")
+        if sampleName not in self.getSampleNames():
+            cursor = self._getCursor()
+            cursor.execute(f"""INSERT INTO samples (sample_name, COMMENT)  VALUES ("{sampleName}", "{commentString}")""")
+            self._connection.commit()
+            self._logger.info(f"Created sample '{sampleName}' with comment '{commentString}' in SQL Database")
+        else:
+            self._logger.warning(f"Did not create sample name {sampleName}, as it already exist in the database!")
 
     def assertClassNameisPresent(self, className: str) -> None:
         """
@@ -257,6 +279,27 @@ class SpecDetails:
     sampleName: str = ""
 
 
+@dataclass
+class DownloadedSpectrum:
+    className: str
+    wavelengths: np.ndarray
+    intensities: np.ndarray
+
+    def getIntensitiesForOtherWavelengths(self, otherWavelengths: np.ndarray) -> np.ndarray:
+        """
+        Takes a new wavelength axis and returns an intensities array fitting this other wavelengths.
+        """
+        if np.array_equal(otherWavelengths, self.wavelengths):
+            newIntensities: np.ndarray = self.intensities.copy()
+        else:
+            newIntensities: np.ndarray = np.zeros_like(otherWavelengths)
+            for i in range(len(otherWavelengths)):
+                closestInd: int = int(np.argmin(np.abs(self.wavelengths - otherWavelengths[i])))
+                newIntensities[i] = self.intensities[closestInd]
+
+        return newIntensities
+
+
 def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, spectraDetail: 'SpecDetails',
                   dataqueue: 'Queue') -> None:
     """
@@ -269,8 +312,9 @@ def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, s
     logger: 'Logger' = getLogger("SQL Upload")
     conn: DBConnection = DBConnection()
     spectraUploaded: int = 0
-    assert spectraDetail.particleState in conn.getParticleStates()
-    assert spectraDetail.sizeClass in conn.getParticleSizes()
+    assert spectraDetail.particleState in conn.getParticleStates(), f'{spectraDetail.particleState} was not yet uploaded to DB'
+    assert spectraDetail.sizeClass in conn.getParticleSizes(), f'{spectraDetail.sizeClass} was not yet uploaded to DB'
+
     for clsname, spectra in spectraDict.items():
         logger.info(f"Uploading {len(spectra)} spectra for class '{clsname}'")
         conn.assertClassNameisPresent(clsname)

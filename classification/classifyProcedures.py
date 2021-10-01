@@ -22,11 +22,12 @@ from multiprocessing import Queue, Event
 import numpy as np
 from typing import *
 from dataclasses import dataclass
-
-from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM
-from logger import getLogger
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
+
+from logger import getLogger
+from helperfunctions import getRandomSpectraFromArray
+from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM
 
 if TYPE_CHECKING:
     from spectraObject import SpectraObject
@@ -172,8 +173,7 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
 
             numSpecs = specs.shape[0]
             if numSpecs > maxSpecsPerClass:
-                randInd: np.ndarray = np.array(random.sample(list(np.arange(numSpecs)), maxSpecsPerClass))
-                specs = specs[randInd, :]
+                specs = getRandomSpectraFromArray(specs, maxSpecsPerClass)
                 logger.debug(f"Reduced {numSpecs} spectra from {name} to {specs.shape[0]} spectra")
                 numSpecs = maxSpecsPerClass
 

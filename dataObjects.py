@@ -30,7 +30,7 @@ class Sample:
     """Data Container for a sample view"""
     def __init__(self):
         self.version: int = currentSampleVersion  # tracker for updating versions
-        self.name: str = ''  # Sample Name
+        self.name: str = 'Empty Sample'  # Sample Name
         self.filePath: str = ''  # Path to the spectra cube (.npy file)
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object

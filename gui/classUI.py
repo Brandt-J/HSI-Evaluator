@@ -18,7 +18,7 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast, Set
 import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.pyplot import rcParams
@@ -102,11 +102,13 @@ class ClassCreator(QtWidgets.QGroupBox):
         if clsName in self._classes:
             self._activeCls = clsName
             self.ClassActivated.emit(clsName)
-
-    def checkForRequiredClasses(self, classes: List[str]) -> None:
+            
+    def setupToClasses(self, classes: Set[str]) -> None:
         """
-        Creates classes that are needed if they aren't yet present.
+        Creates classes that are needed if they aren't yet present
         """
+        if type(classes) == list:
+            classes = set(classes)
         presentClassNames: List[str] = [clsObj.name for clsObj in self._classes]
         for cls in classes:
             if cls not in presentClassNames:

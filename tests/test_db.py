@@ -18,7 +18,6 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 import sys
-import time
 from typing import List, Dict
 from unittest import TestCase
 import mysql.connector
@@ -50,8 +49,8 @@ class TestDatabase(TestCase):
             return numSpectra
 
         specLength: int = 10
-        nameCls1, numCls1 = "TestClass1", 3
-        nameCls2, numCls2 = "TestClass2", 2
+        nameCls1, numCls1 = "TestClass1", 5
+        nameCls2, numCls2 = "TestClass2", 4
         specDict: Dict[str, np.ndaray] = {nameCls1: np.random.rand(numCls1, specLength),
                                           nameCls2: np.random.rand(numCls2, specLength)}
         wavelengths: np.ndarray = np.arange(specLength)
@@ -134,9 +133,6 @@ class TestDatabase(TestCase):
         self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths1), -1)
         self.assertEqual(connection._getIndexOfWavelenghtsWithoutUpload(wavelengths2), -1)
         connection.disconnect()
-
-
-
 
 
 class TestDBUI(TestCase):

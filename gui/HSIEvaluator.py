@@ -80,9 +80,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         return self._clsCreator.getClassVisibility(className)
 
-    def checkForRequiredClasses(self, classes: List[str]) -> None:
-        """Makes sure that the given classes are present in the class creator. Missing ones are created."""
-        self._clsCreator.checkForRequiredClasses(classes)
+    def updateClassCreatorClasses(self) -> None:
+        """
+        Makes sure that the class creator is set up to all classes in the currently loaded samples.
+        Missing classes are added, not used classes are removed
+        """
+        classes: Set[str] = self._multiSampleView.getClassNamesFromAllSamples()
+        self._clsCreator.setupToClasses(classes)
 
     def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
         """
@@ -211,6 +215,13 @@ class MainWindow(QtWidgets.QMainWindow):
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)
 
+    def _newView(self) -> None:
+        """
+        Opens a new view that can be used for database queries.
+        """
+        self._multiSampleView.addSampleView()
+        self.enableWidgets()
+
     def _loadView(self, fname: str) -> None:
         """
         Loads a view.
@@ -264,6 +275,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _createMenuBar(self) -> None:
         """Creates the Menu bar"""
         filemenu: QtWidgets.QMenu = QtWidgets.QMenu("&File", self)
+        newAct: QtWidgets.QAction = QtWidgets.QAction("&New Sample", self)
+        newAct.setShortcut("Ctrl+N")
+        newAct.triggered.connect(self._newView)
+
         openAct: QtWidgets.QAction = QtWidgets.QAction("&Open Sample(s)", self)
         openAct.setShortcut("Ctrl+O")
         openAct.triggered.connect(self._promptLoadNPYSample)
@@ -281,6 +296,7 @@ class MainWindow(QtWidgets.QMainWindow):
         closeAct: QtWidgets.QAction = QtWidgets.QAction("Close &Program", self)
         closeAct.triggered.connect(self.close)
 
+        filemenu.addAction(newAct)
         filemenu.addAction(openAct)
         filemenu.addSeparator()
         filemenu.addAction(loadViewAct)

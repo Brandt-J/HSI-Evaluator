@@ -18,13 +18,12 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from unittest import TestCase
-from unittest.mock import Mock
 from typing import *
 import numpy as np
 from PyQt5 import QtWidgets
 import sys
 
-from spectraObject import SpectraObject, SpectraCollection
+from spectraObject import SpectraObject, SpectraCollection, WavelengthsNotSetError
 from preprocessing.preprocessors import splitUpArray
 from gui.nodegraph.nodes import nodeTypes
 from gui.nodegraph.nodegraph import NodeGraph
@@ -109,6 +108,51 @@ class TestSpecObject(TestCase):
         numHundreds = len(np.where(reconstructedCube == 100)[0])
         self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
         self.assertTrue(np.array_equal(reconstructedCube, testCube))
+
+    def test_remapToWavelengths(self) -> None:
+        specObj: SpectraObject = SpectraObject()
+        wavelengths: np.ndarray = np.arange(10)
+        origcube: np.ndarray = np.zeros((len(wavelengths), 5, 5))
+        for i in range(origcube.shape[0]):
+            origcube[i, :, :] = i
+
+        self.assertRaises(WavelengthsNotSetError, specObj.remapToWavelenghts, (wavelengths))  # Wavelengths were not yet set
+
+        specObj.setCube(origcube.copy(), wavelengths)
+
+        # shorter Wavelenghts
+        shorterWavelenghts: np.ndarray = np.arange(8)
+        specObj.remapToWavelenghts(shorterWavelenghts)
+        shorterCube: np.ndarray = specObj._cube
+        self.assertEqual(shorterCube.shape[0], len(shorterWavelenghts))
+        for i in range(len(shorterWavelenghts)):
+            uniqueInLayer: np.ndarray = np.unique(shorterCube[i, :, :])
+            self.assertEqual(len(uniqueInLayer), 1)
+            self.assertEqual(uniqueInLayer[0], i)
+
+        self.assertTrue(specObj._preprocessedCube is None)
+        self.assertTrue(np.array_equal(specObj._wavelengths, shorterWavelenghts))
+
+        # reset cube
+        specObj.setCube(origcube, wavelengths)
+
+        # longer Wavelenghts
+        longerWavelengths: np.ndarray = np.arange(15)
+        specObj.remapToWavelenghts(longerWavelengths)
+        longerCube: np.ndarray = specObj._cube
+        self.assertEqual(longerCube.shape[0], len(longerWavelengths))
+        origLen: int = origcube.shape[0]
+        for i in range(len(longerWavelengths)):
+            uniqueInLayer: np.ndarray = np.unique(longerCube[i, :, :])
+            self.assertEqual(len(uniqueInLayer), 1)
+
+            if i < origLen:
+                self.assertEqual(uniqueInLayer[0], i)
+            else:
+                self.assertEqual(uniqueInLayer[0], origLen-1)
+
+        self.assertTrue(specObj._preprocessedCube is None)
+        self.assertTrue(np.array_equal(specObj._wavelengths, longerWavelengths))
 
 
 class TestSpecCollection(TestCase):

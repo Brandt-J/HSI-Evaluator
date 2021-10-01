@@ -22,6 +22,7 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 from multiprocessing import Process, Queue
 import difflib
 
+from helperfunctions import getRandomSpectraFromArray
 from database.database import DBConnection, uploadSpectra, SpecDetails
 from logger import getLogger
 
@@ -130,6 +131,7 @@ class DBUploadWin(QtWidgets.QWidget):
             self._progressWindow.show()
             self._timer.start(10)
 
+            self._queue = Queue()
             self._process = Process(target=uploadSpectra, args=(specDict, wavelengths, specdetails, self._queue))
             self._process.start()
             self.setDisabled(True)
@@ -168,8 +170,12 @@ class DBUploadWin(QtWidgets.QWidget):
         specsToUpload: Dict[str, np.ndarray] = {}
         for clsEntry in self._classEntries:
             if clsEntry.isSelected():
-                origname, targetName = clsEntry.getOrigignalName(), clsEntry.getTargetName()
-                specsToUpload[targetName] = allSpectra[origname]
+                origname, targetName, maxSpecs = clsEntry.getOrigignalName(), clsEntry.getTargetName(), clsEntry.getNumMaxSpectra()
+                clsSpces: np.ndarray = allSpectra[origname]
+                if clsSpces.shape[0] > maxSpecs:
+                    clsSpces = getRandomSpectraFromArray(clsSpces, maxSpecs)
+                specsToUpload[targetName] = clsSpces
+
         return specsToUpload
 
     def _clearLayoutAndWidgets(self) -> None:
@@ -211,7 +217,14 @@ class ClassEntry(QtWidgets.QGroupBox):
         self._typeCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._typeCombo.addItems(sqlClasses)
         self._setTypeComboToMostLikelyClass()
+
+        self._numSpecsSpin: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+        self._numSpecsSpin.setMinimum(1)
+        self._numSpecsSpin.setMaximum(1e5)
+        self._numSpecsSpin.setValue(2000)
+
         self._lineEdit: QtWidgets.QLineEdit = QtWidgets.QLineEdit()
+
         self._presentRadioBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Use present class")
         self._newNameRadioBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Create new class")
         self._presentRadioBtn.setChecked(True)
@@ -236,6 +249,9 @@ class ClassEntry(QtWidgets.QGroupBox):
         choiceLayout.addWidget(self._newNameRadioBtn, 1, 0)
         choiceLayout.addWidget(self._lineEdit, 1, 1)
         contentLayout.addLayout(choiceLayout)
+        contentLayout.addStretch()
+        contentLayout.addWidget(QtWidgets.QLabel("Max Number:"))
+        contentLayout.addWidget(self._numSpecsSpin)
 
         layout.addWidget(self.contentGroup)
         self._enableDisableWidgets()
@@ -264,6 +280,12 @@ class ClassEntry(QtWidgets.QGroupBox):
             name: str = self._lineEdit.text()
         assert len(name) > 0, "The new indicated name must be at least 1 character long."
         return name
+
+    def getNumMaxSpectra(self) -> int:
+        """
+        Returns the maximum number of spectra for this class to upload.
+        """
+        return self._numSpecsSpin.value()
 
     def _setTypeComboToMostLikelyClass(self) -> None:
         """

@@ -19,15 +19,17 @@ If not, see <https://www.gnu.org/licenses/>.
 import numba
 import numpy as np
 from typing import List, Dict, Tuple, TYPE_CHECKING, Union, Set
-import random
 
 from preprocessing.preprocessors import preprocessSpectra
 from logger import getLogger
 
 if TYPE_CHECKING:
-    from multiprocessing import Queue
     from logging import Logger
     from preprocessing.preprocessors import Preprocessor
+
+
+class WavelengthsNotSetError(BaseException):
+    pass
 
 
 class SpectraObject:
@@ -71,7 +73,8 @@ class SpectraObject:
         return self._cube
 
     def getWavelengths(self) -> np.ndarray:
-        assert self._wavelengths is not None, 'Wavenumbers have not yet been set! Cannot return them!'
+        if self._wavelengths is None:
+            raise WavelengthsNotSetError()
         return self._wavelengths
 
     def getSpectrumaAtXY(self, x: int, y: int) -> np.ndarray:
@@ -89,6 +92,23 @@ class SpectraObject:
 
     def setWavelengths(self, wavelengths: np.ndarray) -> None:
         self._wavelengths = wavelengths
+
+    def remapToWavelenghts(self, otherWavelenghts: np.ndarray) -> None:
+        """
+        Takes a wavelength axis and remaps the cube to fit the new wavelength axis.
+        It also erases the preprocessed Cube and overwrites the cube wavelengths to the given ones.
+        """
+        if self._wavelengths is not None:
+            newCube: np.ndarray = np.zeros((len(otherWavelenghts), self._cube.shape[1], self._cube.shape[2]))
+            for i, wavelength in enumerate(otherWavelenghts):
+                closestIndex: int = int(np.argmin(np.abs(self._wavelengths - wavelength)))
+                newCube[i, :, :] = self._cube[closestIndex, :, :]
+
+            self._cube = newCube
+            self._preprocessedCube = None
+            self._wavelengths = otherWavelenghts
+        else:
+            raise WavelengthsNotSetError
 
     def _specArr2cube(self, specArr: np.ndarray, ignoreBackground: bool = False) -> np.ndarray:
         """
@@ -232,6 +252,8 @@ class SpectraCollection:
                 self._labels = np.array([cls]*numSpecs)
                 self._sampleNames = np.array([sampleName]*numSpecs)
             else:
+                assert self._spectra.shape[1] == specs.shape[1], f'incompatible spectra set shapes'
+
                 self._spectra = np.vstack((self._spectra, specs))
                 self._labels = np.append(self._labels, [cls]*numSpecs)
                 self._sampleNames = np.append(self._sampleNames, [sampleName]*numSpecs)

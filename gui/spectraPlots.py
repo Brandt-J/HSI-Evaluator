@@ -27,6 +27,7 @@ from typing import List, Dict, TYPE_CHECKING, cast, Union
 
 from logger import getLogger
 from gui.scatterPlot import ScatterPlot
+from helperfunctions import getRandomSpectraFromArray
 # from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
@@ -228,20 +229,17 @@ class ResultPlots(QtWidgets.QWidget):
         layout.addWidget(self._tabView)
         self.setLayout(layout)
 
-    def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
-        """
-        Limits number of given specSet to not exceed the value given with numSpecSpinner.
-        :param specSet: (NxM) set of N spectra with M wavelengths
-        :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavelengths
-        """
-        random.seed(self._seedSpinner.value())
-        numSpecs: int = specSet.shape[0]
-        maxSpecs: int = self._numSpecSpinner.value()
-        if numSpecs > maxSpecs:
-            specSet = specSet.copy()
-            randInd: np.ndarray = np.array(random.sample(list(np.arange(numSpecs)), maxSpecs))
-            specSet = specSet[randInd, :]
-        return specSet
+    # def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
+    #     """
+    #     Limits number of given specSet to not exceed the value given with numSpecSpinner.
+    #     :param specSet: (NxM) set of N spectra with M wavelengths
+    #     :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavelengths
+    #     """
+    #     numSpecs: int = specSet.shape[0]
+    #     maxSpecs: int = self._numSpecSpinner.value()
+    #     if numSpecs > maxSpecs:
+    #         specSet = getRandomSpectraFromArray(specSet, maxSpecs, self._seedSpinner.value())
+    #     return specSet
 
 
 class SpecPlot(QtWidgets.QWidget):
