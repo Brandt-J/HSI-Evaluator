@@ -24,6 +24,7 @@ import numpy as np
 
 from spectraObject import SpectraObject, getSpectraFromIndices
 from legacyConvert import currentSampleVersion, currentViewVersion
+from particles import ParticleHandler
 
 
 class Sample:
@@ -35,6 +36,7 @@ class Sample:
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object
         self.classOverlay: Union[None, np.ndarray] = None  # RGBA Overlay used for displaying predicted class labels
+        self.particleHandler: ParticleHandler = ParticleHandler()
 
     def setDefaultName(self) -> None:
         if len(self.filePath) > 0:

@@ -31,14 +31,14 @@ from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndice
 from dataObjects import Sample
 from loadCube import loadCube
 from legacyConvert import assertUpToDateSample
-from gui.graphOverlays import GraphView, ThresholdSelector
+from gui.graphOverlays import GraphView, ThresholdSelector, getThresholdedImage
 from gui.dbWin import DBUploadWin
 from gui.dbQueryWin import DatabaseQueryWindow
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from logging import Logger
-
+    from particles import ParticleHandler
 
 class MultiSampleView(QtWidgets.QScrollArea):
     """
@@ -368,7 +368,8 @@ class SampleView(QtWidgets.QMainWindow):
 
         self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
         self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
-        self._selectByBrightnessBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Brightness Select")
+        self._selectByBrightnessBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Brightness Select/\nParticleDetection")
+        self._toggleParticleCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Show Particles")
         self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
 
         self._toolbar = QtWidgets.QToolBar()
@@ -577,8 +578,9 @@ class SampleView(QtWidgets.QMainWindow):
         adjustLayout.addWidget(self._contrastSlider, 1, 1)
         adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
         adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
-        adjustLayout.addWidget(self._selectByBrightnessBtn, 3, 0, 1, 2)
-        adjustLayout.addWidget(self._selectNoneBtn, 4, 0, 1, 2)
+        adjustLayout.addWidget(self._selectNoneBtn, 3, 0, 1, 2)
+        adjustLayout.addWidget(self._selectByBrightnessBtn, 4, 0, 1, 2)
+        adjustLayout.addWidget(self._toggleParticleCheckbox, 5, 0, 1, 2)
         self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
@@ -651,6 +653,9 @@ class SampleView(QtWidgets.QMainWindow):
         self._brightnessSlider.valueChanged.connect(self._initiateImageUpdate)
         self._contrastSlider.valueChanged.connect(self._initiateImageUpdate)
 
+        self._toggleParticleCheckbox.setChecked(True)
+        self._toggleParticleCheckbox.stateChanged.connect(self._toggleParticleVisibility)
+
         newFont: QtGui.QFont = QtGui.QFont()
         newFont.setBold(True)
         newFont.setPixelSize(18)
@@ -708,6 +713,8 @@ class SampleView(QtWidgets.QMainWindow):
         self._threshSelector.ThresholdChanged.connect(self._graphView.previewPixelsAccordingThreshold)
         self._threshSelector.ThresholdSelected.connect(self._finishThresholdSelection)
         self._threshSelector.SelectionCancelled.connect(self._cancelThresholdSelection)
+        self._threshSelector.ParticleDetectionRequired.connect(self._runParticleDetection)
+
         self._threshSelector.show()
 
     @QtCore.pyqtSlot(int, bool)
@@ -806,6 +813,27 @@ class SampleView(QtWidgets.QMainWindow):
         self._dbQueryWin.AcceptResult.disconnect()
         self._dbQueryWin = None
         self._mainWindow.updateClassCreatorClasses()
+
+    def _toggleParticleVisibility(self) -> None:
+        """
+        Toggles visibility of particle contour items in the graph view.
+        """
+        self._graphView.setParticleVisibility(self._toggleParticleCheckbox.isChecked())
+
+    @QtCore.pyqtSlot(int, bool)
+    def _runParticleDetection(self, threshold: int, selectBright: bool) -> None:
+        """
+        Takes a threshold and a brightness bool for creating a thresholded image that is used for creating a new
+        list of particles. The particle handler stores this list and the graph view creates the according gui elements.
+        :param threshold: The threshold to use (int, 0...255)
+        :param selectBright: If True, the bright areas are selected, otherwise the darker ones.
+        """
+        cube: np.ndarray = self._sampleData.specObj.getNotPreprocessedCube()
+        binImg: np.ndarray = getThresholdedImage(cube, self._maxBrightnessSpinbox.value(), threshold, selectBright)
+        particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
+        particleHandler.getParticlesFromImage(binImg)
+        self._graphView.setParticles(particleHandler.getParticles())
+        self._closeThresholdSelector()
 
 
 class VerticalLabel(QtWidgets.QLabel):

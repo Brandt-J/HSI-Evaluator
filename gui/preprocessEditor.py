@@ -91,7 +91,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
             spectra, labels, sampleNames = self._limitToMaxNumber(spectra, labels, sampleNames)
 
             self._plots.setClassAndSampleLabels(labels, sampleNames)
-            self._nodeGraph.setInputSpecta(spectra)
+            self._nodeGraph.setInputSpectra(spectra)
             self._nodeGraph.updatePlotNodes()
         else:
             self._showNoSpectraWarning()
