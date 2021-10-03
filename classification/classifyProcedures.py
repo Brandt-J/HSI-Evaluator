@@ -102,12 +102,11 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     for i, sample in enumerate(inferenceSampleList):
         t0 = time.time()
         logger.debug(f"Starting classifcation on {sample.name}")
-        specObj = sample.specObj
         if stopEvent.is_set():
             return
 
         try:
-            assignments: List[str] = getClassesForPixels(specObj, classifier, ignoreBackground=False)
+            assignments: List[str] = getClassesForPixels(sample, classifier, ignoreBackground=False)
         except Exception as e:
             queue.put(ClassificationError(e))
             raise ClassificationError(e)
@@ -126,25 +125,27 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     queue.put(finishedSamples)
 
 
-def getClassesForPixels(specObject: 'SpectraObject', classifier: 'BaseClassifier', ignoreBackground: bool) -> List[str]:
+def getClassesForPixels(sample: 'Sample', classifier: 'BaseClassifier', ignoreBackground: bool) -> List[str]:
     """
     Estimates the classes for each pixel
-    :param specObject: The spectraObject to use
+    :param sample: The sample to use
     :param classifier: The classifier to use
     :param ignoreBackground: Whether or not to ignore background pixels
     :return: List of class names per spectrum
     """
     specList: List[np.ndarray] = []
-    cube: np.ndarray = specObject.getPreprocessedCubeIfPossible()
-    backgroundIndices: Set[int] = specObject.getBackgroundIndices()
-    i: int = 0
-    for y in range(cube.shape[1]):
-        for x in range(cube.shape[2]):
-            if not ignoreBackground or (ignoreBackground and i not in backgroundIndices):
-                specList.append(cube[:, y, x])
-            i += 1
+    specArr: np.ndarray
 
-    specArr: np.ndarray = np.array(specList)
+    # cube: np.ndarray = specObject.getPreprocessedCubeIfPossible()
+    # backgroundIndices: Set[int] = specObject.getBackgroundIndices()
+    # i: int = 0
+    # for y in range(cube.shape[1]):
+    #     for x in range(cube.shape[2]):
+    #         if not ignoreBackground or (ignoreBackground and i not in backgroundIndices):
+    #             specList.append(cube[:, y, x])
+    #         i += 1
+    #
+    # specArr: np.ndarray = np.array(specList)
     try:
         result: np.ndarray = classifier.predict(specArr)
     except Exception as e:
