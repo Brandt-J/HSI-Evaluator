@@ -25,7 +25,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
 
-from gui.particleUI import getContourItemForContour
+from gui.particleUI import getContourItemForParticle
 
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
@@ -100,7 +100,7 @@ class GraphView(QtWidgets.QGraphicsView):
         self._particleItems = []
 
         for particle in particles:
-            newConcour: 'ParticleContour' = getContourItemForContour(particle.contour)
+            newConcour: 'ParticleContour' = getContourItemForParticle(particle)
             self._particleItems.append(newConcour)
             self.scene().addItem(newConcour)
 

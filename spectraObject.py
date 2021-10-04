@@ -57,7 +57,7 @@ class SpectraObject:
             backgroundSpec: np.ndarray = getSpectraFromIndices(np.array(list(backgroundIndices)), self._cube)
         else:
             backgroundSpec = np.zeros(self._cube.shape[0])
-        preprocessedSpectra: np.ndarray = preprocessSpectra(self._cube2SpecArr(), preprocessors, backgroundSpec)
+        preprocessedSpectra: np.ndarray = preprocessSpectra(self._cube2SpecArr(preprocessed=False), preprocessors, backgroundSpec)
         self._preprocessedCube = self._specArr2cube(preprocessedSpectra)
 
     def getPreprocessedCubeIfPossible(self) -> np.ndarray:
@@ -71,6 +71,10 @@ class SpectraObject:
 
     def getNotPreprocessedCube(self) -> np.ndarray:
         return self._cube
+
+    def getPreprocessedSpecArr(self) -> np.ndarray:
+        """"""
+        return self._cube2SpecArr(preprocessed=True)
 
     def getWavelengths(self) -> np.ndarray:
         if self._wavelengths is None:
@@ -133,24 +137,26 @@ class SpectraObject:
 
         return cube
 
-    def _cube2SpecArr(self, ignoreBackground: bool = False) -> np.ndarray:
+    def _cube2SpecArr(self, preprocessed: bool = True) -> np.ndarray:
         """
         Reformats the cube into an MxN spectra matrix of M spectra with N wavelengths
-        :param ignoreBackground: If True, background spectra will be skipped
+        :param preprocessed: If True, the preprocessed cube is used, if possible.
         :return: (MxN) spec array of M spectra of N wavelengths
         """
         i: int = 0
         specArr: List[np.ndarray] = []
-        for y in range(self._cube.shape[1]):
-            for x in range(self._cube.shape[2]):
-                if not ignoreBackground:
-                    specArr.append(self._cube[:, y, x])
-                elif i not in self._backgroundIndices:
-                    specArr.append(self._cube[:, y, x])
+        if preprocessed:
+            cube: np.ndarray = self.getPreprocessedCubeIfPossible()
+        else:
+            cube: np.ndarray = self._cube
+
+        for y in range(cube.shape[1]):
+            for x in range(cube.shape[2]):
+                specArr.append(cube[:, y, x])
                 i += 1
 
         specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavelengths
-        assert specArr.shape[1] == self._cube.shape[0]
+        assert specArr.shape[1] == cube.shape[0]
         return specArr
 
     def _setDefaultWavelengths(self, cube: np.ndarray) -> None:

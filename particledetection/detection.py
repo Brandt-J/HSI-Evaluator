@@ -30,9 +30,6 @@ def getParticleContours(binImg: np.ndarray) -> List[np.ndarray]:
     :param binImg: The binary image, background = black, foreground = white, dtype: np.uint8
     :return: List of contours
     """
-    # img: np.ndarray = assertUint8(grayImg.copy())
-    # blur: np.ndarray = cv2.medianBlur(img, 3)
-    # _, binImg = cv2.threshold(blur, 0, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY)
     binImg = assertUint8(binImg.copy())
     disttransform: np.ndarray = cv2.distanceTransform(binImg, cv2.DIST_L2, 3)
 
@@ -90,7 +87,7 @@ def getSureForegroundAndBackground(distanceTransform: np.ndarray) -> Tuple[np.nd
     """
     sure_fg = np.zeros_like(distanceTransform, dtype=np.uint8)
     localMax = np.uint8(peak_local_max(distanceTransform, 5, exclude_border=False, indices=False))
-    localMax[distanceTransform == np.max(distanceTransform)] = 1
+    localMax[distanceTransform == np.max(distanceTransform)] = 1  # add global maximum
 
     maxPoints = np.where(localMax == np.max(localMax))
     maxPoints = np.transpose(np.array(maxPoints))

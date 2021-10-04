@@ -27,13 +27,15 @@ from multiprocessing import Process, Queue, Event
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 from dataObjects import Sample
-from classification.classifyProcedures import getClassifiers, trainClassifier, classifySamples, TrainingResult
+import classification.classifyProcedures as cp
+# import getClassifiers, trainClassifier, classifySamples, TrainingResult, ClassifyMode
 from classification.classifiers import ClassificationError, BaseClassifier
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from gui.sampleview import SampleView
     from gui.graphOverlays import GraphView
+    from spectraObject import SpectraObject
     from logging import Logger
 
 
@@ -303,7 +305,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         super(ClassificationUI, self).__init__()
         self._mainWin: 'MainWindow' = parent
         self._logger: 'Logger' = getLogger("ClassificationUI")
-        self._classifiers: List['BaseClassifier'] = getClassifiers()  # all available classifiers
+        self._classifiers: List['BaseClassifier'] = cp.getClassifiers()  # all available classifiers
         self._activeClf: Union[None, 'BaseClassifier'] = None  # the currently selected classifier
         self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
 
@@ -313,6 +315,10 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._maxNumSpecsSpinBox: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+
+        self._radioImage: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Whole Image")
+        self._radioParticles: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Particles")
+
         self._trainBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Train Classifier")
         self._applyBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply Classifier")
 
@@ -345,11 +351,11 @@ class ClassificationUI(QtWidgets.QGroupBox):
             self._mainWin.disableWidgets()
             self._applyBtn.setDisabled(True)
             self._activeClf.makePickleable()
-            self._trainProcessWindow = ProcessWithStatusBarWindow(trainClassifier,
+            self._trainProcessWindow = ProcessWithStatusBarWindow(cp.trainClassifier,
                                                                   (trainSamples, self._activeClf,
                                                                    self._maxNumSpecsSpinBox.value(),
                                                                    self._testFracSpinBox.value()),
-                                                                  str, TrainingResult)
+                                                                  str, cp.TrainingResult)
             self._trainProcessWindow.setWindowTitle(f"Training on {len(trainSamples)} samples.")
             self._trainProcessWindow.ProcessFinished.connect(self._onTrainingFinishedOrAborted)
             self._trainProcessWindow.setProgressBarMaxVal(0)
@@ -374,9 +380,9 @@ class ClassificationUI(QtWidgets.QGroupBox):
         else:
             self._mainWin.disableWidgets()
             self._activeClf.makePickleable()
-            self._inferenceProcessWindow = ProcessWithStatusBarWindow(classifySamples,
-                                                                      (inferenceSamples, self._activeClf,
-                                                                       self._mainWin.getClassColorDict()),
+            clfMode: cp.ClassifyMode = cp.ClassifyMode.WholeImage if self._radioImage.isChecked() else cp.ClassifyMode.Particles
+            self._inferenceProcessWindow = ProcessWithStatusBarWindow(cp.classifySamples,
+                                                                      (inferenceSamples, self._activeClf, clfMode),
                                                                        str, list)
             self._inferenceProcessWindow.setWindowTitle(f"Inference on {len(inferenceSamples)} samples.")
             self._inferenceProcessWindow.ProcessFinished.connect(self._onClassificationFinishedOrAborted)
@@ -389,7 +395,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
         if properlyFinished:
             classifiedSamples: Union[None, List['Sample']] = self._inferenceProcessWindow.getResult()
             assert type(classifiedSamples) == list
-            self._updateClassifiedSamples(classifiedSamples)
+            if self._radioImage.isChecked():
+                self._updateClassImages(classifiedSamples)
         else:
             self._logger.info("Classifier Inference finished without getting a result")
 
@@ -398,7 +405,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
     @QtCore.pyqtSlot(bool)
     def _onTrainingFinishedOrAborted(self, properlyFinished: bool) -> None:
         if properlyFinished:
-            result: Union[None, TrainingResult] = self._trainProcessWindow.getResult()
+            result: Union[None, cp.TrainingResult] = self._trainProcessWindow.getResult()
             assert result is not None
             self._activeClf.updateClassifierFromTrained(result.classifier)
             self._validGroup.showResult(result.validReportDict)
@@ -463,6 +470,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._applyBtn.released.connect(self._runClassification)
         self._applyBtn.setDisabled(True)
 
+        self._radioImage.setChecked(True)
+
         self._clfCombo.addItems([clf.title for clf in self._classifiers])
         self._clfCombo.currentTextChanged.connect(self._activateClassifier)
 
@@ -472,22 +481,30 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.addWidget(self._activeClfControls)
         self._layout.addStretch()
 
-        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options")
-        optnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        optnGroup.setLayout(optnLayout)
-        optnLayout.addRow("Max. Num. of Spectra per class", self._maxNumSpecsSpinBox)
-        optnLayout.addRow("Test Fraction", self._testFracSpinBox)
+        trainOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options")
+        trainOptnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        trainOptnGroup.setLayout(trainOptnLayout)
+        trainOptnLayout.addRow("Max. Num. of Spectra per class", self._maxNumSpecsSpinBox)
+        trainOptnLayout.addRow("Test Fraction", self._testFracSpinBox)
+
+        infOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Run classification on")
+        infOptnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        infOptnGroup.setLayout(infOptnLayout)
+        infOptnLayout.addWidget(self._radioImage)
+        infOptnLayout.addWidget(self._radioParticles)
 
         runLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         runLayout.addWidget(self._trainBtn)
         runLayout.addWidget(self._applyBtn)
 
-        self._layout.addWidget(optnGroup)
-        self._layout.addLayout(runLayout)
         validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Results")
         validationGroup.setLayout(QtWidgets.QHBoxLayout())
         validationGroup.layout().addWidget(self._validGroup)
+
+        self._layout.addWidget(trainOptnGroup)
+        self._layout.addWidget(infOptnGroup)
         self._layout.addWidget(validationGroup)
+        self._layout.addLayout(runLayout)
         self._layout.addStretch()
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
         self._layout.addWidget(self._transpSlider)
@@ -499,17 +516,23 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._layout.removeWidget(item.widget())
         self._layout.insertWidget(indexOfControlElement, self._activeClfControls)
 
-    def _updateClassifiedSamples(self, finishedSamples: List['Sample']) -> None:
+    def _updateClassImages(self, finishedSamples: List['Sample']) -> None:
         """
-        Takes Sample data(s) from finished classification and updates the according sampleView(s).
+        Takes Sample data(s) from finished classification and updates the according graph view(s).
         """
         allSamples: List['SampleView'] = self._mainWin.getAllSamples()
+        colorDict: Dict[str, Tuple[int, int, int]] = self._mainWin.getClassColorDict()
         for finishedSample in finishedSamples:
             sampleFound: bool = False
             for sample in allSamples:
                 if sample.getName() == finishedSample.name:
                     graphView: 'GraphView' = sample.getGraphView()
-                    graphView.updateClassImage(finishedSample.classOverlay)
+                    specObj: 'SpectraObject' = sample.getSpecObj()
+                    cubeShape = specObj.getPreprocessedCubeIfPossible().shape
+                    assignments: List[str] = finishedSample.getAndResetTmpClassResults()
+                    clfImg: np.ndarray = cp.createClassImg(cubeShape, assignments, colorDict)
+                    self._logger.debug(f"Set class image for sample {finishedSample.name} in graph view")
+                    graphView.updateClassImage(clfImg)
                     sampleFound = True
                     break
             assert sampleFound, f'Could not find sample {sample.getName()} in present samples'

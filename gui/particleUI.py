@@ -20,10 +20,13 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 from typing import *
 import numpy as np
 
+if TYPE_CHECKING:
+    from particles import Particle
 
-def getContourItemForContour(contourdata: np.ndarray) -> 'ParticleContour':
+
+def getContourItemForParticle(particle: 'Particle') -> 'ParticleContour':
     contour: ParticleContour = ParticleContour()
-    contour.setFromContourData(contourdata)
+    contour.setupParticle(particle)
     return contour
 
 
@@ -36,15 +39,17 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         self.setZValue(1)
         self.setPos(0, 0)
         self.brect = QtCore.QRectF(0, 0, 1, 1)
-
+        self.particle: Union[None, 'Particle'] = None
         self.polygon: Union[None, QtGui.QPolygonF] = None
         self.color = QtGui.QColor(180, 255, 180, 200)
 
-    def setFromContourData(self, contourData: np.ndarray) -> None:
+    def setupParticle(self, particle: 'Particle') -> None:
         """
         Calculates the bounding rect (needed for drawing the QGraphicsView) and converts the contourdata to a polygon.
         :return:
         """
+        self.particle = particle
+        contourData = particle.getContour()
         self.polygon = QtGui.QPolygonF()
         x0 = contourData[:, 0, 0].min()
         x1 = contourData[:, 0, 0].max()

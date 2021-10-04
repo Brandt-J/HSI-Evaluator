@@ -16,11 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import random
 import time
-from multiprocessing import Queue, Event
 import numpy as np
 from typing import *
+from enum import Enum
+from multiprocessing import Queue, Event
 from dataclasses import dataclass
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
@@ -30,14 +30,25 @@ from helperfunctions import getRandomSpectraFromArray
 from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM
 
 if TYPE_CHECKING:
+    from particles import Particle
     from spectraObject import SpectraObject
     from dataObjects import Sample
     from logging import Logger
 
 
 def getClassifiers() -> List['BaseClassifier']:
-    # return [NeuralNet(), SVM(), RDF()]
+    """
+    Returns a list with the available classifiers.
+    """
     return [SVM(), KNN()]
+
+
+class ClassifyMode(Enum):
+    """
+    Enum for defining whether to run classification on an entire image, or to only classifiy the particles.
+    """
+    WholeImage = 0
+    Particles = 1
 
 
 @dataclass
@@ -87,13 +98,13 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     queue.put(TrainingResult(classifier, reportStr, reportDict))
 
 
-def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassifier', colorDict: Dict[str, Tuple[int, int, int]],
+def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassifier', mode: 'ClassifyMode',
                     queue: Queue, stopEvent: Event) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param inferenceSampleList: List of Samples on which we want to run classification.
     :param classifier: The Classifier to use
-    :param colorDict: Dictionary mapping all classes to RGB values, used for image generation
+    :param mode: The classification mode to do.
     :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is Set if the process should be cancelled
     """
@@ -102,21 +113,15 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     for i, sample in enumerate(inferenceSampleList):
         t0 = time.time()
         logger.debug(f"Starting classifcation on {sample.name}")
-        if stopEvent.is_set():
-            return
-
-        try:
-            assignments: List[str] = getClassesForPixels(sample, classifier, ignoreBackground=False)
-        except Exception as e:
-            queue.put(ClassificationError(e))
-            raise ClassificationError(e)
 
         if stopEvent.is_set():
             return
 
-        cubeShape = specObj.getPreprocessedCubeIfPossible().shape
-        clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
-        sample.setClassOverlay(clfImg)
+        classifySpectra(sample, classifier, mode, queue)
+
+        if stopEvent.is_set():
+            return
+
         logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
                      f' ({i+1} of {len(inferenceSampleList)} samples done)')
         finishedSamples.append(sample)
@@ -125,32 +130,27 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     queue.put(finishedSamples)
 
 
-def getClassesForPixels(sample: 'Sample', classifier: 'BaseClassifier', ignoreBackground: bool) -> List[str]:
+def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'ClassifyMode', dataqueue: 'Queue'):
     """
-    Estimates the classes for each pixel
+    Estimates the classes for each spectrum
     :param sample: The sample to use
     :param classifier: The classifier to use
-    :param ignoreBackground: Whether or not to ignore background pixels
-    :return: List of class names per spectrum
+    :param mode: The mode defining whether to classify the whole image or only the particles
+    :param dataqueue: The dataqueue to push errors to
     """
-    specList: List[np.ndarray] = []
-    specArr: np.ndarray
+    if mode == ClassifyMode.WholeImage:
+        specObject: 'SpectraObject' = sample.specObj
+        specArr = specObject.getPreprocessedSpecArr()
+        try:
+            assignments: np.ndarray = classifier.predict(specArr)
+        except Exception as e:
+            error: ClassificationError = ClassificationError("Error during classifier inference: {e}")
+            dataqueue.put(error)
+            raise error
 
-    # cube: np.ndarray = specObject.getPreprocessedCubeIfPossible()
-    # backgroundIndices: Set[int] = specObject.getBackgroundIndices()
-    # i: int = 0
-    # for y in range(cube.shape[1]):
-    #     for x in range(cube.shape[2]):
-    #         if not ignoreBackground or (ignoreBackground and i not in backgroundIndices):
-    #             specList.append(cube[:, y, x])
-    #         i += 1
-    #
-    # specArr: np.ndarray = np.array(specList)
-    try:
-        result: np.ndarray = classifier.predict(specArr)
-    except Exception as e:
-        raise ClassificationError("Error during classifier inference: {e}")
-    return list(result)
+        sample.setTmpClassResults(assignments)
+    # elif mode == ClassifyMode.Particles:
+    #     particles: List['Particle'] = sample.getAllParticles()
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float,
@@ -188,26 +188,21 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 
-def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]],
-                   ignoreIndices: Set[int] = set()) -> np.ndarray:
+def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
     """
     Creates an overlay image of the current classification
     :param cubeShape: Shape of the cube array
     :param assignments: List of class names for each pixel
     :param colorCodes: Dictionary mapping class names to rgb values
-    :param ignoreIndices: Set of pixel indices to ignore (i.e., background pixels)
     :return: np.ndarray of RGBA image as classification overlay
     """
     clfImg: np.ndarray = np.zeros((cubeShape[1], cubeShape[2], 4), dtype=np.uint8)
     i: int = 0  # counter for cube
-    j: int = 0  # counter for assignment List
     t0 = time.time()
     for y in range(cubeShape[1]):
         for x in range(cubeShape[2]):
-            if i not in ignoreIndices:
-                clfImg[y, x, :3] = colorCodes[assignments[j]]
-                clfImg[y, x, 3] = 255
-                j += 1
+            clfImg[y, x, :3] = colorCodes[assignments[i]]
+            clfImg[y, x, 3] = 255
             i += 1
 
     print('generating class image', round(time.time()-t0, 2))

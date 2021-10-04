@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+from copy import copy
 from typing import *
 import hashlib
 import os
@@ -35,7 +35,8 @@ class Sample:
         self.filePath: str = ''  # Path to the spectra cube (.npy file)
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object
-        self.classOverlay: Union[None, np.ndarray] = None  # RGBA Overlay used for displaying predicted class labels
+        self.tmpClassResults: List[str] = []
+        # self.classOverlay: Union[None, np.ndarray] = None  # RGBA Overlay used for displaying predicted class labels
         self.particleHandler: ParticleHandler = ParticleHandler()
 
     def setDefaultName(self) -> None:
@@ -79,8 +80,14 @@ class Sample:
             spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getPreprocessedCubeIfPossible())
         return spectra
 
-    def setClassOverlay(self, classImage: np.ndarray) -> None:
-        self.classOverlay = classImage
+    def setTmpClassResults(self, assignments: List[str]) -> None:
+        self.tmpClassResults = assignments
+
+    def getAndResetTmpClassResults(self) -> List[str]:
+        assert len(self.tmpClassResults) > 0, f"Temp. Assignments for sample {self.name} where not set and cannot be retrieved."
+        resulst: List[str] = copy(self.tmpClassResults)
+        self.tmpClassResults = []
+        return resulst
 
 
 class View:

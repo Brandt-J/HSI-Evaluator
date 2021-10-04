@@ -26,12 +26,14 @@ import numpy as np
 from typing import *
 
 from classification.classifiers import SVM
-from classification.classifyProcedures import TrainingResult
+from classification.classifyProcedures import TrainingResult, ClassifyMode
 from dataObjects import Sample
 from gui.classUI import ClassificationUI
 from gui.sampleview import SampleView
 from tests.test_specObj import getPreprocessors
 
+if TYPE_CHECKING:
+    from gui.graphOverlays import GraphView
 
 class TestClassifiers(TestCase):
     @classmethod
@@ -52,9 +54,12 @@ class TestClassifiers(TestCase):
                                                  'class3': 2})
 
     def testTrainAndClassify(self) -> None:
-        classUI: ClassificationUI = ClassificationUI(MockMainWin())
+        mainWin: MockMainWin = MockMainWin()
+        classUI: ClassificationUI = ClassificationUI(mainWin)
         self.assertFalse(classUI._applyBtn.isEnabled())
         self.assertTrue(classUI._activeClf is not None)
+
+        # Train the SVM
         classUI._trainClassifier()
         while classUI._trainProcessWindow._process.is_alive():
             classUI._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
@@ -73,15 +78,39 @@ class TestClassifiers(TestCase):
 
         # Now we test inference
         self.assertTrue(classUI._applyBtn.isEnabled())
-        classUI._runClassification()
-        while classUI._inferenceProcessWindow._process.is_alive():
-            classUI._inferenceProcessWindow._checkOnProcess()
-            time.sleep(0.1)
+        for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
+            if mode == ClassifyMode.WholeImage:
+                classUI._radioParticles.setChecked(False)
+            else:
+                classUI._radioParticles.setChecked(True)
+                continue
 
-        result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
-        self.assertTrue(type(result) == list)
-        self.assertEqual(len(result), 2)
-        classUI._onClassificationFinishedOrAborted(True)  # Again, we call it manually, signals don't work here..
+            classUI._runClassification()
+            while classUI._inferenceProcessWindow._process.is_alive():
+                classUI._inferenceProcessWindow._checkOnProcess()
+                time.sleep(0.1)
+
+            result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
+            self.assertTrue(type(result) == list)
+            self.assertEqual(len(result), 2)
+
+            # Check that everything is correct
+            if mode == ClassifyMode.WholeImage:
+                allCorrect: bool = True
+                for finishedSample in result:
+                    sampleCorrect: bool = False
+                    for sample in mainWin.getAllSamples():
+                        if sample.getName() == finishedSample.name:
+                            graphView: 'GraphView' = sample.getGraphView()
+                            self.assertTrue(graphView._classOverlay._overlayArr is not None)
+                            sampleCorrect = True
+                            break
+                    if not sampleCorrect:
+                        allCorrect = False
+                        break
+                self.assertTrue(allCorrect)
+            # # elif mode == ClassifyMode.Particles:
+            # #     self.fail()
 
 
 class MockMainWin:
@@ -124,8 +153,6 @@ class MockMainWin:
 
     def getAllSamples(self) -> List['SampleView']:
         return self._samples
-
-    # def getSampleOfName(self) -> 'SampleView':
 
     def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
         return {"class1": (0, 0, 0),
