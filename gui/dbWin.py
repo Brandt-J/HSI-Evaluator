@@ -166,7 +166,7 @@ class DBUploadWin(QtWidgets.QWidget):
         """
         Returns a dictionary of spectra to upload. Keys are class names as to be used in database.
         """
-        allSpectra: Dict[str, np.ndarray] = self._sampleview.getAllLabelledSpectra()
+        allSpectra: Dict[str, np.ndarray] = self._sampleview.getAllLabelledNOTPreprocesssedSpectra()
         specsToUpload: Dict[str, np.ndarray] = {}
         for clsEntry in self._classEntries:
             if clsEntry.isSelected():

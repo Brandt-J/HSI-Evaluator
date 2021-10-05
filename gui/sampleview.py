@@ -520,6 +520,17 @@ class SampleView(QtWidgets.QMainWindow):
                                                   self._sampleData.specObj.getPreprocessedCubeIfPossible())
         return spectra
 
+    def getAllLabelledNOTPreprocesssedSpectra(self) -> Dict[str, np.ndarray]:
+        """
+        Gets all the labelled, NOT preprocessed spectra in form of a dictionary.
+        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
+        """
+        spectra: Dict[str, np.ndarray] = {}
+        for name, indices in self._classes2Indices.items():
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)),
+                                                  self._sampleData.specObj.getNotPreprocessedCube())
+        return spectra
+
     def getSelectedMaxBrightness(self) -> float:
         """
         Get's the user selected max brightness value.
