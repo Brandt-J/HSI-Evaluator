@@ -176,29 +176,46 @@ def detrend(input_data: np.ndarray) -> np.ndarray:
     return output_data
 
 
-def deriv_smooth(input_data: np.ndarray, derivative: int = 0, windowSize: int = 5) -> np.ndarray:
+def deriv_smooth(input_data: np.ndarray, mode: 'SmoothingMode', polydegree: int, derivative: int = 0, windowSize: int = 5) -> np.ndarray:
     """
-    Applies Savitzky Golay smoothing to all given data, if desired with derivative.
+    Applies  smoothing to all given data, if desired with derivative.
     :param input_data: Shape (NxM) array of N samples with M features
+    :param mode: The Smoothing Mode to use.
+    :param polydegree: Polynomial degree, only used with Savitzky-Golay filtering
     :param derivative: Which derivative to calculate.
     :param windowSize: integer, the window size for smoothing.
     :return: corrected data in same shape
     """
     output_data: np.ndarray = np.zeros_like(input_data)
     startInd = (windowSize - 1) // 2
-    for i in range(input_data.shape[0]):
-        cumsum_vec = np.cumsum(np.insert(input_data[i, :], 0, 0))  # this cumsum version is a very fast smoother
-        ma_vec = (cumsum_vec[windowSize:] - cumsum_vec[:-windowSize]) / windowSize
-        smoothed = np.zeros(input_data.shape[1])
-        endInd = startInd + len(ma_vec)
-        smoothed[startInd:endInd] = ma_vec  # put smoothed version in the middle of the zeros array
-        smoothed[:startInd] = smoothed[startInd]  # fill up the values at the beginning
-        smoothed[endInd:] = smoothed[endInd-1]  # fill up the values at the end
 
-        if derivative == 0:
-            output_data[i, :] = smoothed
+    # Checks for Savitzky-Golay bounds
+    if windowSize % 2 == 0:
+        windowSize += 1
+    if polydegree >= windowSize:
+        windowSize = polydegree + 1
+
+    for i in range(input_data.shape[0]):
+        if mode == SmoothingMode.Cumsum:
+            cumsum_vec = np.cumsum(np.insert(input_data[i, :], 0, 0))  # this cumsum version is a very fast smoother
+            ma_vec = (cumsum_vec[windowSize:] - cumsum_vec[:-windowSize]) / windowSize
+            smoothed = np.zeros(input_data.shape[1])
+            endInd = startInd + len(ma_vec)
+            smoothed[startInd:endInd] = ma_vec  # put smoothed version in the middle of the zeros array
+            smoothed[:startInd] = smoothed[startInd]  # fill up the values at the beginning
+            smoothed[endInd:] = smoothed[endInd - 1]  # fill up the values at the end
+
+            if derivative == 0:
+                diffsmoothed = smoothed
+            else:
+                diffsmoothed = output_data[i, :].copy()
+                diffsmoothed[derivative:] = np.diff(smoothed, n=derivative)
+
         else:
-            output_data[i, derivative:] = np.diff(smoothed, n=derivative)
+
+            diffsmoothed = savgol_filter(input_data[i, :], windowSize, polydegree, deriv=derivative)
+
+        output_data[i, :] = diffsmoothed
 
     return output_data
 
@@ -239,3 +256,8 @@ class NormMode(Enum):
     Area = 0
     Length = 1
     Max = 2
+
+
+class SmoothingMode(Enum):
+    Cumsum = 0
+    SavGol = 1

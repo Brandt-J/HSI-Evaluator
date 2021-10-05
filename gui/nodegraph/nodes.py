@@ -301,15 +301,27 @@ class NodeSmoothDeriv(BaseNode):
         self._winSizeSpin.setMaximum(21)
         self._winSizeSpin.setValue(5)
 
+        self._degreeSpin: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+        self._degreeSpin.setMinimum(1)
+        self._degreeSpin.setMaximum(5)
+        self._degreeSpin.setValue(2)
+
+        self._algoCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._algoCombo.addItems(["Cumsum (fast)", "SavGol (slow)"])
+        self._algoCombo.currentTextChanged.connect(lambda: self.ParamsChanged.emit())
+
         self._derivSpin.valueChanged.connect(lambda: self.ParamsChanged.emit())
         self._winSizeSpin.valueChanged.connect(lambda: self.ParamsChanged.emit())
+        self._degreeSpin.valueChanged.connect(lambda: self.ParamsChanged.emit())
         self.ParamsChanged.connect(self._updatePreprocessor)
         self._updatePreprocessor()
 
         self._bodywidget: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
         layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        layout.addRow("Smoothing Algorithmus:", self._algoCombo)
         layout.addRow("Derivative Order:", self._derivSpin)
         layout.addRow("Window Size:", self._winSizeSpin)
+        layout.addRow("Poly. Degree (SavGol):", self._degreeSpin)
         self._bodywidget.setLayout(layout)
 
         self._populateLayoutAndCreateIO()
@@ -321,16 +333,22 @@ class NodeSmoothDeriv(BaseNode):
     def toDict(self) -> dict:
         configDict: dict = super(NodeSmoothDeriv, self).toDict()
         configDict["params"] = {"derivative": self._derivSpin.value(),
-                                "winSize": self._winSizeSpin.value()}
+                                "winSize": self._winSizeSpin.value(),
+                                "poly": self._degreeSpin.value(),
+                                "mode": self._algoCombo.currentText()}
         return configDict
 
     def fromDict(self, paramsDict: dict) -> None:
         self._derivSpin.setValue(paramsDict["derivative"])
         self._winSizeSpin.setValue(paramsDict["winSize"])
+        self._degreeSpin.setValue(paramsDict["poly"])
+        self._algoCombo.setCurrentText(paramsDict["mode"])
 
     def _updatePreprocessor(self) -> None:
-        deriv, winSize = self._derivSpin.value(), self._winSizeSpin.value()
-        self._preprocessor.applyToSpectra = functools.partial(deriv_smooth, derivative=deriv, windowSize=winSize)
+        deriv, winSize, degree = self._derivSpin.value(), self._winSizeSpin.value(), self._degreeSpin.value()
+        mode = SmoothingMode.SavGol if self._algoCombo.currentText() == "SavGol (slow)" else SmoothingMode.Cumsum
+        self._preprocessor.applyToSpectra = functools.partial(deriv_smooth, mode=mode, polydegree=degree,
+                                                              derivative=deriv, windowSize=winSize)
         self._preprocessor.label = f"Smooth {winSize} + Derivative {deriv}"
 
 
