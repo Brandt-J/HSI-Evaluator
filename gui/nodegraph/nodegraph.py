@@ -106,7 +106,7 @@ class NodeGraph(QtWidgets.QGraphicsView):
         self._createNodesFromConfig(configList)
         self._createConnectionsFromConfig(configList)
 
-    def setInputSpecta(self, spectra: np.ndarray) -> None:
+    def setInputSpectra(self, spectra: np.ndarray) -> None:
         """
         Sets the spectra for the input node
         :param spectra: (NxM) array of N spectra with M wavelenghts

@@ -20,17 +20,23 @@ If not, see <https://www.gnu.org/licenses/>.
 import sys
 import time
 
+import cv2
 from PyQt5 import QtWidgets
 from unittest import TestCase
 import numpy as np
 from typing import *
 
 from classification.classifiers import SVM
-from classification.classifyProcedures import TrainingResult
+from classification.classifyProcedures import TrainingResult, ClassifyMode
 from dataObjects import Sample
+from particles import Particle
 from gui.classUI import ClassificationUI
 from gui.sampleview import SampleView
 from tests.test_specObj import getPreprocessors
+
+if TYPE_CHECKING:
+    from collections import Counter
+    from gui.graphOverlays import GraphView
 
 
 class TestClassifiers(TestCase):
@@ -52,9 +58,12 @@ class TestClassifiers(TestCase):
                                                  'class3': 2})
 
     def testTrainAndClassify(self) -> None:
-        classUI: ClassificationUI = ClassificationUI(MockMainWin())
+        mainWin: MockMainWin = MockMainWin()
+        classUI: ClassificationUI = ClassificationUI(mainWin)
         self.assertFalse(classUI._applyBtn.isEnabled())
         self.assertTrue(classUI._activeClf is not None)
+
+        # Train the SVM
         classUI._trainClassifier()
         while classUI._trainProcessWindow._process.is_alive():
             classUI._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
@@ -73,15 +82,54 @@ class TestClassifiers(TestCase):
 
         # Now we test inference
         self.assertTrue(classUI._applyBtn.isEnabled())
-        classUI._runClassification()
-        while classUI._inferenceProcessWindow._process.is_alive():
-            classUI._inferenceProcessWindow._checkOnProcess()
-            time.sleep(0.1)
+        for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
+            if mode == ClassifyMode.WholeImage:
+                classUI._radioParticles.setChecked(False)
+            else:
+                classUI._radioParticles.setChecked(True)
 
-        result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
-        self.assertTrue(type(result) == list)
-        self.assertEqual(len(result), 2)
-        classUI._onClassificationFinishedOrAborted(True)  # Again, we call it manually, signals don't work here..
+            classUI._runClassification()
+            while classUI._inferenceProcessWindow._process.is_alive():
+                classUI._inferenceProcessWindow._checkOnProcess()
+                time.sleep(0.1)
+
+            result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
+            self.assertTrue(type(result) == list)
+            self.assertEqual(len(result), 2)
+
+            # Check that everything is correct
+            if mode == ClassifyMode.WholeImage:
+                allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
+                self.assertTrue(allCorrect)
+
+            elif mode == ClassifyMode.Particles:
+                for sample in mainWin.getAllSamples():
+                    sampleParticles: List[Particle] = sample.getSampleData().getAllParticles()
+                    self.assertEqual(len(sampleParticles), 2)
+                    foundParticles: Set[str] = set()
+                    for particle in sampleParticles:
+                        res: 'Counter' = particle._result
+                        self.assertEqual(len(res), 1)  # only one class found
+                        for clsName in res.keys():  # Dict keys cannot be indexed, hence the loop...
+                            foundParticles.add(clsName)
+                    self.assertEqual(len(foundParticles), 2)
+                    self.assertTrue("class1" in foundParticles)
+                    self.assertTrue("class2" in foundParticles)
+
+    def graphViewsUpdatedProperly(self, mainWin: 'MockMainWin', finishedSamples: List['Sample']):
+        allCorrect: bool = True
+        for finishedSample in finishedSamples:
+            sampleCorrect: bool = False
+            for sample in mainWin.getAllSamples():
+                if sample.getName() == finishedSample.name:
+                    graphView: 'GraphView' = sample.getGraphView()
+                    self.assertTrue(graphView._classOverlay._overlayArr is not None)
+                    sampleCorrect = True
+                    break
+            if not sampleCorrect:
+                allCorrect = False
+                break
+        return allCorrect
 
 
 class MockMainWin:
@@ -90,8 +138,8 @@ class MockMainWin:
     def __init__(self):
         data1: Sample = Sample()
         data1.name = 'Sample1'
-        data1.classes2Indices = {"class1": set(np.arange(20)),
-                                 "class2": set(np.arange(20)+20)}
+        data1.classes2Indices = {"class1": set(np.arange(20) + 20),
+                                 "class2": set(np.arange(20) + 60)}
         sample1: SampleView = SampleView()
         sample1._trainCheckBox.setChecked(True)
         sample1._inferenceCheckBox.setChecked(True)
@@ -99,17 +147,19 @@ class MockMainWin:
 
         cube1: np.ndarray = createRandomCubeToClassLabels(self.cubeShape, data1.classes2Indices)
         sample1.setCube(cube1, np.arange(self.cubeShape[0]))
+        sample1.getSampleData().particleHandler._particles = getParticlesForCube(cube1)
 
         data2: Sample = Sample()
         data2.name = 'Sample2'
-        data2.classes2Indices = {"class1": set(np.arange(20)),
-                                 "class2": set(np.arange(20) + 20)}
+        data2.classes2Indices = {"class1": set(np.arange(20) + 20),
+                                 "class2": set(np.arange(20) + 60)}
         sample2: SampleView = SampleView()
         sample2._trainCheckBox.setChecked(True)
         sample2._inferenceCheckBox.setChecked(True)
         sample2.setSampleData(data2)
         cube2: np.ndarray = createRandomCubeToClassLabels(self.cubeShape, data2.classes2Indices)
         sample2.setCube(cube2, np.arange(self.cubeShape[0]))
+        sample2.getSampleData().particleHandler._particles = getParticlesForCube(cube2)
 
         self._samples: List['SampleView'] = [sample1, sample2]
 
@@ -124,8 +174,6 @@ class MockMainWin:
 
     def getAllSamples(self) -> List['SampleView']:
         return self._samples
-
-    # def getSampleOfName(self) -> 'SampleView':
 
     def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
         return {"class1": (0, 0, 0),
@@ -144,11 +192,26 @@ def createRandomCubeToClassLabels(cubeShape: np.ndarray, cls2Ind: Dict[str, Set[
     are increased by 1 (subsequently).
     """
     cube: np.ndarray = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2]) * 0.1
-    for i, indices in enumerate(cls2Ind.values()):
+    for i, indices in enumerate(cls2Ind.values(), start=1):
         j: int = 0
-        for x in range(cubeShape[1]):
-            for y in range(cubeShape[2]):
+        for y in range(cubeShape[1]):
+            for x in range(cubeShape[2]):
                 if j in indices:
-                    cube[:, x, y] += i
+                    cube[:, y, x] += i
                 j += 1
     return cube
+
+
+def getParticlesForCube(cube: np.ndarray) -> List[Particle]:
+    """
+    Takes the spectra cube and creates a particle list for it.
+    """
+    avgImg: np.ndarray = np.mean(cube, axis=0)
+    binImg: np.ndarray = np.zeros_like(avgImg)
+    binImg[avgImg > 1] = 1
+    contours, _ = cv2.findContours(binImg.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+
+    particles: List[Particle] = []
+    for cnt in contours:
+        particles.append(Particle(cnt))
+    return particles

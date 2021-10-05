@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+from copy import copy
 from typing import *
 import hashlib
 import os
@@ -24,6 +24,10 @@ import numpy as np
 
 from spectraObject import SpectraObject, getSpectraFromIndices
 from legacyConvert import currentSampleVersion, currentViewVersion
+from particles import ParticleHandler
+
+if TYPE_CHECKING:
+    from particles import Particle
 
 
 class Sample:
@@ -34,7 +38,8 @@ class Sample:
         self.filePath: str = ''  # Path to the spectra cube (.npy file)
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object
-        self.classOverlay: Union[None, np.ndarray] = None  # RGBA Overlay used for displaying predicted class labels
+        self.tmpClassResults: List[str] = []
+        self.particleHandler: ParticleHandler = ParticleHandler()
 
     def setDefaultName(self) -> None:
         if len(self.filePath) > 0:
@@ -58,6 +63,12 @@ class Sample:
                 break
         return indices
 
+    def getAllParticles(self) -> List['Particle']:
+        """
+        Returns a list of particles found in the sample.
+        """
+        return self.particleHandler.getParticles()
+
     def __eq__(self, other) -> bool:
         isEqual: bool = False
         if type(other) == Sample:
@@ -77,8 +88,32 @@ class Sample:
             spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getPreprocessedCubeIfPossible())
         return spectra
 
-    def setClassOverlay(self, classImage: np.ndarray) -> None:
-        self.classOverlay = classImage
+    def getPreprocessedSpecCube(self) -> np.ndarray:
+        """
+        Returns a copy of the preprocessed spectra cube.
+        """
+        return self.specObj.getPreprocessedCubeIfPossible().copy()
+
+    def setTmpClassResults(self, assignments: List[str]) -> None:
+        self.tmpClassResults = assignments
+
+    def getAndResetTmpClassResults(self) -> List[str]:
+        assert len(self.tmpClassResults) > 0, f"Temp. Assignments for sample {self.name} where not set and cannot be retrieved."
+        resulst: List[str] = copy(self.tmpClassResults)
+        self.tmpClassResults = []
+        return resulst
+
+    def resetParticleResults(self) -> None:
+        """
+        Resets the results of all particles. Called before initiating a new run of classification.
+        """
+        self.particleHandler.resetParticleResults()
+
+    def getParticleHandler(self) -> 'ParticleHandler':
+        """
+        Returns a reference to the particle handler.
+        """
+        return self.particleHandler
 
 
 class View:

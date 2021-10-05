@@ -16,8 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import time
-
 import cv2
 import numpy as np
 import numba
@@ -27,9 +25,13 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PIL import Image, ImageEnhance
 from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
 
+from gui.particleUI import getContourItemForParticle
+
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
     from sampleview import SampleView
+    from particles import Particle, ParticleHandler
+    from gui.particleUI import ParticleContour
 
 
 class GraphView(QtWidgets.QGraphicsView):
@@ -46,6 +48,7 @@ class GraphView(QtWidgets.QGraphicsView):
         self._item = QtWidgets.QGraphicsPixmapItem()
         self._selectionOverlay: SelectionOverlay = SelectionOverlay()
         self._classOverlay: ClassificationOverlay = ClassificationOverlay()
+        self._particleItems: List['ParticleContour'] = []
         scene.addItem(self._item)
         scene.addItem(self._selectionOverlay)
         scene.addItem(self._classOverlay)
@@ -72,6 +75,7 @@ class GraphView(QtWidgets.QGraphicsView):
         Sets the current selection according to the provided classes2Ind dictionary.
         :param classes2Ind: Dict[classname: PixelIndices]
         """
+        self._selectionOverlay.deselectAll()
         for cls, indices in classes2Ind.items():
             color: Tuple[int, int, int] = self._mainWin.getColorOfClass(cls)
             self._selectionOverlay.addPixelsToSelection(indices, color)
@@ -87,6 +91,38 @@ class GraphView(QtWidgets.QGraphicsView):
         Hides current selections, without commiting a new selection.
         """
         self._selectionOverlay.deselectAll()
+
+    def setParticles(self, particles: List['Particle']) -> None:
+        """
+        Takes a list of particles and creates visual objects accordingly. Previously present particles are removed.
+        """
+        for item in self._particleItems:
+            self.scene().removeItem(item)
+        self._particleItems = []
+
+        for particle in particles:
+            newConcour: 'ParticleContour' = getContourItemForParticle(particle)
+            self._particleItems.append(newConcour)
+            self.scene().addItem(newConcour)
+
+    def setParticleVisibility(self, visible: bool) -> None:
+        """
+        Sets visibility of the particle contour items.
+        """
+        for item in self._particleItems:
+            item.setVisible(visible)
+
+    def updateParticleColors(self, particleHandler: 'ParticleHandler'):
+        """
+        Updates the colors of the particle items in the graphics scene.
+        """
+        for particleItem in self._particleItems:
+            assignment: str = particleHandler.getAssigmentOfParticleOfID(particleItem.getParticleID())
+            if assignment == "unknown":
+                color: Tuple[int, int, int] = (20, 20, 20)
+            else:
+                color: Tuple[int, int, int] = self._mainWin.getColorOfClass(assignment)
+            particleItem.setColor(color)
 
     def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
         """
@@ -376,6 +412,23 @@ def getBrightOrDarkIndices(cube: np.ndarray, maxBrightness: float, threshold: in
     return set(np.where(binImg.flatten())[0])
 
 
+def getThresholdedImage(cube: np.ndarray, maxBrightness: float, threshold: int, bright: bool = True) -> np.ndarray:
+    """
+    Returns a thresholded image of the given spec cube.
+    :param cube: shape (K, M, N) cube of MxN spectra with K wavelenghts
+    :param maxBrightness: Max brightness value to use for clipping the cube while converting to grayscale image
+    :param threshold: The threshold value (0 - 255) to use for thresholding
+    :param bright: If True, the bright pixel indices are returned, otherwise the dark ones
+    :return Set of Pixel Indices
+    """
+    avgImg: np.ndarray = np.mean(cube2RGB(cube, maxBrightness), axis=2)
+    if bright:
+        thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY)
+    else:
+        thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY_INV)
+    return binImg
+
+
 class ClassificationOverlay(QtWidgets.QGraphicsObject):
     def __init__(self):
         super(ClassificationOverlay, self).__init__()
@@ -414,9 +467,11 @@ class ClassificationOverlay(QtWidgets.QGraphicsObject):
 class ThresholdSelector(QtWidgets.QWidget):
     """
     Widget to determine a threshold for selecting bright or dark areas of the image.
+    The thresholded image can also be used for particle detection.
     """
     ThresholdChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(int, bool)
     ThresholdSelected: QtCore.pyqtSignal = QtCore.pyqtSignal(int, bool)
+    ParticleDetectionRequired: QtCore.pyqtSignal = QtCore.pyqtSignal(int, bool)
     SelectionCancelled: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self, grayImage: np.ndarray):
@@ -435,6 +490,7 @@ class ThresholdSelector(QtWidgets.QWidget):
         axes.set_yticks([])
         axes.set_xlim(0, 255)
         axes.axis("off")
+        fig.tight_layout()
         self._canvas.draw()
         self._slider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._slider.setMaximum(255)
@@ -451,9 +507,12 @@ class ThresholdSelector(QtWidgets.QWidget):
         radioLayout.addWidget(self._radioBright)
         radioLayout.addStretch()
 
-        acceptBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Accept")
+        acceptBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Use as Selection")
         acceptBtn.released.connect(self._accept)
         acceptBtn.setMaximumWidth(120)
+
+        particlesBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Use for Particle Detection")
+        particlesBtn.released.connect(self._emitForParticleSelection)
 
         cancelBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Cancel")
         cancelBtn.released.connect(lambda: self.SelectionCancelled.emit())
@@ -461,8 +520,9 @@ class ThresholdSelector(QtWidgets.QWidget):
 
         btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         btnLayout.addWidget(acceptBtn)
-        btnLayout.addWidget(cancelBtn)
+        btnLayout.addWidget(particlesBtn)
         btnLayout.addStretch()
+        btnLayout.addWidget(cancelBtn)
 
         layout.addWidget(QtWidgets.QLabel("Use the slider to select the threshold."))
         layout.addWidget(self._slider)
@@ -478,6 +538,9 @@ class ThresholdSelector(QtWidgets.QWidget):
 
     def _emitChangedSignal(self) -> None:
         self.ThresholdChanged.emit(self._slider.value(), self._radioBright.isChecked())
+
+    def _emitForParticleSelection(self) -> None:
+        self.ParticleDetectionRequired.emit(self._slider.value(), self._radioBright.isChecked())
 
     def _accept(self) -> None:
         self.ThresholdSelected.emit(self._slider.value(), self._radioBright.isChecked())
