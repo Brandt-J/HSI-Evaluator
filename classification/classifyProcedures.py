@@ -138,19 +138,35 @@ def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'Class
     :param mode: The mode defining whether to classify the whole image or only the particles
     :param dataqueue: The dataqueue to push errors to
     """
+    logger: 'Logger' = getLogger("Classifier Application")
     if mode == ClassifyMode.WholeImage:
         specObject: 'SpectraObject' = sample.specObj
         specArr = specObject.getPreprocessedSpecArr()
         try:
             assignments: np.ndarray = classifier.predict(specArr)
         except Exception as e:
-            error: ClassificationError = ClassificationError("Error during classifier inference: {e}")
+            error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
             dataqueue.put(error)
             raise error
+        else:
+            sample.setTmpClassResults(assignments)
 
-        sample.setTmpClassResults(assignments)
-    # elif mode == ClassifyMode.Particles:
-    #     particles: List['Particle'] = sample.getAllParticles()
+    elif mode == ClassifyMode.Particles:
+        sample.resetParticleResults()
+        particles: List['Particle'] = sample.getAllParticles()
+        cube: np.ndarray = sample.getPreprocessedSpecCube()
+        if len(particles) == 0:
+            logger.warning(f"No particles found in sample {sample.name}, cannot classify them..")
+        for particle in particles:
+            specArr: np.ndarray = particle.getSpectra(cube)
+            try:
+                assignments: np.ndarray = classifier.predict(specArr)
+            except Exception as e:
+                error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
+                dataqueue.put(error)
+                raise error
+            else:
+                particle.setResultFromAssignments(assignments)
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float,

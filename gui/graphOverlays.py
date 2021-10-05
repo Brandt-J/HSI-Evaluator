@@ -30,7 +30,7 @@ from gui.particleUI import getContourItemForParticle
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
     from sampleview import SampleView
-    from particles import Particle
+    from particles import Particle, ParticleHandler
     from gui.particleUI import ParticleContour
 
 
@@ -75,6 +75,7 @@ class GraphView(QtWidgets.QGraphicsView):
         Sets the current selection according to the provided classes2Ind dictionary.
         :param classes2Ind: Dict[classname: PixelIndices]
         """
+        self._selectionOverlay.deselectAll()
         for cls, indices in classes2Ind.items():
             color: Tuple[int, int, int] = self._mainWin.getColorOfClass(cls)
             self._selectionOverlay.addPixelsToSelection(indices, color)
@@ -110,6 +111,18 @@ class GraphView(QtWidgets.QGraphicsView):
         """
         for item in self._particleItems:
             item.setVisible(visible)
+
+    def updateParticleColors(self, particleHandler: 'ParticleHandler'):
+        """
+        Updates the colors of the particle items in the graphics scene.
+        """
+        for particleItem in self._particleItems:
+            assignment: str = particleHandler.getAssigmentOfParticleOfID(particleItem.getParticleID())
+            if assignment == "unknown":
+                color: Tuple[int, int, int] = (20, 20, 20)
+            else:
+                color: Tuple[int, int, int] = self._mainWin.getColorOfClass(assignment)
+            particleItem.setColor(color)
 
     def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
         """
@@ -477,6 +490,7 @@ class ThresholdSelector(QtWidgets.QWidget):
         axes.set_yticks([])
         axes.set_xlim(0, 255)
         axes.axis("off")
+        fig.tight_layout()
         self._canvas.draw()
         self._slider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._slider.setMaximum(255)

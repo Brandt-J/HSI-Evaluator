@@ -40,7 +40,7 @@ class TestParticleHandler(TestCase):
         cube[:, 35:40, 35:40] = valPart2
 
         contours, hierarchy = cv2.findContours(binImg, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
-        particleList: List[Particle] = [Particle(cnt) for cnt in contours]
+        particleList: List[Particle] = [Particle(ParticleHandler.getNewParticleID(), cnt) for cnt in contours]
         self.assertEqual(len(particleList), 2)
 
         specArr1, specArr2 = particleList[0].getSpectra(cube), particleList[1].getSpectra(cube)
@@ -56,3 +56,15 @@ class TestParticleHandler(TestCase):
         self.assertEqual(specArr2.shape[1], cube.shape[0])
         self.assertEqual(len(specVals2), 1)
         self.assertEqual(specVals2[0], valPart1)
+
+    def test_getAssignment(self) -> None:
+        result: List[str] = ['class1']*9 + ['class2']*1
+        particle: Particle = Particle(0, None)
+        self.assertEqual(particle.getAssignment(), "unknown")
+
+        particle.setResultFromAssignments(result)
+        particle.setThreshold(0.9)
+        self.assertEqual(particle.getAssignment(), "class1")
+
+        particle.setThreshold(0.95)
+        self.assertEqual(particle.getAssignment(), "unknown")

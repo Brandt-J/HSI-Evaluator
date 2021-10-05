@@ -39,40 +39,48 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         self.setZValue(1)
         self.setPos(0, 0)
         self.brect = QtCore.QRectF(0, 0, 1, 1)
-        self.particle: Union[None, 'Particle'] = None
-        self.polygon: Union[None, QtGui.QPolygonF] = None
-        self.color = QtGui.QColor(180, 255, 180, 200)
+        self._particleID: int = -1
+        self._polygon: Union[None, QtGui.QPolygonF] = None
+        self._color = QtGui.QColor(180, 255, 180, 200)
+        self._alpha: float = 0.75
 
     def setupParticle(self, particle: 'Particle') -> None:
         """
         Calculates the bounding rect (needed for drawing the QGraphicsView) and converts the contourdata to a polygon.
         :return:
         """
-        self.particle = particle
+        self._particleID = particle.getID()
         contourData = particle.getContour()
-        self.polygon = QtGui.QPolygonF()
+        self._polygon = QtGui.QPolygonF()
         x0 = contourData[:, 0, 0].min()
         x1 = contourData[:, 0, 0].max()
         y0 = contourData[:, 0, 1].min()
         y1 = contourData[:, 0, 1].max()
         for point in contourData:
-            self.polygon.append(QtCore.QPointF(point[0, 0], point[0, 1]))
+            self._polygon.append(QtCore.QPointF(point[0, 0], point[0, 1]))
 
         self.brect.setCoords(x0, y0, x1, y1)
 
     def boundingRect(self):
         return self.brect
 
-    def setColor(self, color: QtGui.QColor):
+    def getParticleID(self) -> int:
         """
-        sets color of contour
-        :param QtGui.QColor color:
+        Returns the particle's id.
+        """
+        return self._particleID
+
+    def setColor(self, color: Tuple[int, int, int]) -> None:
+        """
+        Sets color of contour
+        :param color: Tuple[R: int, G: int, B: int]
         :return:
         """
-        self.color = color
+        self._color = QtGui.QColor(color[0], color[1], color[2])
 
     def paint(self, painter, option, widget):
-        if self.polygon is not None:
+        if self._polygon is not None:
             painter.setPen(QtCore.Qt.green)
-            painter.setBrush(self.color)
-            painter.drawPolygon(self.polygon)
+            painter.setBrush(self._color)
+            painter.setOpacity(self._alpha)
+            painter.drawPolygon(self._polygon)

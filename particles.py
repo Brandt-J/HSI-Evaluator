@@ -26,28 +26,79 @@ from particledetection.detection import getParticleContours
 
 
 class ParticleHandler:
+    __particleID: int = -1
+
+    @classmethod
+    def getNewParticleID(cls) -> int:
+        """
+        Returns a unique particle id.
+        """
+        cls.__particleID += 1
+        return cls.__particleID
+
     def __init__(self):
-        self._particles: List['Particle'] = []
+        self._particles: Dict[int, 'Particle'] = {}  # key: unique id, value: Particle object
 
     def getParticlesFromImage(self, binaryImage: np.ndarray) -> None:
         """
         Takes a binary image and finds particles.
         """
         contours: List[np.ndarray] = getParticleContours(binaryImage)
-        self._particles = [Particle(cnt) for cnt in contours]
+        self._particles = {}
+        for cnt in contours:
+            newID: int = ParticleHandler.getNewParticleID()
+            self._particles[newID] = Particle(newID, cnt)
 
     def getParticles(self) -> List['Particle']:
         """
         Returns the current list of particles.
         """
-        return self._particles
+        return list(self._particles.values())
+
+    def getAssigmentOfParticleOfID(self, id: int) -> str:
+        """
+        Returns the assignment of the partice specified by the id.
+        :param id: The particle's id
+        :return: assignment
+        """
+        return self._particles[id].getAssignment()
+
+    def resetParticleResults(self) -> None:
+        """
+        Resets all particle results
+        """
+        for particle in self._particles.values():
+            particle.resetResult()
 
 
 @dataclass
 class Particle:
+    __id: int
     _contour: np.ndarray
-    _threshold: float = 0.75
+    _threshold: float = 0.5
     _result: Union[None, Counter] = None
+
+    def getID(self) -> int:
+        return self.__id
+
+    def getAssignment(self) -> str:
+        """
+        Returns the assignment string according the currently set threshold.
+        """
+        assignment: str = "unknown"
+        if self._result is not None:
+            numTotal: int = sum(self._result.values())
+            mostFreqClass, highestCount = self._result.most_common(8)[0]
+            if highestCount / numTotal >= self._threshold:
+                assignment = mostFreqClass
+
+        return assignment
+
+    def setThreshold(self, newThreshold: float) -> None:
+        """
+        Sets the new threshold for determining the assignment according the result.
+        """
+        self._threshold = newThreshold
 
     def getContour(self) -> np.ndarray:
         """
@@ -72,3 +123,9 @@ class Particle:
         Sets the results counter with the given assignments.
         """
         self._result = Counter(assignments)
+
+    def resetResult(self) -> None:
+        """
+        Resets the result.
+        """
+        self._result = None

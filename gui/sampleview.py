@@ -528,6 +528,9 @@ class SampleView(QtWidgets.QMainWindow):
         return self._maxBrightnessSpinbox.value()
 
     def setSampleData(self, data: 'Sample') -> None:
+        """
+        Sets the sample data.
+        """
         self._sampleData = data
 
     def getSaveFileName(self) -> str:
@@ -538,6 +541,12 @@ class SampleView(QtWidgets.QMainWindow):
         Resets the current classification overlay.
         """
         self._graphView.resetClassImage()
+
+    def updateParticlesInGraphUI(self) -> None:
+        """
+        Forces an update of particles in the graph ui from the currently set sample data.
+        """
+        self._graphView.updateParticleColors(self._sampleData.getParticleHandler())
 
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()

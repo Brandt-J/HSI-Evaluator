@@ -26,6 +26,9 @@ from spectraObject import SpectraObject, getSpectraFromIndices
 from legacyConvert import currentSampleVersion, currentViewVersion
 from particles import ParticleHandler
 
+if TYPE_CHECKING:
+    from particles import Particle
+
 
 class Sample:
     """Data Container for a sample view"""
@@ -36,7 +39,6 @@ class Sample:
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object
         self.tmpClassResults: List[str] = []
-        # self.classOverlay: Union[None, np.ndarray] = None  # RGBA Overlay used for displaying predicted class labels
         self.particleHandler: ParticleHandler = ParticleHandler()
 
     def setDefaultName(self) -> None:
@@ -61,6 +63,12 @@ class Sample:
                 break
         return indices
 
+    def getAllParticles(self) -> List['Particle']:
+        """
+        Returns a list of particles found in the sample.
+        """
+        return self.particleHandler.getParticles()
+
     def __eq__(self, other) -> bool:
         isEqual: bool = False
         if type(other) == Sample:
@@ -80,6 +88,12 @@ class Sample:
             spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getPreprocessedCubeIfPossible())
         return spectra
 
+    def getPreprocessedSpecCube(self) -> np.ndarray:
+        """
+        Returns a copy of the preprocessed spectra cube.
+        """
+        return self.specObj.getPreprocessedCubeIfPossible().copy()
+
     def setTmpClassResults(self, assignments: List[str]) -> None:
         self.tmpClassResults = assignments
 
@@ -88,6 +102,18 @@ class Sample:
         resulst: List[str] = copy(self.tmpClassResults)
         self.tmpClassResults = []
         return resulst
+
+    def resetParticleResults(self) -> None:
+        """
+        Resets the results of all particles. Called before initiating a new run of classification.
+        """
+        self.particleHandler.resetParticleResults()
+
+    def getParticleHandler(self) -> 'ParticleHandler':
+        """
+        Returns a reference to the particle handler.
+        """
+        return self.particleHandler
 
 
 class View:

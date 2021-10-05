@@ -28,7 +28,6 @@ from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 from dataObjects import Sample
 import classification.classifyProcedures as cp
-# import getClassifiers, trainClassifier, classifySamples, TrainingResult, ClassifyMode
 from classification.classifiers import ClassificationError, BaseClassifier
 
 if TYPE_CHECKING:
@@ -274,8 +273,6 @@ class ColorHandler:
     def getColorOfClassName(self, className: str) -> Tuple[int, int, int]:
         if className not in self._name2color:
             self._defineNewColor(className)
-            # raise KeyError(f"The requested className does not exist in dictionary. "
-            #                f"Available entries: {self._name2color.keys()}")
 
         return self._name2color[className]
 
@@ -397,6 +394,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
             assert type(classifiedSamples) == list
             if self._radioImage.isChecked():
                 self._updateClassImages(classifiedSamples)
+            else:
+                self._updateParticleClasses(classifiedSamples)
         else:
             self._logger.info("Classifier Inference finished without getting a result")
 
@@ -470,7 +469,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._applyBtn.released.connect(self._runClassification)
         self._applyBtn.setDisabled(True)
 
-        self._radioImage.setChecked(True)
+        self._radioParticles.setChecked(True)
 
         self._clfCombo.addItems([clf.title for clf in self._classifiers])
         self._clfCombo.currentTextChanged.connect(self._activateClassifier)
@@ -526,6 +525,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
             sampleFound: bool = False
             for sample in allSamples:
                 if sample.getName() == finishedSample.name:
+                    sample.setSampleData(finishedSample)
                     graphView: 'GraphView' = sample.getGraphView()
                     specObj: 'SpectraObject' = sample.getSpecObj()
                     cubeShape = specObj.getPreprocessedCubeIfPossible().shape
@@ -535,6 +535,22 @@ class ClassificationUI(QtWidgets.QGroupBox):
                     graphView.updateClassImage(clfImg)
                     sampleFound = True
                     break
+            assert sampleFound, f'Could not find sample {sample.getName()} in present samples'
+
+    def _updateParticleClasses(self, finishedSamples: List['Sample']) -> None:
+        """
+        Takes a list of finished samples and applies the particle results to the visual instances.
+        """
+        allSamples: List['SampleView'] = self._mainWin.getAllSamples()
+        for finishedSample in finishedSamples:
+            sampleFound: bool = False
+            for sample in allSamples:
+                if sample.getName() == finishedSample.name:
+                    sample.setSampleData(finishedSample)
+                    sample.updateParticlesInGraphUI()
+                    sampleFound = True
+                    break
+
             assert sampleFound, f'Could not find sample {sample.getName()} in present samples'
 
 
