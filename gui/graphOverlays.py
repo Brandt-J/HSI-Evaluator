@@ -222,8 +222,10 @@ class GraphView(QtWidgets.QGraphicsView):
         if event.button() == QtCore.Qt.MiddleButton:
             self._startDrag = event.pos()
         elif event.button() == QtCore.Qt.LeftButton and self._mainWin is not None:
-            self._selectionOverlay.startNewSelection(self.mapToScene(event.pos()), self._mainWin.getCurrentColor())
-            self._selecting = True
+            pos: QtCore.QPoint = self.mapToScene(event.pos())
+            if pos.x() < self._origCube.shape[2] and pos.y() < self._origCube.shape[1]:
+                self._selectionOverlay.startNewSelection(pos, self._mainWin.getCurrentColor())
+                self._selecting = True
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._startDrag is not None:
@@ -242,7 +244,7 @@ class GraphView(QtWidgets.QGraphicsView):
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
             self._startDrag = None
-        elif event.button() == QtCore.Qt.LeftButton and self._mainWin is not None:
+        elif event.button() == QtCore.Qt.LeftButton and self._mainWin is not None and self._selecting:
             pos: QtCore.QPoint = self.mapToScene(event.pos())
             self._selectionOverlay.updateSelection(pos, self._mainWin.getCurrentColor())
             self._selecting = False
