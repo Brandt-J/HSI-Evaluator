@@ -84,9 +84,11 @@ class TestClassifiers(TestCase):
         self.assertTrue(classUI._applyBtn.isEnabled())
         for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
             if mode == ClassifyMode.WholeImage:
+                classUI._radioImage.setChecked(True)
                 classUI._radioParticles.setChecked(False)
             else:
                 classUI._radioParticles.setChecked(True)
+                classUI._radioImage.setChecked(False)
 
             classUI._runClassification()
             while classUI._inferenceProcessWindow._process.is_alive():
@@ -202,7 +204,7 @@ def createRandomCubeToClassLabels(cubeShape: np.ndarray, cls2Ind: Dict[str, Set[
     return cube
 
 
-def getParticlesForCube(cube: np.ndarray) -> List[Particle]:
+def getParticlesForCube(cube: np.ndarray) -> Dict[int, Particle]:
     """
     Takes the spectra cube and creates a particle list for it.
     """
@@ -211,7 +213,7 @@ def getParticlesForCube(cube: np.ndarray) -> List[Particle]:
     binImg[avgImg > 1] = 1
     contours, _ = cv2.findContours(binImg.astype(np.uint8), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
 
-    particles: List[Particle] = []
-    for cnt in contours:
-        particles.append(Particle(cnt))
+    particles: Dict[int, Particle] = {}
+    for i, cnt in enumerate(contours):
+        particles[i] = Particle(i, cnt)
     return particles

@@ -48,7 +48,6 @@ def loadCube(fname: str, errorPixelThreshold: float = 1000) -> Tuple[np.ndarray,
         fname = fname.replace("npy", "hdr")
     assert os.path.exists(fname), f"File {fname} not found for loading the cube."
 
-
     if fname.endswith(".npy"):
         cube: np.ndarray = np.load(fname)
         wavelengths: np.ndarray = np.arange(cube.shape[0])

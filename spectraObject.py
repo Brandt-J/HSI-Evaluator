@@ -40,6 +40,25 @@ class SpectraObject:
         self._logger: 'Logger' = getLogger("SpectraObject")
         self._backgroundIndices: Set[int] = set()
 
+    def __eq__(self, other):
+        isEqual: bool = False
+        if type(other) == type(self):
+            dict1, dict2 = self.__dict__, other.__dict__
+            if dict1.keys() == dict2.keys():
+                allElementsTrue: bool = True
+                for key in dict1.keys():
+                    if type(dict1[key]) == np.ndarray:
+                        if not np.array_equal(dict1[key], dict2[key]):
+                            allElementsTrue = False
+                            break
+                    else:
+                        if not dict1[key] == dict2[key]:
+                            allElementsTrue = False
+                            break
+                isEqual = allElementsTrue
+
+        return isEqual
+
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray = None) -> None:
         self._cube = cube
         if wavelengths is None:
@@ -164,7 +183,7 @@ class SpectraObject:
         Convenience function to get default wavelengths if None were set...
         :return:
         """
-        self._wavelengths = np.linspace(1115, 1671, cube.shape[0])
+        self._wavelengths = np.arange(cube.shape[0])
 
     def _getSpecArray(self, indices: List[Tuple[int, int]], preprocessed: bool) -> np.ndarray:
         """

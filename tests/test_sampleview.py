@@ -234,20 +234,6 @@ class TestSampleView(TestCase):
             self.assertEqual(savedView.samples[0], sample1._sampleData)
             self.assertEqual(savedView.samples[1], sample2._sampleData)
 
-            # TODO: REIMPLEMENT
-            # self.assertEqual(len(savedView.processStack), len(preprocSelector._selected))
-            # for i in range(len(savedView.processStack)):
-            #     processorName: str = savedView.processStack[i]
-            #     self.assertEqual(processorName, preprocSelector._selected[i].text())
-
-            # reset preprocessing selector and multiview, then load the view
-            # multiView._sampleviews = []
-            # imgClf._loadView(viewPath)
-            # self.assertEqual(len(multiView._sampleviews), 2)
-            # self.assertEqual(multiView._sampleviews[0].getSampleData(), savedView.samples[0])
-            # self.assertEqual(multiView._sampleviews[1].getSampleData(), savedView.samples[1])
-            # self.assertEqual([lbl.text() for lbl in preprocSelector._selected], selectedNames)
-
     def test_loadFromSample(self) -> None:
         imgClf: MainWindow = MainWindow()
         imgClf._preprocSelector._showNoSpectraWarning = lambda: print('no spectra, no preprocessed spectra preview..')
@@ -255,7 +241,8 @@ class TestSampleView(TestCase):
         sample.name = 'Sample1'
         sample.classes2Indices = {'Background': {1, 2, 3, 4},
                                   'class2': {5, 6, 7, 8}}
-        testCube: np.ndarray = np.random.rand(3, 10, 10)
+        testCube: np.ndarray = np.random.rand(3, 5, 5)
+        sample.specObj.setCube(testCube)
 
         multiView: MultiSampleView = imgClf._multiSampleView
         self.assertTrue(len(multiView._sampleviews) == 0)
@@ -273,8 +260,14 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getPreprocessedCubeIfPossible(), testCube))
         self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
 
-        createdSample._sampleData.specObj = None  # We now set these specObjs to None. These are at different memory locations...
+        # make sure that these objects are identical
+        self.assertTrue(createdSample._sampleData.specObj == sample.specObj)
+        self.assertDictEqual(createdSample._sampleData.particleHandler.__dict__, sample.particleHandler.__dict__)
+        # We now set them specObjs to None. These are at different memory locations and would make the assertDictEqual fail
+        createdSample._sampleData.specObj = None
         sample.specObj = None
+        createdSample._sampleData.particleHandler = None
+        sample.particleHandler = None
         self.assertDictEqual(sample.__dict__, createdSample.getSampleData().__dict__)
         classCreator: ClassCreator = imgClf._clsCreator
         presentClasses: List[str] = [cls.name for cls in classCreator._classes]

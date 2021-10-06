@@ -416,6 +416,7 @@ class SampleView(QtWidgets.QMainWindow):
         cube, wavelengths = loadCube(self._sampleData.filePath)
         self.setCube(cube, wavelengths)
         self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+        self._graphView.setParticles(self._sampleData.getAllParticles())
         self._setupWidgetsFromSampleData()
         self._mainWindow.updateClassCreatorClasses()
 
@@ -711,9 +712,6 @@ class SampleView(QtWidgets.QMainWindow):
         self._graphView.updateImage(self._maxBrightnessSpinbox.value(),
                                     self._brightnessSlider.value(),
                                     self._contrastSlider.value() / self._maxContrast)
-
-    def _getSaveFileName(self) -> str:
-        return os.path.join(getAppFolder(), 'saveFiles', self._name + '_savefile.pkl')
 
     @QtCore.pyqtSlot(str, set)
     def _addNewSelection(self, selectedClass: str,  selectedIndices: Set[int]) -> None:
