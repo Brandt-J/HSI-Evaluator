@@ -241,7 +241,7 @@ class TestSampleView(TestCase):
         sample.name = 'Sample1'
         sample.classes2Indices = {'Background': {1, 2, 3, 4},
                                   'class2': {5, 6, 7, 8}}
-        testCube: np.ndarray = np.random.rand(3, 5, 5)
+        testCube: np.ndarray = np.random.rand(10, 5, 5)
         sample.specObj.setCube(testCube)
 
         multiView: MultiSampleView = imgClf._multiSampleView
