@@ -24,6 +24,7 @@ from multiprocessing import Queue, Event
 from dataclasses import dataclass
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
+from concurrent.futures import ProcessPoolExecutor
 
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
@@ -108,37 +109,35 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is Set if the process should be cancelled
     """
-    logger: 'Logger' = getLogger("Classifier Application")
-    finishedSamples: List['Sample'] = []
-    for i, sample in enumerate(inferenceSampleList):
-        t0 = time.time()
-        logger.debug(f"Starting classifcation on {sample.name}")
-
-        if stopEvent.is_set():
-            return
-
-        classifySpectra(sample, classifier, mode, queue)
-
-        if stopEvent.is_set():
-            return
-
-        logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
-                     f' ({i+1} of {len(inferenceSampleList)} samples done)')
-        finishedSamples.append(sample)
-        queue.put("finished sample")
-
+    infData: List['InferenceData'] = [InferenceData(sample, classifier, mode) for sample in inferenceSampleList]
+    with ProcessPoolExecutor(max_workers=8) as executor:
+        finishedSamples: List['Sample'] = list(executor.map(classifySpectra, infData))
+    for _ in finishedSamples:
+        queue.put("finished Sample")
     queue.put(finishedSamples)
 
 
-def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'ClassifyMode', dataqueue: 'Queue'):
+@dataclass
+class InferenceData:
+    """
+    Dataclass for summarizing data required for inference.
+    """
+    sample: 'Sample'
+    clf: 'BaseClassifier'
+    mode: 'ClassifyMode'
+
+
+def classifySpectra(inferenceData: 'InferenceData') -> 'Sample':
     """
     Estimates the classes for each spectrum
-    :param sample: The sample to use
-    :param classifier: The classifier to use
-    :param mode: The mode defining whether to classify the whole image or only the particles
-    :param dataqueue: The dataqueue to push errors to
+    :param inferenceData: The inferenceData Object to use
+    :return: completed sample object
     """
     logger: 'Logger' = getLogger("Classifier Application")
+    sample: 'Sample' = inferenceData.sample
+    mode: ClassifyMode = inferenceData.mode
+    classifier: 'BaseClassifier' = inferenceData.clf
+
     if mode == ClassifyMode.WholeImage:
         specObject: 'SpectraObject' = sample.specObj
         specArr = specObject.getPreprocessedSpecArr()
@@ -146,7 +145,6 @@ def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'Class
             assignments: np.ndarray = classifier.predict(specArr)
         except Exception as e:
             error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
-            dataqueue.put(error)
             raise error
         else:
             sample.setTmpClassResults(assignments)
@@ -163,10 +161,11 @@ def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'Class
                 assignments: np.ndarray = classifier.predict(specArr)
             except Exception as e:
                 error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
-                dataqueue.put(error)
                 raise error
             else:
                 particle.setResultFromAssignments(assignments)
+
+    return sample
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float,
