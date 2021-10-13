@@ -367,7 +367,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._downloadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
 
         self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
-        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for inference")
+        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
         self._selectByBrightnessBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Brightness Select/\nParticleDetection")
         self._toggleParticleCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Show Particles")
         self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
