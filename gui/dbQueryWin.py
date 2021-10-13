@@ -156,7 +156,8 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         optnDict: Dict[str, List[str]] = {"assignment": self._dbConn.getClassNames(),
                                           "sample": self._dbConn.getSampleNames(),
                                           "particle_state": self._dbConn.getParticleStates(),
-                                          "size_class": self._dbConn.getParticleSizes()}
+                                          "size_class": self._dbConn.getParticleSizes(),
+                                          "color": self._dbConn.getColors()}
         return optnDict
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
@@ -279,8 +280,5 @@ if __name__ == '__main__':
     import sys
     app = QtWidgets.QApplication(sys.argv)
     queryWin: DatabaseQueryWindow = DatabaseQueryWindow()
-    # queryWin: QueryGenerator = QueryGenerator({"Group1": [f"optn {i+1}" for i in range(5)],
-    #                                            "Group2": [f"optn {i+1}" for i in range(4)],
-    #                                            "Group3": [f"optn {i+1}" for i in range(7)]})
     queryWin.show()
     app.exec_()

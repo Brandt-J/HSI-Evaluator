@@ -54,11 +54,11 @@ class TestDatabase(TestCase):
         specDict: Dict[str, np.ndaray] = {nameCls1: np.random.rand(numCls1, specLength),
                                           nameCls2: np.random.rand(numCls2, specLength)}
         wavelengths: np.ndarray = np.arange(specLength)
-        details = SpecDetails(10, 0.5, 5.3, "SWIR_LM", "pristine", "unknown", "SQLTestSample")
+        details = SpecDetails(10, 0.5, 5.3, "SWIR_LM", "pristine", "unknown", "SQLTestSample", "white")
         connection: DBConnection = DBConnection()
 
         self.assertTrue(details.sampleName not in connection.getSampleNames())
-        # # Create the sample entry
+        # Create the sample entry
         connection.createNewSample(details.sampleName, details.sampleName)
         self.assertTrue(details.sampleName in connection.getSampleNames())
 

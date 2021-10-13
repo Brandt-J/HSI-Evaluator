@@ -49,7 +49,7 @@ class TestSQLView(TestCase):
         cls.wavelengths1: np.ndarray = np.arange(specLength1)
         cls.wavelengths2: np.ndarray = np.arange(specLength2)
 
-        cls.specDetails = SpecDetails(10, 0.5, 5.3, "SWIR_LM", "pristine", "unknown", testSampleName)
+        cls.specDetails = SpecDetails(10, 0.5, 5.3, "SWIR_LM", "pristine", "unknown", testSampleName, "white")
         uploadSpectra(cls.specDict1, cls.wavelengths1, cls.specDetails, Queue())
         uploadSpectra(cls.specDict2, cls.wavelengths2, cls.specDetails, Queue())
 

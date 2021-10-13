@@ -91,6 +91,14 @@ class DBConnection:
         cursor.execute("SELECT size_class FROM size_classes")
         return [row[0] for row in cursor]
 
+    def getColors(self) -> List[str]:
+        """
+        Returns a list of colors
+        """
+        cursor = self._getCursor()
+        cursor.execute("SELECT color_name FROM colors")
+        return [row[0] for row in cursor]
+
     def getCommentOfSample(self, sampleName: str) -> str:
         """
         Returns the comment associated to the specified sample.
@@ -163,11 +171,11 @@ class DBConnection:
         specstring: str = arrToString(intensities)
         wavelengthInd: int = self._getIndexOfWavelengths(wavelengths)
         assert wavelengthInd != -1, 'Failed finding wavelengths in database!'
-        sqlcommand = f"""INSERT INTO spectra (spec_type, assignment, intensities, wavelengths, num_accumulations, acquisition_time, pxScale, sample, particle_state, size_class) 
+        sqlcommand = f"""INSERT INTO spectra (spec_type, assignment, intensities, wavelengths, num_accumulations, acquisition_time, pxScale, sample, particle_state, size_class, color) 
                                         VALUES ("{spectraDetail.specType}", 
                                         "{clsname}", "{specstring}", "{wavelengthInd}", "{spectraDetail.numAcc}", "{spectraDetail.accTime}",
                                         "{spectraDetail.resolution}", "{spectraDetail.sampleName}", "{spectraDetail.particleState}", 
-                                        "{spectraDetail.sizeClass}");"""
+                                        "{spectraDetail.sizeClass}", "{spectraDetail.color}");"""
         cursor.execute(sqlcommand)
         if directcommit:
             self._connection.commit()
@@ -277,6 +285,7 @@ class SpecDetails:
     particleState: str = ""
     sizeClass: str = ""
     sampleName: str = ""
+    color: str = ""
 
 
 @dataclass

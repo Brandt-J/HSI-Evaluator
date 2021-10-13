@@ -123,6 +123,7 @@ class DBUploadWin(QtWidgets.QWidget):
             specdetails.sampleName = sampleName
             specdetails.sizeClass = self._partDetails.getSizeClass()
             specdetails.particleState = self._partDetails.getParticleState()
+            specdetails.color = self._partDetails.getColor()
 
             specDict: Dict[str, np.ndarray] = self._getSpecsToUpload()
             wavelengths: np.ndarray = self._sampleview.getWavelengths()
@@ -483,9 +484,13 @@ class ParticleDetails(QtWidgets.QGroupBox):
         self._sizeSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._sizeSelector.addItems(sqlConn.getParticleSizes())
 
+        self._colorSelector: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._colorSelector.addItems(sqlConn.getColors())
+
         layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         layout.addRow("Select Particle State", self._stateSelector)
         layout.addRow("Select Size Class", self._sizeSelector)
+        layout.addRow("Select Color", self._colorSelector)
         self.setLayout(layout)
 
     def getParticleState(self) -> str:
@@ -499,6 +504,12 @@ class ParticleDetails(QtWidgets.QGroupBox):
         Returns the selected size class.
         """
         return self._sizeSelector.currentText()
+
+    def getColor(self) -> str:
+        """
+        Returns the selected color.
+        """
+        return self._colorSelector.currentText()
 
 
 class ProgressWindow(QtWidgets.QWidget):
