@@ -44,6 +44,8 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         self._checkComplex.setChecked(False)
         self._checkGroupSediment: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Group Sediments")
         self._checkGroupSediment.setChecked(True)
+        self._checkAbbreviate: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Abbreviate Polymers")
+        self._checkAbbreviate.setChecked(True)
 
         self._btnFetch: QtWidgets.QPushButton = QtWidgets.QPushButton("Fetch")
         self._btnFetch.released.connect(self._fetch)
@@ -111,6 +113,7 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         modClsNameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Modify class names")
         modClsNameLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         modClsNameGroup.setLayout(modClsNameLayout)
+        modClsNameLayout.addWidget(self._checkAbbreviate)
         modClsNameLayout.addWidget(self._checkComplex)
         modClsNameLayout.addWidget(self._checkGroupSediment)
         modClsNameLayout.addStretch()
@@ -154,6 +157,8 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         specDict: Dict[str, np.ndarray] = {}
         for spec in specsToProcess:
             remappedSpec: np.ndarray = spec.getIntensitiesForOtherWavelengths(shortestWavelengths)
+            if self._checkAbbreviate.isChecked():
+                spec.abbreviatePolymer()
             if self._checkGroupSediment.isChecked():
                 spec.groupSedimentName()
             className: str = spec.getConcatenatedName() if self._checkComplex.isChecked() else spec.className

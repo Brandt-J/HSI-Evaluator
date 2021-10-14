@@ -323,6 +323,17 @@ class DownloadedSpectrum:
         if self.className.lower().find("sediment") != -1:
             self.className = "Sediment"
 
+    def abbreviatePolymer(self) -> None:
+        """
+        Convenience function for abbreviating polymer names.
+        """
+        self.className = self.className.replace("Polyethylene", "PE")
+        self.className = self.className.replace("Polystyrene", "PS")
+        self.className = self.className.replace("Polyurethane", "PUR")
+        self.className = self.className.replace("Poly(ethylene terephthalate)", "PET")
+        self.className = self.className.replace("Poly(methyl methacrylate)", "PMMA")
+        self.className = self.className.replace("Poly(vinyl chloride)", "PVC")
+
     def getConcatenatedName(self) -> str:
         """
         Returns a name concatenating different properties
