@@ -168,7 +168,6 @@ class TestSampleView(TestCase):
 
     def test_saveSample(self) -> None:
         imgClf: MainWindow = MainWindow()
-        imgClf._resultPlots.updatePlots = lambda: print("Fake updating plots")
         classesSample1: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4},
                                                'class2': {5, 6, 7, 8}}
         classesSample2: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4, 5, 7},

@@ -127,12 +127,15 @@ class DBConnection:
             wavelenghts: Dict[int, np.ndarray] = self._getWavelenghtAxes()
             spectra: List[DownloadedSpectrum] = []
             for row in cursor:
-                clsName = row[2]
                 intens, wavel = arrFromBytes(row[3]), wavelenghts[row[4]]
                 assert len(intens) == len(wavel), f"Length spectrum ({len(intens)}) does not match length wavelengths ({len(wavel)})"
-                spectra.append(DownloadedSpectrum(className=clsName,
+                spectra.append(DownloadedSpectrum(className=row[2],
                                                   intensities=intens,
-                                                  wavelengths=wavel))
+                                                  wavelengths=wavel,
+                                                  sample=row[8],
+                                                  state=row[9],
+                                                  size=row[10],
+                                                  color=row[11]))
             return spectra
 
     def createNewSample(self, sampleName: str, commentString: str) -> None:
@@ -293,6 +296,10 @@ class DownloadedSpectrum:
     className: str
     wavelengths: np.ndarray
     intensities: np.ndarray
+    sample: str
+    state: str
+    size: str
+    color: str
 
     def getIntensitiesForOtherWavelengths(self, otherWavelengths: np.ndarray) -> np.ndarray:
         """
@@ -307,7 +314,21 @@ class DownloadedSpectrum:
                 newIntensities[i] = self.intensities[closestInd]
 
         return newIntensities
+    
+    def groupSedimentName(self) -> None:
+        """
+        Convenience function for grouping sediment names. If the classname seems to be a sediment, then it will be
+        renamed into just "sediment".
+        """
+        if self.className.lower().find("sediment") != -1:
+            self.className = "Sediment"
 
+    def getConcatenatedName(self) -> str:
+        """
+        Returns a name concatenating different properties
+        """
+        return '_'.join([self.className, self.state, self.color])
+    
 
 def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, spectraDetail: 'SpecDetails',
                   dataqueue: 'Queue') -> None:

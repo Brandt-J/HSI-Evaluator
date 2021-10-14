@@ -63,11 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disableWidgets()
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
-        sampleView.Activated.connect(self._resultPlots.updatePlots)
-        sampleView.Renamed.connect(self._resultPlots.updatePlots)
-
         graphView: 'GraphView' = sampleView.getGraphView()
-        graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
         graphView.SelectionChanged.connect(self._preprocSelector.updatePreviewSpectra)
 
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
@@ -241,7 +237,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._preprocSelector.applyPreprocessingConfig(view.processingGraph)
         self._preprocSelector.updatePreviewSpectra()
         self.enableWidgets()
-        self._resultPlots.updatePlots()
         self.showMaximized()
 
     def _export(self) -> None:
@@ -260,13 +255,7 @@ class MainWindow(QtWidgets.QMainWindow):
         Sets parameters to the widgets of that window and establishes connections.
         :return:
         """
-        self._multiSampleView.SampleClosed.connect(self._resultPlots.updatePlots)
-
-        self._preprocSelector.ProcessorStackUpdated.connect(self._resultPlots.updatePlots)
-
-        self._clsCreator.ClassDeleted.connect(self._resultPlots.updatePlots)
         self._clsCreator.ClassActivated.connect(self._resultPlots.switchToDescriptorSet)
-        self._clsCreator.ClassVisibilityChanged.connect(self._resultPlots.updatePlots)
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)

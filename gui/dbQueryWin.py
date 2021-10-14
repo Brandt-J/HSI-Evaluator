@@ -40,6 +40,11 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
 
         self._queryGen: 'QueryGenerator' = QueryGenerator(self._getOptionsDict())
 
+        self._checkComplex: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Complex names")
+        self._checkComplex.setChecked(False)
+        self._checkGroupSediment: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Group Sediments")
+        self._checkGroupSediment.setChecked(True)
+
         self._btnFetch: QtWidgets.QPushButton = QtWidgets.QPushButton("Fetch")
         self._btnFetch.released.connect(self._fetch)
         self._lblFetchResult: QtWidgets.QLabel = QtWidgets.QLabel("No spectra fetched.")
@@ -103,6 +108,13 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         lblInfo.setFont(fontBold)
         lblInfo2: QtWidgets.QLabel = QtWidgets.QLabel("(If no entries are selected in a group, it's contents are ignored)")
 
+        modClsNameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Modify class names")
+        modClsNameLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        modClsNameGroup.setLayout(modClsNameLayout)
+        modClsNameLayout.addWidget(self._checkComplex)
+        modClsNameLayout.addWidget(self._checkGroupSediment)
+        modClsNameLayout.addStretch()
+
         fetchLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         fetchLayout.addWidget(self._btnFetch)
         fetchLayout.addWidget(self._lblFetchResult)
@@ -119,6 +131,7 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         layout.addStretch()
         layout.addWidget(QtWidgets.QLabel(""))
         layout.addWidget(self._queryGen)
+        layout.addWidget(modClsNameGroup)
         layout.addWidget(QtWidgets.QLabel(""))
         layout.addLayout(fetchLayout)
         layout.addStretch()
@@ -141,11 +154,14 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
         specDict: Dict[str, np.ndarray] = {}
         for spec in specsToProcess:
             remappedSpec: np.ndarray = spec.getIntensitiesForOtherWavelengths(shortestWavelengths)
-            if spec.className not in specDict.keys():
-                specDict[spec.className] = remappedSpec
+            if self._checkGroupSediment.isChecked():
+                spec.groupSedimentName()
+            className: str = spec.getConcatenatedName() if self._checkComplex.isChecked() else spec.className
+            if className not in specDict.keys():
+                specDict[className] = remappedSpec
             else:
-                presentSpectra: np.ndarray = specDict[spec.className]
-                specDict[spec.className] = np.vstack((remappedSpec, presentSpectra))
+                presentSpectra: np.ndarray = specDict[className]
+                specDict[className] = np.vstack((remappedSpec, presentSpectra))
 
         return specDict, shortestWavelengths
 

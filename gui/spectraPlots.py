@@ -120,24 +120,6 @@ class ResultPlots(QtWidgets.QWidget):
         self._specPlot.resetPlots()
         self._scatterPlot.resetPlots()
 
-    def updatePlots(self) -> None:
-        """
-        Update the scatter and spectra plot.
-        :return:
-        """
-        print("called update plots")
-        # self._specPlot.resetPlots()
-        # self._scatterPlot.resetPlots()
-        # if self._mainWindow is not None:
-        #     if self._showAllCheckBox.isChecked():
-        #         self._plotAllSamples()
-        #     else:
-        #         background: np.ndarray = self._mainWindow.getBackgroundOfActiveSample()
-        #         self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView(), background)
-        #
-        # self._specPlot.finishPlotting()
-        # self._scatterPlot.finishPlotting()
-
     # def _plotAllSamples(self) -> None:
     #     """
     #     Plots the Spectra from all samples, labelled also with sample names.
@@ -199,15 +181,12 @@ class ResultPlots(QtWidgets.QWidget):
         self._numSpecSpinner.setMaximum(1000)
         self._numSpecSpinner.setValue(100)
         self._numSpecSpinner.setMaximumWidth(50)
-        self._numSpecSpinner.valueChanged.connect(self.updatePlots)
 
         self._seedSpinner.setMinimum(0)
         self._seedSpinner.setMaximum(100)
         self._seedSpinner.setValue(42)
-        self._seedSpinner.valueChanged.connect(self.updatePlots)
 
         self._showAllCheckBox.setChecked(True)
-        self._showAllCheckBox.stateChanged.connect(self.updatePlots)
 
     def _createLayout(self) -> None:
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
@@ -252,6 +231,7 @@ class SpecPlot(QtWidgets.QWidget):
         self._mainWin: Union[None, 'MainWindow'] = None
         self._showDescCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._legendOutsideCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._showLegendCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._stackSpinner: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
 
@@ -353,10 +333,11 @@ class SpecPlot(QtWidgets.QWidget):
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")
-        if self._legendOutsideCheckBox.isChecked():
-            self._specAx.legend(self._legendItems, bbox_to_anchor=(1, 1), loc="upper left")
-        else:
-            self._specAx.legend(self._legendItems)
+        if self._showLegendCheckBox.isChecked():
+            if self._legendOutsideCheckBox.isChecked():
+                self._specAx.legend(self._legendItems, bbox_to_anchor=(1, 1), loc="upper left")
+            else:
+                self._specAx.legend(self._legendItems)
         self._figure.tight_layout()
         self._plotDescriptors()
         self._canvas.draw()
@@ -366,6 +347,7 @@ class SpecPlot(QtWidgets.QWidget):
         optionsLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         optionsLayout.addRow("Average spectra per class", self._avgCheckBox)
         optionsLayout.addRow("Stack amount", self._stackSpinner)
+        optionsLayout.addRow("Show legend", self._showLegendCheckBox)
         optionsLayout.addRow("Show legend outside plot", self._legendOutsideCheckBox)
         # optionsLayout.addRow("Show descriptors", self._showDescCheckBox)
 
@@ -385,9 +367,9 @@ class SpecPlot(QtWidgets.QWidget):
         self._avgCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._showDescCheckBox.setChecked(True)
 
-
         self._legendOutsideCheckBox.toggled.connect(self._onPlotSettingsChanged)
-
+        self._showLegendCheckBox.setChecked(True)
+        self._showLegendCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._noClickTimer.timeout.connect(self._enableOnClick)
 
         self._canvas.mpl_connect('button_press_event', self._onClick)
@@ -460,7 +442,6 @@ class SpecPlot(QtWidgets.QWidget):
         if self._activeDescSet is not None:
             middlePos = max([10, middlePos])  # prevent getting a negative start position
             self._activeDescSet.add_descriptor(middlePos-10, middlePos, middlePos+10)
-            self.updatePlots()
 
     def _enableOnClick(self) -> None:
         self._onClickeEnabled = True
