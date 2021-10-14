@@ -28,7 +28,7 @@ from concurrent.futures import ProcessPoolExecutor
 
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
-from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM
+from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM, NeuralNet
 
 if TYPE_CHECKING:
     from particles import Particle
@@ -41,7 +41,7 @@ def getClassifiers() -> List['BaseClassifier']:
     """
     Returns a list with the available classifiers.
     """
-    return [SVM(), KNN()]
+    return [NeuralNet(), SVM(), KNN()]
 
 
 class ClassifyMode(Enum):
@@ -93,9 +93,10 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
 
     # validation
     ypredicted = classifier.predict(xtest)
-    reportDict: dict = classification_report(ytest, ypredicted, output_dict=True)
-    reportStr: str = classification_report(ytest, ypredicted, output_dict=False)
+    reportDict: dict = classification_report(ytest, ypredicted, output_dict=True, zero_division=0)
+    reportStr: str = classification_report(ytest, ypredicted, output_dict=False, zero_division=0)
     logger.info(reportStr)
+    classifier.makePickleable()
     queue.put(TrainingResult(classifier, reportStr, reportDict))
 
 
@@ -109,34 +110,25 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is Set if the process should be cancelled
     """
-    infData: List['InferenceData'] = [InferenceData(sample, classifier, mode) for sample in inferenceSampleList]
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        finishedSamples: List['Sample'] = list(executor.map(classifySpectra, infData))
-    for _ in finishedSamples:
+    finishedSamples: List['Sample'] = []
+    for sample in inferenceSampleList:
+        if stopEvent.is_set():
+            return
+        completed: 'Sample' = classifySample(sample, classifier, mode, queue)
+        finishedSamples.append(completed)
         queue.put("finished Sample")
     queue.put(finishedSamples)
 
 
-@dataclass
-class InferenceData:
-    """
-    Dataclass for summarizing data required for inference.
-    """
-    sample: 'Sample'
-    clf: 'BaseClassifier'
-    mode: 'ClassifyMode'
-
-
-def classifySpectra(inferenceData: 'InferenceData') -> 'Sample':
+def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode, queue: 'Queue') -> 'Sample':
     """
     Estimates the classes for each spectrum
-    :param inferenceData: The inferenceData Object to use
-    :return: completed sample object
+    :param sample: The Sample to classifiy
+    :param classifier: The Classifier object to use
+    :param mode: The classification mode to apply
+    :param queue: The dataqueue to push errors to
     """
     logger: 'Logger' = getLogger("Classifier Application")
-    sample: 'Sample' = inferenceData.sample
-    mode: ClassifyMode = inferenceData.mode
-    classifier: 'BaseClassifier' = inferenceData.clf
 
     if mode == ClassifyMode.WholeImage:
         specObject: 'SpectraObject' = sample.specObj
@@ -144,8 +136,9 @@ def classifySpectra(inferenceData: 'InferenceData') -> 'Sample':
         try:
             assignments: np.ndarray = classifier.predict(specArr)
         except Exception as e:
-            error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
-            raise error
+            error: ClassificationError = ClassificationError(f"Error during classifier inference (image mode): {e}")
+            queue.put(error)
+
         else:
             sample.setTmpClassResults(assignments)
 
@@ -160,7 +153,7 @@ def classifySpectra(inferenceData: 'InferenceData') -> 'Sample':
             try:
                 assignments: np.ndarray = classifier.predict(specArr)
             except Exception as e:
-                error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
+                error: ClassificationError = ClassificationError(f"Error during classifier inference (particle mode): {e}")
                 raise error
             else:
                 particle.setResultFromAssignments(assignments)

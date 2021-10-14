@@ -34,6 +34,9 @@ try:
 except ImportError:
     print("Failed to load HSI Snapscan API")
     snapscanEnabled: bool = False
+except OSError:
+    print("Failed to load HSI Snapscan API")
+    snapscanEnabled: bool = False
 
 
 def loadCube(fname: str, errorPixelThreshold: float = 1000) -> Tuple[np.ndarray, np.ndarray]:

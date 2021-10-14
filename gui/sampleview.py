@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from logging import Logger
     from particles import ParticleHandler
 
+
 class MultiSampleView(QtWidgets.QScrollArea):
     """
     Container class for showing multiple sampleviews in a ScrollArea.

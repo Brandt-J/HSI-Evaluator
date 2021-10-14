@@ -26,7 +26,7 @@ from unittest import TestCase
 import numpy as np
 from typing import *
 
-from classification.classifiers import SVM
+from classification.classifiers import SVM, NeuralNet
 from classification.classifyProcedures import TrainingResult, ClassifyMode
 from dataObjects import Sample
 from particles import Particle
@@ -63,60 +63,74 @@ class TestClassifiers(TestCase):
         self.assertFalse(classUI._applyBtn.isEnabled())
         self.assertTrue(classUI._activeClf is not None)
 
-        # Train the SVM
-        classUI._trainClassifier()
-        while classUI._trainProcessWindow._process.is_alive():
-            classUI._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
-            time.sleep(0.1)
+        for clf in classUI._classifiers:
+            classUI._activateClassifier(clf.title)
+            if type(clf) == NeuralNet:
+                clf: NeuralNet = cast(NeuralNet, clf)
+                clf._numEpochs = 5
 
-        result: 'TrainingResult' = classUI._trainProcessWindow.getResult()
-        self.assertTrue(type(result) == TrainingResult)
-        clfReport: dict = result.validReportDict
-        self.assertTrue("class1" in clfReport.keys())
-        self.assertTrue("class2" in clfReport.keys())
-        for subDict in [clfReport["class1"], clfReport["class2"]]:
-            self.assertTrue(subDict["precision"] == subDict["recall"] == 1.0)  # The SVM should separate them perfectly.
-
-        classUI._onTrainingFinishedOrAborted(True)  # Again, we call it manually, signals don't work here..
-        self.assertTrue(classUI._activeClf._clf is result.classifier._clf)
-
-        # Now we test inference
-        self.assertTrue(classUI._applyBtn.isEnabled())
-        for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
-            if mode == ClassifyMode.WholeImage:
-                classUI._radioImage.setChecked(True)
-                classUI._radioParticles.setChecked(False)
-            else:
-                classUI._radioParticles.setChecked(True)
-                classUI._radioImage.setChecked(False)
-
-            classUI._runClassification()
-            while classUI._inferenceProcessWindow._process.is_alive():
-                classUI._inferenceProcessWindow._checkOnProcess()
+            # Train the classifier
+            classUI._trainClassifier()
+            while classUI._trainProcessWindow._process.is_alive():
+                classUI._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
                 time.sleep(0.1)
 
-            result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
-            self.assertTrue(type(result) == list)
-            self.assertEqual(len(result), 2)
+            result: 'TrainingResult' = classUI._trainProcessWindow.getResult()
+            self.assertTrue(type(result) == TrainingResult)
+            clfReport: dict = result.validReportDict
+            self.assertTrue("class1" in clfReport.keys())
+            self.assertTrue("class2" in clfReport.keys())
+            for subDict in [clfReport["class1"], clfReport["class2"]]:
+                if type(clf) != NeuralNet:  # the neural net probably performs pretty badly in this setup
+                    self.assertTrue(subDict["precision"] == subDict["recall"] == 1.0)  # The other classifiers should separate them perfectly.
 
-            # Check that everything is correct
-            if mode == ClassifyMode.WholeImage:
-                allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
-                self.assertTrue(allCorrect)
+            if type(clf) == NeuralNet:
+                self.assertTrue(classUI._activeClf._currentTraininghash == result.classifier._currentTraininghash)
+            else:
+                self.assertTrue(classUI._activeClf._clf is result.classifier._clf)  # The actual classifier has to be the very same object!
 
-            elif mode == ClassifyMode.Particles:
-                for sample in mainWin.getAllSamples():
-                    sampleParticles: List[Particle] = sample.getSampleData().getAllParticles()
-                    self.assertEqual(len(sampleParticles), 2)
-                    foundParticles: Set[str] = set()
-                    for particle in sampleParticles:
-                        res: 'Counter' = particle._result
-                        self.assertEqual(len(res), 1)  # only one class found
-                        for clsName in res.keys():  # Dict keys cannot be indexed, hence the loop...
-                            foundParticles.add(clsName)
-                    self.assertEqual(len(foundParticles), 2)
-                    self.assertTrue("class1" in foundParticles)
-                    self.assertTrue("class2" in foundParticles)
+            # Now we test inference
+            self.assertTrue(classUI._applyBtn.isEnabled())
+            for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
+                if mode == ClassifyMode.WholeImage:
+                    classUI._radioImage.setChecked(True)
+                    classUI._radioParticles.setChecked(False)
+                else:
+                    classUI._radioParticles.setChecked(True)
+                    classUI._radioImage.setChecked(False)
+
+                classUI._runClassification()
+                while classUI._inferenceProcessWindow._process.is_alive():
+                    classUI._inferenceProcessWindow._checkOnProcess()
+                    time.sleep(0.1)
+
+                result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
+                self.assertTrue(type(result) == list)
+                self.assertEqual(len(result), 2)
+
+                # Check that everything is correct
+                if mode == ClassifyMode.WholeImage:
+                    allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
+                    self.assertTrue(allCorrect)
+
+                elif mode == ClassifyMode.Particles:
+                    self.assertParticlesCorrect(mainWin, checkForCorrectAssignment=type(clf) != NeuralNet)
+
+    def assertParticlesCorrect(self, mainWin, checkForCorrectAssignment: bool):
+        for sample in mainWin.getAllSamples():
+            sampleParticles: List[Particle] = sample.getSampleData().getAllParticles()
+            self.assertEqual(len(sampleParticles), 2)
+            foundParticleClasses: Set[str] = set()
+            for particle in sampleParticles:
+                res: 'Counter' = particle._result
+                self.assertEqual(len(res), 1)  # only one class found
+                for clsName in res.keys():  # Dict keys cannot be indexed, hence the loop...
+                    foundParticleClasses.add(clsName)
+
+            if checkForCorrectAssignment:
+                self.assertEqual(len(foundParticleClasses), 2)
+                self.assertTrue("class1" in foundParticleClasses)
+                self.assertTrue("class2" in foundParticleClasses)
 
     def graphViewsUpdatedProperly(self, mainWin: 'MockMainWin', finishedSamples: List['Sample']):
         allCorrect: bool = True
