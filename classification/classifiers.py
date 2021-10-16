@@ -17,6 +17,7 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 import os
+import shutil
 import time
 from typing import Dict, List, Union, TYPE_CHECKING
 import numpy as np
@@ -258,6 +259,7 @@ class NeuralNet(BaseClassifier):
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         self._setUniqueLabels(y_test, y_train)
+        self._deleteLastTmpSave()
         self._currentTraininghash = hash(time.time())
         self._clf = NeuralNetClf(x_train.shape[1], len(self._uniqueLabels))
         y_train = to_categorical(self._convertLabelsToNumbers(y_train))
@@ -266,7 +268,7 @@ class NeuralNet(BaseClassifier):
 
     def predict(self, spectra: np.ndarray) -> np.ndarray:
         if self._clf is None:
-            self._clf = loadModelFromFile(self._getModelSaveName())
+            self._clf = loadModelFromFile(self._getTempModelSaveName())
         predictions: np.ndarray = self._clf.predict(spectra)
         labels: np.ndarray = np.array([np.argmax(predictions[i, :]) for i in range(predictions.shape[0])])
         return self._convertNumbersToLabels(labels)
@@ -286,7 +288,9 @@ class NeuralNet(BaseClassifier):
             self._saveKerasModelToDiskAndSetToNone()
 
     def _saveKerasModelToDiskAndSetToNone(self) -> None:
-        fname: str = self._getModelSaveName()
+        fname: str = self._getTempModelSaveName()
+        if self._currentTraininghash == -1:
+            breakpoint()
         self._clf.save(fname)
         self._logger.info(f"Saved keras model to: {fname}, hash: {self._currentTraininghash}")
         self._clf = None
@@ -307,10 +311,25 @@ class NeuralNet(BaseClassifier):
         """
         self._numEpochs = self._spinEpochs.value()
 
-    def _getModelSaveName(self) -> str:
+    def _getTempModelSaveName(self) -> str:
         """
         Returns a valid path for saving the neural net model.
         """
-        dirname: str = os.path.join(getAppFolder(), "NeuralNetSave", "NeuralNetDump" + str(self._currentTraininghash))
+        dirname: str = os.path.join(self._getTmpModelSaveFolder(), "NeuralNetDump" + str(self._currentTraininghash))
         os.makedirs(dirname, exist_ok=True)
         return dirname
+
+    def _deleteLastTmpSave(self) -> None:
+        """
+        Deletes the last temporary save of the neural net model, if there is any.
+        """
+        folder: str = self._getTmpModelSaveFolder()
+        for tmpSaveModel in os.listdir(folder):
+            shutil.rmtree(os.path.join(folder, tmpSaveModel))
+            print('removed', tmpSaveModel)
+
+    def _getTmpModelSaveFolder(self) -> str:
+        """
+        Returns the folder for storing temporary Models.
+        """
+        return os.path.join(getAppFolder(), "NeuralNetSave")

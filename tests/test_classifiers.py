@@ -19,7 +19,6 @@ If not, see <https://www.gnu.org/licenses/>.
 
 import sys
 import time
-
 import cv2
 from PyQt5 import QtWidgets
 from unittest import TestCase
@@ -67,7 +66,7 @@ class TestClassifiers(TestCase):
             classUI._activateClassifier(clf.title)
             if type(clf) == NeuralNet:
                 clf: NeuralNet = cast(NeuralNet, clf)
-                clf._numEpochs = 5
+                clf._numEpochs = 2
 
             # Train the classifier
             classUI._trainClassifier()
