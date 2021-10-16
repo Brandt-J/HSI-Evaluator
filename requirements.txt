@@ -11,3 +11,4 @@ scikit-image~=0.18.1
 mysql-connector-python~=8.0.26
 dataclasses~=0.8
 opencv
+tensorflow~=2.6.0

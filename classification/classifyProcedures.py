@@ -27,7 +27,7 @@ from sklearn.model_selection import train_test_split
 
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
-from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM
+from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM, NeuralNet
 
 if TYPE_CHECKING:
     from particles import Particle
@@ -40,7 +40,7 @@ def getClassifiers() -> List['BaseClassifier']:
     """
     Returns a list with the available classifiers.
     """
-    return [SVM(), KNN()]
+    return [NeuralNet(), SVM(), KNN()]
 
 
 class ClassifyMode(Enum):
@@ -92,9 +92,10 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
 
     # validation
     ypredicted = classifier.predict(xtest)
-    reportDict: dict = classification_report(ytest, ypredicted, output_dict=True)
-    reportStr: str = classification_report(ytest, ypredicted, output_dict=False)
+    reportDict: dict = classification_report(ytest, ypredicted, output_dict=True, zero_division=0)
+    reportStr: str = classification_report(ytest, ypredicted, output_dict=False, zero_division=0)
     logger.info(reportStr)
+    classifier.makePickleable()
     queue.put(TrainingResult(classifier, reportStr, reportDict))
 
 
@@ -108,46 +109,35 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is Set if the process should be cancelled
     """
-    logger: 'Logger' = getLogger("Classifier Application")
     finishedSamples: List['Sample'] = []
-    for i, sample in enumerate(inferenceSampleList):
-        t0 = time.time()
-        logger.debug(f"Starting classifcation on {sample.name}")
-
+    for sample in inferenceSampleList:
         if stopEvent.is_set():
             return
-
-        classifySpectra(sample, classifier, mode, queue)
-
-        if stopEvent.is_set():
-            return
-
-        logger.debug(f'Finished classification on sample {sample.name} in {round(time.time()-t0, 2)} seconds'
-                     f' ({i+1} of {len(inferenceSampleList)} samples done)')
-        finishedSamples.append(sample)
-        queue.put("finished sample")
-
+        completed: 'Sample' = classifySample(sample, classifier, mode, queue)
+        finishedSamples.append(completed)
+        queue.put("finished Sample")
     queue.put(finishedSamples)
 
 
-def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'ClassifyMode', dataqueue: 'Queue'):
+def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode, queue: 'Queue') -> 'Sample':
     """
     Estimates the classes for each spectrum
-    :param sample: The sample to use
-    :param classifier: The classifier to use
-    :param mode: The mode defining whether to classify the whole image or only the particles
-    :param dataqueue: The dataqueue to push errors to
+    :param sample: The Sample to classifiy
+    :param classifier: The Classifier object to use
+    :param mode: The classification mode to apply
+    :param queue: The dataqueue to push errors to
     """
     logger: 'Logger' = getLogger("Classifier Application")
+
     if mode == ClassifyMode.WholeImage:
         specObject: 'SpectraObject' = sample.specObj
         specArr = specObject.getPreprocessedSpecArr()
         try:
             assignments: np.ndarray = classifier.predict(specArr)
         except Exception as e:
-            error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
-            dataqueue.put(error)
-            raise error
+            error: ClassificationError = ClassificationError(f"Error during classifier inference (image mode): {e}")
+            queue.put(error)
+
         else:
             sample.setTmpClassResults(assignments)
 
@@ -162,11 +152,12 @@ def classifySpectra(sample: 'Sample', classifier: 'BaseClassifier', mode: 'Class
             try:
                 assignments: np.ndarray = classifier.predict(specArr)
             except Exception as e:
-                error: ClassificationError = ClassificationError(f"Error during classifier inference: {e}")
-                dataqueue.put(error)
+                error: ClassificationError = ClassificationError(f"Error during classifier inference (particle mode): {e}")
                 raise error
             else:
                 particle.setResultFromAssignments(assignments)
+
+    return sample
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float,
