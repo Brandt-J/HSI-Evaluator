@@ -49,7 +49,6 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         self._plots: 'ResultPlots' = resultPlots
         self._nodeGraph.NewSpecsForScatterPlot.connect(self._plots.updateScatterPlot)
         self._nodeGraph.NewSpecsForSpecPlot.connect(self._plots.updateSpecPlot)
-        self._nodeGraph.ClassificationPathHasChanged.connect(self._enableApplyToSamples)
 
         self._processingPerformer: PreprocessingPerformer = PreprocessingPerformer()
         self._processingPerformer.PreprocessingFinished.connect(self._setPreprocessedData)
@@ -59,13 +58,8 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         updateBtn.released.connect(self.updatePreviewSpectra)
         updateBtn.setMaximumWidth(130)
 
-        self._applyToSamplesBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply to Samples")
-        self._applyToSamplesBtn.released.connect(self._applyPreprocessingToSpectra)
-        self._applyToSamplesBtn.setMaximumWidth(130)
-
         btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         btnLayout.addWidget(updateBtn)
-        btnLayout.addWidget(self._applyToSamplesBtn)
         btnLayout.addStretch()
 
         self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
@@ -121,7 +115,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         """
         self._nodeGraph.applyGraphConfig(processConfig)
 
-    def _applyPreprocessingToSpectra(self) -> None:
+    def applyPreprocessingToSpectra(self) -> None:
         """
         Applies the preprocessing to all samples
         """
@@ -129,14 +123,6 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         samples: List['Sample'] = [sample.getSampleData() for sample in self._mainWin.getAllSamples()]
         processors: List['Preprocessor'] = self._nodeGraph.getPreprocessors()
         self._processingPerformer.startPreprocessing(samples, processors)
-        self._applyToSamplesBtn.setDisabled(True)
-
-    @QtCore.pyqtSlot()
-    def _enableApplyToSamples(self) -> None:
-        """
-        Re-enables the apply2samples-Btn, when the processing path for the spectra classification has changed.
-        """
-        self._applyToSamplesBtn.setEnabled(True)
 
     def _showNoSpectraWarning(self) -> None:
         QtWidgets.QMessageBox.about(self, "Info", "Spectra Preprocessing cannot be previewed.\n"
@@ -186,7 +172,6 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
     @QtCore.pyqtSlot()
     def _preprocessingWasAborted(self) -> None:
         self._mainWin.enableWidgets()
-        self._enableApplyToSamples()
 
 
 class PreprocessingPerformer(QtWidgets.QWidget):

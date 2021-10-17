@@ -19,6 +19,7 @@ If not, see <https://www.gnu.org/licenses/>.
 import os
 import shutil
 import time
+from dataclasses import dataclass
 from typing import Dict, List, Union, TYPE_CHECKING
 import numpy as np
 from PyQt5 import QtWidgets
@@ -34,15 +35,11 @@ if TYPE_CHECKING:
     from logging import Logger
 
 
-class ClassificationError(Exception):
-    """
-    Custom Error class for errors occuring during classification.
-    """
-    def __init__(self, errorText):
-        self.errorText = errorText
-
-    def __str__(self):
-        return repr(self.errorText)
+@dataclass
+class SavedClassifier:
+    clf: 'BaseClassifier'
+    validReport: dict
+    preproMethod: Union[None, str] = None
 
 
 class BaseClassifier:
@@ -79,13 +76,6 @@ class BaseClassifier:
         Updates the classifier from training. Should copy the actual classifier object and the unique labels!
         """
         raise NotImplementedError
-
-    def setWavelengths(self, wavelengths: np.ndarray) -> None:
-        """
-        Overload, if the classifier needs to be configured to the wavelengths.
-        :param wavelengths: 1d array of wavelengths
-        """
-        pass
 
     def _setUniqueLabels(self, ytest: np.ndarray, ytrain: np.ndarray) -> None:
         """
@@ -248,6 +238,7 @@ class NeuralNet(BaseClassifier):
         self._spinEpochs: Union[None, QtWidgets.QSpinBox] = QtWidgets.QSpinBox()
         self._numEpochs: int = 20
         self._currentTraininghash: int = -1
+        self._modelSavePath: Union[None, str] = None
         self._recreateEpochsSpinbox()
 
     def getControls(self) -> QtWidgets.QGroupBox:
@@ -268,7 +259,11 @@ class NeuralNet(BaseClassifier):
 
     def predict(self, spectra: np.ndarray) -> np.ndarray:
         if self._clf is None:
-            self._clf = loadModelFromFile(self._getTempModelSaveName())
+            if self._modelSavePath is None:
+                self._clf = loadModelFromFile(self._getTempModelSaveName())
+            else:
+                self._clf = loadModelFromFile(self._modelSavePath)
+
         predictions: np.ndarray = self._clf.predict(spectra)
         labels: np.ndarray = np.array([np.argmax(predictions[i, :]) for i in range(predictions.shape[0])])
         return self._convertNumbersToLabels(labels)
@@ -288,9 +283,11 @@ class NeuralNet(BaseClassifier):
             self._saveKerasModelToDiskAndSetToNone()
 
     def _saveKerasModelToDiskAndSetToNone(self) -> None:
-        fname: str = self._getTempModelSaveName()
-        if self._currentTraininghash == -1:
-            breakpoint()
+        if self._modelSavePath is None:
+            fname: str = self._getTempModelSaveName()
+        else:
+            fname = self._modelSavePath
+
         self._clf.save(fname)
         self._logger.info(f"Saved keras model to: {fname}, hash: {self._currentTraininghash}")
         self._clf = None
@@ -326,10 +323,22 @@ class NeuralNet(BaseClassifier):
         folder: str = self._getTmpModelSaveFolder()
         for tmpSaveModel in os.listdir(folder):
             shutil.rmtree(os.path.join(folder, tmpSaveModel))
-            print('removed', tmpSaveModel)
 
     def _getTmpModelSaveFolder(self) -> str:
         """
         Returns the folder for storing temporary Models.
         """
-        return os.path.join(getAppFolder(), "NeuralNetSave")
+        folder: str = os.path.join(getAppFolder(), "TmpNeuralNetSave")
+        os.makedirs(folder, exist_ok=True)
+        return folder
+
+
+class ClassificationError(Exception):
+    """
+    Custom Error class for errors occuring during classification.
+    """
+    def __init__(self, errorText):
+        self.errorText = errorText
+
+    def __str__(self):
+        return repr(self.errorText)

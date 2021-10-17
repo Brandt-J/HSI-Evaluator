@@ -16,7 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+import os
 import sys
 import time
 import cv2
@@ -24,6 +24,7 @@ from PyQt5 import QtWidgets
 from unittest import TestCase
 import numpy as np
 from typing import *
+import tempfile
 
 from classification.classifiers import SVM, NeuralNet
 from classification.classifyProcedures import TrainingResult, ClassifyMode
@@ -34,6 +35,7 @@ from gui.sampleview import SampleView
 from tests.test_specObj import getPreprocessors
 
 if TYPE_CHECKING:
+    from gui.classUI import TrainClfTab, LoadClfTab
     from collections import Counter
     from gui.graphOverlays import GraphView
 
@@ -59,61 +61,77 @@ class TestClassifiers(TestCase):
     def testTrainAndClassify(self) -> None:
         mainWin: MockMainWin = MockMainWin()
         classUI: ClassificationUI = ClassificationUI(mainWin)
-        self.assertFalse(classUI._applyBtn.isEnabled())
-        self.assertTrue(classUI._activeClf is not None)
+        trainTab: 'TrainClfTab' = classUI._clfSelector._trainClfTab
 
-        for clf in classUI._classifiers:
-            classUI._activateClassifier(clf.title)
+        self.assertTrue(trainTab._activeClf is not None)
+        classUI._clfSelector._tabView.setCurrentIndex(classUI._clfSelector._trainIndex)
+
+        for clf in trainTab._classifiers:
+            trainTab._selectClassifier(clf.title)
             if type(clf) == NeuralNet:
                 clf: NeuralNet = cast(NeuralNet, clf)
                 clf._numEpochs = 2
 
-            # Train the classifier
-            classUI._trainClassifier()
-            while classUI._trainProcessWindow._process.is_alive():
-                classUI._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
+            self._test_classifierTraining(clf, trainTab)
+            self._test_classifierInference(classUI, clf, mainWin)
+
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                savePath: str = os.path.join(tmpdirname, "testclfsave.clf")
+                trainTab._saveClassifier(savePath)
+
+                self.assertTrue(os.path.exists(savePath))
+
+                classUI._clfSelector._tabView.setCurrentIndex(classUI._clfSelector._trainIndex)
+                self.assertDictEqual(classUI._clfSelector._validResult._currentResults, {})
+
+            
+            
+
+    def _test_classifierInference(self, classUI, clf, mainWin):
+        for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
+            if mode == ClassifyMode.WholeImage:
+                classUI._radioImage.setChecked(True)
+                classUI._radioParticles.setChecked(False)
+            else:
+                classUI._radioParticles.setChecked(True)
+                classUI._radioImage.setChecked(False)
+
+            classUI._runClassification()
+            while classUI._inferenceProcessWindow._process.is_alive():
+                classUI._inferenceProcessWindow._checkOnProcess()
                 time.sleep(0.1)
 
-            result: 'TrainingResult' = classUI._trainProcessWindow.getResult()
-            self.assertTrue(type(result) == TrainingResult)
-            clfReport: dict = result.validReportDict
-            self.assertTrue("class1" in clfReport.keys())
-            self.assertTrue("class2" in clfReport.keys())
-            for subDict in [clfReport["class1"], clfReport["class2"]]:
-                if type(clf) != NeuralNet:  # the neural net probably performs pretty badly in this setup
-                    self.assertTrue(subDict["precision"] == subDict["recall"] == 1.0)  # The other classifiers should separate them perfectly.
+            result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
+            self.assertTrue(type(result) == list)
+            self.assertEqual(len(result), 2)
 
-            if type(clf) == NeuralNet:
-                self.assertTrue(classUI._activeClf._currentTraininghash == result.classifier._currentTraininghash)
-            else:
-                self.assertTrue(classUI._activeClf._clf is result.classifier._clf)  # The actual classifier has to be the very same object!
+            # Check that everything is correct
+            if mode == ClassifyMode.WholeImage:
+                allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
+                self.assertTrue(allCorrect)
 
-            # Now we test inference
-            self.assertTrue(classUI._applyBtn.isEnabled())
-            for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
-                if mode == ClassifyMode.WholeImage:
-                    classUI._radioImage.setChecked(True)
-                    classUI._radioParticles.setChecked(False)
-                else:
-                    classUI._radioParticles.setChecked(True)
-                    classUI._radioImage.setChecked(False)
+            elif mode == ClassifyMode.Particles:
+                self.assertParticlesCorrect(mainWin, checkForCorrectAssignment=type(clf) != NeuralNet)
 
-                classUI._runClassification()
-                while classUI._inferenceProcessWindow._process.is_alive():
-                    classUI._inferenceProcessWindow._checkOnProcess()
-                    time.sleep(0.1)
-
-                result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
-                self.assertTrue(type(result) == list)
-                self.assertEqual(len(result), 2)
-
-                # Check that everything is correct
-                if mode == ClassifyMode.WholeImage:
-                    allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
-                    self.assertTrue(allCorrect)
-
-                elif mode == ClassifyMode.Particles:
-                    self.assertParticlesCorrect(mainWin, checkForCorrectAssignment=type(clf) != NeuralNet)
+    def _test_classifierTraining(self, clf, trainTab):
+        trainTab._trainClassifier()
+        while trainTab._trainProcessWindow._process.is_alive():
+            trainTab._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
+            time.sleep(0.1)
+        result: 'TrainingResult' = trainTab._trainProcessWindow.getResult()
+        self.assertTrue(type(result) == TrainingResult)
+        clfReport: dict = result.validReportDict
+        self.assertTrue("class1" in clfReport.keys())
+        self.assertTrue("class2" in clfReport.keys())
+        for subDict in [clfReport["class1"], clfReport["class2"]]:
+            if type(clf) != NeuralNet:  # the neural net probably performs pretty badly in this setup
+                self.assertTrue(subDict["precision"] == subDict[
+                    "recall"] == 1.0)  # The other classifiers should separate them perfectly.
+        if type(clf) == NeuralNet:
+            self.assertTrue(trainTab._activeClf._currentTraininghash == result.classifier._currentTraininghash)
+        else:
+            self.assertTrue(
+                trainTab._activeClf._clf is result.classifier._clf)  # The actual classifier has to be the very same object!
 
     def assertParticlesCorrect(self, mainWin, checkForCorrectAssignment: bool):
         for sample in mainWin.getAllSamples():

@@ -53,7 +53,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._preprocSelector: PreprocessingSelector = PreprocessingSelector(self, self._resultPlots)
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassificationUI = ClassificationUI(self)
-        self._clfWidget.setDisabled(True)
+
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
         self._exportSpecAct: QtWidgets.QAction = QtWidgets.QAction("&Export Spectra to ASCII")
 
@@ -242,10 +242,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _export(self) -> None:
         raise NotImplementedError
 
+    @QtCore.pyqtSlot()
     def enableWidgets(self) -> None:
         for widget in self._getUIWidgetsForSelectiveEnabling():
             widget.setDisabled(False)
 
+    @QtCore.pyqtSlot()
     def disableWidgets(self) -> None:
         for widget in self._getUIWidgetsForSelectiveEnabling():
             widget.setDisabled(True)
@@ -259,6 +261,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)
+        self._clfWidget.PreprocessSpectra.connect(self._preprocSelector.applyPreprocessingToSpectra)
         self._resultPlots.setMainWinRef(self)
 
     def _createMenuBar(self) -> None:
@@ -301,10 +304,14 @@ class MainWindow(QtWidgets.QMainWindow):
         Creates the actual window layout.
         :return:
         """
-        clsLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        clsLayout.addWidget(self._clsCreator)
-        clsLayout.addStretch()
-        clsLayout.addWidget(self._clfWidget)
+        clsTabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
+        clsTabView.addTab(self._clsCreator, "Select Classes")
+        clsTabView.addTab(self._clfWidget, "Select/Apply Classifier")
+        clsTabView.setFixedWidth(max([self._clsCreator.width(), self._clfWidget.width()]))
+        # clsLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        # clsLayout.addWidget(self._clsCreator)
+        # clsLayout.addStretch()
+        # clsLayout.addWidget(self._clfWidget)
 
         splitter1: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter1.addWidget(self._preprocSelector)
@@ -319,7 +326,7 @@ class MainWindow(QtWidgets.QMainWindow):
         group.setLayout(layout)
         self.setCentralWidget(group)
 
-        layout.addLayout(clsLayout)
+        layout.addWidget(clsTabView)
         layout.addWidget(splitter2)
 
     def _getUIWidgetsForSelectiveEnabling(self) -> List[QtWidgets.QWidget]:

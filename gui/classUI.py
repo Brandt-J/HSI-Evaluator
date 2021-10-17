@@ -16,7 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
 from PyQt5 import QtWidgets, QtCore
 from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast, Set
 import numpy as np
@@ -28,7 +27,8 @@ from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
 from dataObjects import Sample
 import classification.classifyProcedures as cp
-from classification.classifiers import ClassificationError, BaseClassifier
+from classification.classifiers import ClassificationError, BaseClassifier, SavedClassifier
+from projectPaths import getClassifierSaveFolder
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
@@ -244,6 +244,7 @@ class ClassCreator(QtWidgets.QGroupBox):
             
         self._layout.addWidget(group)
         self._layout.addWidget(self._newClsBtn)
+        self._layout.addStretch()
 
     def _getColorLabel(self, name: str) -> QtWidgets.QLabel:
         """
@@ -297,67 +298,30 @@ class ClassificationUI(QtWidgets.QGroupBox):
     UI Element for Classification of the current graph view(s).
     """
     ClassTransparencyUpdated: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    PreprocessSpectra: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self, parent: 'MainWindow'):
         super(ClassificationUI, self).__init__()
         self._mainWin: 'MainWindow' = parent
         self._logger: 'Logger' = getLogger("ClassificationUI")
-        self._classifiers: List['BaseClassifier'] = cp.getClassifiers()  # all available classifiers
-        self._activeClf: Union[None, 'BaseClassifier'] = None  # the currently selected classifier
-        self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
 
-        self._trainProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
         self._inferenceProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
-
-        self._excludeBackgroundCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
-        self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
-        self._maxNumSpecsSpinBox: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
-
+        
+        self._applyPreprocBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply to Samples")
+        self._clfSelector: ClfSelector = ClfSelector(parent)
         self._radioImage: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Whole Image")
         self._radioParticles: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Particles")
 
-        self._trainBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Train Classifier")
         self._applyBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply Classifier")
 
         self._transpSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
         self._progressbar.setWindowTitle("Classification in Progress")
-        self._validGroup: ValidationResult = ValidationResult()
 
         self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         self.setLayout(self._layout)
         self._configureWidgets()
         self._createLayout()
-        self._selectFirstClassifier()
-
-    def _trainClassifier(self) -> None:
-        """
-        Trains the selected classifier.
-        """
-        trainSamples: List['Sample'] = self._getTrainingSamples()
-        errMsg: str = ''
-        if self._activeClf is None:
-            errMsg = "No Classifier selected."
-        if len(trainSamples) == 0:
-            errMsg += "\nNo Samples for Training selected"
-
-        if len(errMsg) > 0:
-            QtWidgets.QMessageBox.about(self, "Error", f"Cannot train classifier:\n{errMsg}")
-        else:
-            self._mainWin.disableWidgets()
-            self._applyBtn.setDisabled(True)
-            self._activeClf.makePickleable()
-            self._trainProcessWindow = ProcessWithStatusBarWindow(cp.trainClassifier,
-                                                                  (trainSamples, self._activeClf,
-                                                                   self._maxNumSpecsSpinBox.value(),
-                                                                   self._testFracSpinBox.value()),
-                                                                  str, cp.TrainingResult)
-            self._trainProcessWindow.setWindowTitle(f"Training on {len(trainSamples)} samples.")
-            self._trainProcessWindow.ProcessFinished.connect(self._onTrainingFinishedOrAborted)
-            self._trainProcessWindow.setProgressBarMaxVal(0)
-            self._trainProcessWindow.startProcess()
-            self._activeClf.restoreNotPickleable()
 
     def _runClassification(self) -> None:
         """
@@ -367,7 +331,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         inferenceSamples: List['Sample'] = self._getInferenceSamples()
         errMsg: str = ''
-        if self._activeClf is None:
+        activeClf: Union[None, 'BaseClassifier'] = self._clfSelector.getActiveClassifier()
+        if activeClf is None:
             errMsg = "No Classifier selected."
         if len(inferenceSamples) == 0:
             errMsg += "\nNo Samples for Inference selected"
@@ -376,16 +341,16 @@ class ClassificationUI(QtWidgets.QGroupBox):
             QtWidgets.QMessageBox.about(self, "Error", f"Cannot apply classifier:\n{errMsg}")
         else:
             self._mainWin.disableWidgets()
-            self._activeClf.makePickleable()
+            activeClf.makePickleable()
             clfMode: cp.ClassifyMode = cp.ClassifyMode.WholeImage if self._radioImage.isChecked() else cp.ClassifyMode.Particles
             self._inferenceProcessWindow = ProcessWithStatusBarWindow(cp.classifySamples,
-                                                                      (inferenceSamples, self._activeClf, clfMode),
+                                                                      (inferenceSamples, activeClf, clfMode),
                                                                        str, list)
             self._inferenceProcessWindow.setWindowTitle(f"Inference on {len(inferenceSamples)} samples.")
             self._inferenceProcessWindow.ProcessFinished.connect(self._onClassificationFinishedOrAborted)
             self._inferenceProcessWindow.setProgressBarMaxVal(len(inferenceSamples))
             self._inferenceProcessWindow.startProcess()
-            self._activeClf.restoreNotPickleable()
+            activeClf.restoreNotPickleable()
 
     @QtCore.pyqtSlot(bool)
     def _onClassificationFinishedOrAborted(self, properlyFinished: bool) -> None:
@@ -401,27 +366,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._mainWin.enableWidgets()
 
-    @QtCore.pyqtSlot(bool)
-    def _onTrainingFinishedOrAborted(self, properlyFinished: bool) -> None:
-        if properlyFinished:
-            result: Union[None, cp.TrainingResult] = self._trainProcessWindow.getResult()
-            assert result is not None
-            self._activeClf.updateClassifierFromTrained(result.classifier)
-            self._validGroup.showResult(result.validReportDict)
-            self._applyBtn.setEnabled(True)
-        else:
-            self._logger.info("Training finished without getting a result.")
-
-        self._mainWin.enableWidgets()
-
     def _emitTransparencyUpdate(self) -> None:
         self.ClassTransparencyUpdated.emit(self._transpSlider.value() / 100)
-
-    def _getTrainingSamples(self) -> List['Sample']:
-        """
-        Returns a list of SampleData objects from all samples selected for training.
-        """
-        return [sample.getSampleData() for sample in self._mainWin.getAllSamples() if sample.isSelectedForTraining()]
 
     def _getInferenceSamples(self) -> List['Sample']:
         """
@@ -429,62 +375,29 @@ class ClassificationUI(QtWidgets.QGroupBox):
         """
         return [sample.getSampleData() for sample in self._mainWin.getAllSamples() if sample.isSelectedForInference()]
 
-    @QtCore.pyqtSlot(str)
-    def _activateClassifier(self, clfName: str) -> None:
-        """
-        Executed when a new classifier is selected. Sets up the UI accordingly.
-        """
-        clfActivated: bool = False
-        for clf in self._classifiers:
-            if clf.title == clfName:
-                self._activeClf = clf
-                self._activeClfControls = clf.getControls()
-                clfActivated = True
-                break
-        assert clfActivated, f'Classifier {clfName} was not found in available classifiers...'
-        self._placeClfControlsToLayout()
-
-    def _selectFirstClassifier(self) -> None:
-        """
-        To select the first classifier.
-        """
-        if len(self._classifiers) > 0:
-            self._activateClassifier(self._classifiers[0].title)
-
     def _configureWidgets(self) -> None:
         self._transpSlider.setMinimum(0)
         self._transpSlider.setValue(80)
         self._transpSlider.setMaximum(100)
         self._transpSlider.valueChanged.connect(self._emitTransparencyUpdate)
 
-        self._testFracSpinBox.setMinimum(0.01)
-        self._testFracSpinBox.setMaximum(0.99)
-        self._testFracSpinBox.setValue(0.1)
-
-        self._maxNumSpecsSpinBox.setMinimum(100)
-        self._maxNumSpecsSpinBox.setMaximum(100000)
-        self._maxNumSpecsSpinBox.setValue(5000)
-
-        self._trainBtn.released.connect(self._trainClassifier)
         self._applyBtn.released.connect(self._runClassification)
-        self._applyBtn.setDisabled(True)
+        # self._applyBtn.setDisabled(True)
+
+        self._applyPreprocBtn.released.connect(lambda: self.PreprocessSpectra.emit())
+        self._applyPreprocBtn.setMaximumWidth(130)
 
         self._radioParticles.setChecked(True)
 
-        self._clfCombo.addItems([clf.title for clf in self._classifiers])
-        self._clfCombo.currentTextChanged.connect(self._activateClassifier)
-
     def _createLayout(self) -> None:
-        self._layout.addWidget(QtWidgets.QLabel("Select Classifier:"))
-        self._layout.addWidget(self._clfCombo)
-        self._layout.addWidget(self._activeClfControls)
-        self._layout.addStretch()
+        preprocGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Preprocess Spectra")
+        preprocLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        preprocGroup.setLayout(preprocLayout)
+        preprocLayout.addWidget(self._applyPreprocBtn)
 
-        trainOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options")
-        trainOptnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        trainOptnGroup.setLayout(trainOptnLayout)
-        trainOptnLayout.addRow("Max. Num. of Spectra per class", self._maxNumSpecsSpinBox)
-        trainOptnLayout.addRow("Test Fraction", self._testFracSpinBox)
+        self._layout.addWidget(preprocGroup)
+        self._layout.addWidget(self._clfSelector)
+        self._layout.addStretch()
 
         infOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Run classification on")
         infOptnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -492,28 +405,12 @@ class ClassificationUI(QtWidgets.QGroupBox):
         infOptnLayout.addWidget(self._radioImage)
         infOptnLayout.addWidget(self._radioParticles)
 
-        runLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
-        runLayout.addWidget(self._trainBtn)
-        runLayout.addWidget(self._applyBtn)
-
-        validationGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Validation Results")
-        validationGroup.setLayout(QtWidgets.QHBoxLayout())
-        validationGroup.layout().addWidget(self._validGroup)
-
-        self._layout.addWidget(trainOptnGroup)
         self._layout.addWidget(infOptnGroup)
-        self._layout.addWidget(validationGroup)
-        self._layout.addLayout(runLayout)
+        self._layout.addWidget(self._applyBtn)
         self._layout.addStretch()
         self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
         self._layout.addWidget(self._transpSlider)
-
-    def _placeClfControlsToLayout(self) -> None:
-        """Places the controls of the currently selected classifier into the layout."""
-        indexOfControlElement: int = 2  # has to be matched with the layout contruction in the _createLayout method.
-        item = self._layout.itemAt(indexOfControlElement)
-        self._layout.removeWidget(item.widget())
-        self._layout.insertWidget(indexOfControlElement, self._activeClfControls)
+        self._layout.addStretch()
 
     def _updateClassImages(self, finishedSamples: List['Sample']) -> None:
         """
@@ -673,11 +570,221 @@ class ProcessWithStatusBarWindow(QtWidgets.QWidget):
         self.hide()
 
 
-class ValidationResult(QtWidgets.QGroupBox):
+class ClfSelector(QtWidgets.QGroupBox):
+    """
+    Group for selecting a classifier.
+    """
+    def __init__(self, mainWin: 'MainWindow'):
+        super(ClfSelector, self).__init__("Select Classifier")
+        self._activeClf: Union[None, 'BaseClassifier'] = None  # the currently selected classifier
+        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+        self._tabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
+        self._loadClfTab: LoadClfTab = LoadClfTab()
+        self._trainClfTab: TrainClfTab = TrainClfTab(mainWin)
+
+        self._loadIndex: int = self._tabView.addTab(self._loadClfTab, "Load Classifier")
+        self._trainIndex: int = self._tabView.addTab(self._trainClfTab, "Train Classifier")
+
+        self._validResult: ValidationResult = ValidationResult()
+        self._tabView.currentChanged.connect(self._onTabChanged)
+        self._trainClfTab.NewValidationResult.connect(self._validResult.showResult)
+
+        # scrollArea: QtWidgets.QScrollArea = QtWidgets.QScrollArea()
+        # scrollArea.setWidget(self._validResult)  # TODO: Reimplement Scrollarea..
+
+        layout.addWidget(self._tabView)
+        layout.addWidget(self._validResult)
+
+    def getActiveClassifier(self) -> Union[None, 'BaseClassifier']:
+        """
+        Returns the active classifier from either the loading or the training tab, depending on which is currently opened.
+        """
+        clf: Union[None, 'BaseClassifier'] = None
+        if self._tabView.currentIndex() == self._loadIndex:
+            clf = self._loadClfTab.getActiveClf()
+        elif self._tabView.currentIndex() == self._trainIndex:
+            clf = self._trainClfTab.getActiveClf()
+
+        return clf
+
+    @QtCore.pyqtSlot(int)
+    def _onTabChanged(self) -> None:
+        """Called, when the training or loading tab is changed"""
+        self._validResult.clearResult()
+
+
+class LoadClfTab(QtWidgets.QWidget):
+    """
+    Tab for loading an already trained classifier from disk.
+    """
     def __init__(self):
-        super(ValidationResult, self).__init__()
+        super(LoadClfTab, self).__init__()
+        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(layout)
+        layout.addWidget(QtWidgets.QLabel("Load a Classifier"))
+
+        self._activeClf: Union[None, 'BaseClassifier'] = None
+
+    def getActiveClf(self) -> Union[None, 'BaseClassifier']:
+        return self._activeClf
+
+
+class TrainClfTab(QtWidgets.QWidget):
+    """
+    Tab for training a new classifier.
+    """
+    NewValidationResult: QtCore.pyqtSignal = QtCore.pyqtSignal(dict)
+
+    def __init__(self, mainWin: 'MainWindow'):
+        super(TrainClfTab, self).__init__()
+        self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        self.setLayout(self._layout)
+
+        self._mainWin: 'MainWindow' = mainWin
+        self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
+        self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._trainProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
+        self._maxNumSpecsSpinBox: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+
+        self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
+        self._trainBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Train Classifier")
+        self._saveBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Save Classifier")
+
+        self._activeClf: Union[None, 'BaseClassifier'] = None
+        self._classifiers: List['BaseClassifier'] = cp.getClassifiers()  # all available classifiers
+
+        self._configureWidgets()
+        self._createLayout()
+        self._selectClassifier(self._classifiers[0].title)
+
+    def getActiveClf(self) -> Union[None, 'BaseClassifier']:
+        return self._activeClf
+
+    def _configureWidgets(self) -> None:
+        self._clfCombo.addItems([clf.title for clf in self._classifiers])
+        self._clfCombo.currentTextChanged.connect(self._selectClassifier)
+        self._testFracSpinBox.setMinimum(0.01)
+        self._testFracSpinBox.setMaximum(0.99)
+        self._testFracSpinBox.setValue(0.1)
+
+        self._maxNumSpecsSpinBox.setMinimum(100)
+        self._maxNumSpecsSpinBox.setMaximum(int(1e6))
+        self._maxNumSpecsSpinBox.setValue(5000)
+
+        self._trainBtn.released.connect(self._trainClassifier)
+        self._saveBtn.released.connect(self._promptToSaveClf)
+
+    def _createLayout(self) -> None:
+        trainOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Training Options")
+        trainOptnLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        trainOptnGroup.setLayout(trainOptnLayout)
+        trainOptnLayout.addRow("Max. Num. of Spectra per class", self._maxNumSpecsSpinBox)
+        trainOptnLayout.addRow("Test Fraction", self._testFracSpinBox)
+
+        btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        btnLayout.addWidget(self._trainBtn)
+        btnLayout.addWidget(self._saveBtn)
+
+        self._layout.addWidget(self._clfCombo)
+        self._layout.addWidget(self._activeClfControls)
+        self._layout.addWidget(trainOptnGroup)
+        self._layout.addLayout(btnLayout)
+
+    @QtCore.pyqtSlot(str)
+    def _selectClassifier(self, clfName: str) -> None:
+        """
+        Executed when a new classifier is selected. Sets up the UI accordingly.
+        """
+        clfActivated: bool = False
+        for clf in self._classifiers:
+            if clf.title == clfName:
+                self._activeClf = clf
+                self._activeClfControls = clf.getControls()
+                clfActivated = True
+                break
+        assert clfActivated, f'Classifier {clfName} was not found in available classifiers...'
+        self._placeClfControlsToLayout()
+
+    def _trainClassifier(self) -> None:
+        """
+        Trains the selected classifier.
+        """
+        trainSamples: List['Sample'] = self._getTrainingSamples()
+        errMsg: str = ''
+        if self._activeClf is None:
+            errMsg = "No Classifier selected."
+        if len(trainSamples) == 0:
+            errMsg += "\nNo Samples for Training selected"
+
+        if len(errMsg) > 0:
+            QtWidgets.QMessageBox.about(self, "Error", f"Cannot train classifier:\n{errMsg}")
+        else:
+            self._mainWin.disableWidgets()
+            self._activeClf.makePickleable()
+            self._trainProcessWindow = ProcessWithStatusBarWindow(cp.trainClassifier,
+                                                                  (trainSamples, self._activeClf,
+                                                                   self._maxNumSpecsSpinBox.value(),
+                                                                   self._testFracSpinBox.value()),
+                                                                  str, cp.TrainingResult)
+            self._trainProcessWindow.setWindowTitle(f"Training on {len(trainSamples)} samples.")
+            self._trainProcessWindow.ProcessFinished.connect(self._onTrainingFinishedOrAborted)
+            self._trainProcessWindow.setProgressBarMaxVal(0)
+            self._trainProcessWindow.startProcess()
+            self._activeClf.restoreNotPickleable()
+
+    def _promptToSaveClf(self) -> None:
+        """
+        Prompts the user for a file location to save the active classifier to.
+        """
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select Location to save classfier to",
+                                                         directory=getClassifierSaveFolder(), filter="*clf")
+        if fname:
+            self._saveClassifier(fname)
+
+    def _saveClassifier(self, fname: str) -> None:
+        """
+        Saves the active classifier to the specified directory.
+        :param fname: Full path to classifier save file.
+        """
+        saveClf: SavedClassifier = SavedClassifier(self._activeClf, self)
+
+    @QtCore.pyqtSlot(bool)
+    def _onTrainingFinishedOrAborted(self, properlyFinished: bool) -> None:
+        if properlyFinished:
+            result: Union[None, cp.TrainingResult] = self._trainProcessWindow.getResult()
+            assert result is not None
+            self._activeClf.updateClassifierFromTrained(result.classifier)
+            self.NewValidationResult.emit(result.validReportDict)
+        else:
+            self._logger.info("Training finished without getting a result.")
+
+        self._mainWin.enableWidgets()
+
+    def _placeClfControlsToLayout(self) -> None:
+        """Places the controls of the currently selected classifier into the layout."""
+        indexOfControlElement: int = 1  # has to be matched with the layout contruction
+        item = self._layout.itemAt(indexOfControlElement)
+        self._layout.removeWidget(item.widget())
+        self._layout.insertWidget(indexOfControlElement, self._activeClfControls)
+
+    def _getTrainingSamples(self) -> List['Sample']:
+        """
+        Returns a list of SampleData objects from all samples selected for training.
+        """
+        return [sample.getSampleData() for sample in self._mainWin.getAllSamples() if sample.isSelectedForTraining()]
+
+
+class ValidationResult(QtWidgets.QGroupBox):
+    """
+    Widget for showing classifier validation statistics.
+    """
+    def __init__(self):
+        super(ValidationResult, self).__init__("Classifier Statistics")
+        self._currentResults: dict = {}
+
         self._layout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
-        self._defaultLabel: QtWidgets.QLabel = QtWidgets.QLabel("No results yet.")
+        self._defaultLabel: QtWidgets.QLabel = QtWidgets.QLabel("No results yet.\t\t")
         self._lblPrec: QtWidgets.QLabel = QtWidgets.QLabel("Precision")
         self._lblRecall: QtWidgets.QLabel = QtWidgets.QLabel("Recall")
         self._lblF1: QtWidgets.QLabel = QtWidgets.QLabel("F1")
@@ -689,6 +796,19 @@ class ValidationResult(QtWidgets.QGroupBox):
         self._layout.addWidget(self._defaultLabel, 0, 0)
         self.setLayout(self._layout)
 
+    @QtCore.pyqtSlot()
+    def clearResult(self) -> None:
+        """
+        Clears the current result and displays a standard text.
+        """
+        self._clearLayout()
+        self._resultLabels = []
+        self._currentResults = {}
+
+        self._defaultLabel.setText("No valid classifier loaded or trained")
+        self._layout.addWidget(self._defaultLabel, 0, 0)
+
+    @QtCore.pyqtSlot(dict)
     def showResult(self, reportDict: dict) -> None:
         """
         Takes a validation report dict and adapts to show its content.
@@ -696,6 +816,7 @@ class ValidationResult(QtWidgets.QGroupBox):
         self._clearLayout()
         self._defaultLabel.setText("")
         self._resultLabels = []
+        self._currentResults = reportDict
 
         # Header
         for i, lbl in enumerate(self._getHeaderLabels(), start=1):
