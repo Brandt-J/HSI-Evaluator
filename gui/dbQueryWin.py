@@ -16,6 +16,7 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import time
 from copy import copy
 
 from PyQt5 import QtWidgets, QtGui, QtCore
@@ -143,32 +144,40 @@ class DatabaseQueryWindow(QtWidgets.QWidget):
 
     def _downloadedSpec2Dict(self) -> Tuple[Dict[str, np.ndarray], np.ndarray]:
         """
-        Reformats the currntly stored list of downloaded spectra into a dictionary with class-name as keys and
-        intensity array as values. Also a unique wavelength axis is returned; all spectra are mapped to the shortes
+        Reformats the currently stored list of downloaded spectra into a dictionary with class-name as keys and
+        intensity array as values. Also a unique wavelength axis is returned; all spectra are mapped to the shortest
         wavelength axis.
-        :return Tuple[named SpectraDict, wavelenght array]
+        :return Tuple[named SpectraDict, wavelength array]
         """
         assert len(self._currentSpecs) > 0
         specsToProcess: List['DownloadedSpectrum'] = self._currentSpecs.copy()
         lenOfWavelengths: List[int] = [len(spec.wavelengths) for spec in specsToProcess]
         minInd: int = int(np.argmin(lenOfWavelengths))
         shortestWavelengths: np.ndarray = self._currentSpecs[minInd].wavelengths
+        specDictLists: Dict[str, List[np.ndarray]] = {}
+        for spec in specsToProcess:
+            className = self._getFinalNameOfSpec(spec)
+            remappedSpec: np.ndarray = spec.getIntensitiesForOtherWavelengths(shortestWavelengths)
+            if className not in specDictLists.keys():
+                specDictLists[className] = [remappedSpec]
+            else:
+                specDictLists[className].append(remappedSpec)
 
         specDict: Dict[str, np.ndarray] = {}
-        for spec in specsToProcess:
-            remappedSpec: np.ndarray = spec.getIntensitiesForOtherWavelengths(shortestWavelengths)
-            if self._checkAbbreviate.isChecked():
-                spec.abbreviatePolymer()
-            if self._checkGroupSediment.isChecked():
-                spec.groupSedimentName()
-            className: str = spec.getConcatenatedName() if self._checkComplex.isChecked() else spec.className
-            if className not in specDict.keys():
-                specDict[className] = remappedSpec
-            else:
-                presentSpectra: np.ndarray = specDict[className]
-                specDict[className] = np.vstack((remappedSpec, presentSpectra))
-
+        for clsname, specList in specDictLists.items():
+            specDict[clsname] = np.array(specList)
         return specDict, shortestWavelengths
+
+    def _getFinalNameOfSpec(self, spec: 'DownloadedSpectrum'):
+        """
+        Retrieves the final name of the downloaded spectrum, after modifying according to the user settings in the UI
+        """
+        if self._checkAbbreviate.isChecked():
+            spec.abbreviatePolymer()
+        if self._checkGroupSediment.isChecked():
+            spec.groupSedimentName()
+        className: str = spec.getConcatenatedName() if self._checkComplex.isChecked() else spec.className
+        return className
 
     def _getOptionsDict(self) -> Dict[str, List[str]]:
         """
@@ -263,7 +272,6 @@ def _convertSpecDictToCubeAndSelections(specDict: Dict[str, np.ndarray]) -> Tupl
     numWavenums: Set[int] = set([specArr.shape[1] for specArr in specDict.values()])
     assert len(numWavenums) == 1, 'The given spectra have multiple number of wavelengths.'
     numWavenums: int = list(numWavenums)[0]
-
     allSpecs: Union[None, np.ndarray] = None
     allClasses: List[str] = []
     for name, spectra in specDict.items():

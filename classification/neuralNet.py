@@ -32,11 +32,11 @@ def loadModelFromFile(fname: str) -> 'NeuralNetClf':
 
 
 class NeuralNetClf(Sequential):
-    def __init__(self, numFeatures: int, numClasses: int, numNeuronsPerHiddenLayer: List[int] = [100, 50, 50], dropout: float = 0.1):
+    def __init__(self, numFeatures: int, numClasses: int, numNeuronsPerHiddenLayer: List[int] = [200, 100, 50], dropout: float = 0.1):
         super(NeuralNetClf, self).__init__()
         self.add(InputLayer(input_shape=(numFeatures)))
         for numNeurons in numNeuronsPerHiddenLayer:
-            self.add(Dense(numNeurons, input_dim=numFeatures, activation="relu"))
+            self.add(Dense(numNeurons, activation="relu"))
             self.add(Dropout(dropout))
         self.add(Dense(numClasses, activation="softmax"))
         self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision(), Recall()])
