@@ -18,10 +18,12 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 import time
 from enum import Enum
-
+import numba
 import numpy as np
 from scipy.signal import savgol_filter
 from scipy.linalg import solveh_banded
+
+from preprocessing.numba_polyfit import fit_poly
 
 
 def als_baseline(intensities, asymmetry_param=0.05, smoothness_param=1e4, max_iters=5, conv_thresh=1e-5, verbose=False):
@@ -95,6 +97,7 @@ def mapSpecToWavenumbers(spec: np.ndarray, targetWavenumbers: np.ndarray) -> np.
     return newSpec
 
 
+@numba.njit
 def normalizeIntensities(input_data: np.ndarray, mode: 'NormMode') -> np.ndarray:
     """
     Normalizes each set of intensities
@@ -102,8 +105,7 @@ def normalizeIntensities(input_data: np.ndarray, mode: 'NormMode') -> np.ndarray
     :param mode: Mode for the normalization.
     :return:
     """
-    if len(input_data.shape) == 1:
-        input_data = input_data[np.newaxis, :]
+    assert mode in [NormMode.Area, NormMode.Length, NormMode.Max]
 
     normalized: np.ndarray = np.zeros_like(input_data)
     for i in range(input_data.shape[0]):
@@ -112,13 +114,10 @@ def normalizeIntensities(input_data: np.ndarray, mode: 'NormMode') -> np.ndarray
             divisor = np.trapz(input_data[i, :])
         elif mode == NormMode.Length:
             divisor = np.linalg.norm(input_data[i, :])
-        elif mode == NormMode.Max:
-            divisor = np.max(input_data[i, :])
         else:
-            raise NotImplementedError(f"The normalization mode {mode} was not implemented.")
+            divisor = np.max(input_data[i, :])
 
         normalized[i, :] = input_data[i, :] / divisor
-
     return normalized
 
 
@@ -139,6 +138,7 @@ def autoscale(input_data: np.ndarray) -> np.ndarray:
     return scaled
 
 
+@numba.njit
 def snv(input_data: np.ndarray) -> np.ndarray:
     """
     Standard normal variate Correction. "Autoscale" of rows.
@@ -151,19 +151,7 @@ def snv(input_data: np.ndarray) -> np.ndarray:
     return output_data
 
 
-def mean_center(input_data: np.ndarray) -> np.ndarray:
-    """
-    Mean Centering, column (feature) wise. The mean of each feature along all the samples is substracted from
-    the respective features, thus converting each feature into the "difference in feature", essentially.
-    :param input_data: Shape (MxN) array of M samples with N features
-    :return: corrected data in same shape
-    """
-    output_data: np.ndarray = np.zeros_like(input_data)
-    for i in range(input_data.shape[1]):
-        output_data[:, i] = input_data[:, i] - np.mean(input_data[:, i])
-    return output_data
-
-
+@numba.njit
 def detrend(input_data: np.ndarray) -> np.ndarray:
     """
     Removes a linear baseline.
@@ -197,6 +185,7 @@ def deriv_smooth(input_data: np.ndarray, polydegree: int, derivative: int = 0, w
     return output_data
 
 
+@numba.njit
 def msc(spectra: np.ndarray):
     """
     Multiplicative Scatter Correction technique performed with mean of the sample data as the reference.
@@ -209,17 +198,19 @@ def msc(spectra: np.ndarray):
     for i in range(spectra.shape[0]):
         spectra[i, :] -= spectra[i, :].mean()
 
-    # Get the reference spectrum. If not given, estimate it from the mean
-    ref = np.mean(spectra, axis=0)
+    # Estimate ref spectrum as mean of input spectra
+    ref = np.zeros(spectra.shape[1])
+    for i in range(spectra.shape[1]):
+        ref[i] = np.mean(spectra[:, i])
 
     # Define a new array and populate it with the corrected data
     data_msc = np.zeros_like(spectra)
     for i in range(spectra.shape[0]):
         # Run regression
-        fit = np.polyfit(ref, spectra[i, :], 1, full=True)
+        fit = fit_poly(ref, spectra[i, :], deg=1)
         # Apply correction
-        if not fit[0][0] == 0:
-            corrected = (spectra[i, :] - fit[0][1]) / fit[0][0]
+        if not fit[0] == 0:
+            corrected = (spectra[i, :] - fit[1]) / fit[0]
         else:
             corrected = spectra[i, :]
 
@@ -233,3 +224,29 @@ class NormMode(Enum):
     Area = 0
     Length = 1
     Max = 2
+
+
+if __name__ == '__main__':
+    # Some benchmarking with random data...
+
+    arr: np.ndarray = np.random.rand(250000, 100)
+    for _ in range(2):
+        t0 = time.time()
+        normalizeIntensities(arr, NormMode.Length)
+        print(f"normalize {time.time()-t0} seconds")
+
+        t0 = time.time()
+        deriv_smooth(arr, windowSize=11, derivative=1, polydegree=2)
+        print(f"savgol {time.time() - t0} seconds")
+
+        t0 = time.time()
+        snv(arr)
+        print(f"snv {time.time() - t0} seconds")
+
+        t0 = time.time()
+        detrend(arr)
+        print(f"detrend {time.time() - t0} seconds")
+
+        t0 = time.time()
+        msc(arr)
+        print(f"msc {time.time() - t0} seconds")

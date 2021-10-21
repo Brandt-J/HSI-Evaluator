@@ -17,18 +17,15 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 import random
-import time
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, TYPE_CHECKING, Union, Set, Callable, Tuple
+from typing import List, TYPE_CHECKING, Union, Set
 import numpy as np
 from collections import Counter
-from multiprocessing import Process, Queue, Event
-
+from threading import Thread, Event
 from dataObjects import Sample
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
-    from sampleview import SampleView
     from spectraObject import SpectraCollection, SpectraObject
     from gui.HSIEvaluator import MainWindow
     from gui.spectraPlots import ResultPlots
@@ -51,8 +48,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         self._nodeGraph.NewSpecsForSpecPlot.connect(self._plots.updateSpecPlot)
 
         self._processingPerformer: PreprocessingPerformer = PreprocessingPerformer()
-        self._processingPerformer.PreprocessingFinished.connect(self._setPreprocessedData)
-        self._processingPerformer.PreprocessingAborted.connect(self._preprocessingWasAborted)
+        self._processingPerformer.PreprocessingFinished.connect(lambda: self._mainWin.enableWidgets())
 
         updateBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Preview")
         updateBtn.released.connect(self.updatePreviewSpectra)
@@ -119,10 +115,13 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         """
         Applies the preprocessing to all samples
         """
-        self._mainWin.disableWidgets()
         samples: List['Sample'] = [sample.getSampleData() for sample in self._mainWin.getAllSamples()]
         processors: List['Preprocessor'] = self._nodeGraph.getPreprocessors()
-        self._processingPerformer.startPreprocessing(samples, processors)
+        if len(processors) == 0:
+            QtWidgets.QMessageBox.about(self, "Info", "No Preprocessors selected.")
+        else:
+            self._mainWin.disableWidgets()
+            self._processingPerformer.startPreprocessing(samples, processors)
 
     def _showNoSpectraWarning(self) -> None:
         QtWidgets.QMessageBox.about(self, "Info", "Spectra Preprocessing cannot be previewed.\n"
@@ -156,27 +155,9 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
 
         return newSpecs, newLabels, newSampleNames
 
-    @QtCore.pyqtSlot(list)
-    def _setPreprocessedData(self, preprocessedSamples: List['Sample']) -> None:
-        """
-        Receives the preprocessed samples from the preprocessing Process and sets the sample data herein accordingly.
-        """
-        sampleViews: List['SampleView'] = self._mainWin.getAllSamples()
-        for preprocSampleData in preprocessedSamples:
-            for sampleview in sampleViews:
-                if sampleview.getSampleData() == preprocSampleData:
-                    sampleview.setSampleData(preprocSampleData)
-                    break
-        self._mainWin.enableWidgets()
-
-    @QtCore.pyqtSlot()
-    def _preprocessingWasAborted(self) -> None:
-        self._mainWin.enableWidgets()
-
 
 class PreprocessingPerformer(QtWidgets.QWidget):
-    PreprocessingFinished: QtCore.pyqtSignal = QtCore.pyqtSignal(list)
-    PreprocessingAborted: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    PreprocessingFinished: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         super(PreprocessingPerformer, self).__init__()
@@ -193,8 +174,7 @@ class PreprocessingPerformer(QtWidgets.QWidget):
         layout.addWidget(self._progressLabel)
         layout.addWidget(self._btnCancel)
 
-        self._process: Process = Process()
-        self._queue: Queue = Queue()
+        self._thread: Thread = Thread()
         self._stopEvent: Event = Event()
 
         self._timer: QtCore.QTimer = QtCore.QTimer()
@@ -204,27 +184,20 @@ class PreprocessingPerformer(QtWidgets.QWidget):
         self._preprocessedSamples: List['Sample'] = []
 
     def startPreprocessing(self, samples: List['Sample'], preprocessors: List['Preprocessor']) -> None:
-        self._queue = Queue()
         self._stopEvent = Event()
-        self._process = Process(target=preprocessSamples, args=(samples, preprocessors, self._queue, self._stopEvent))
+        self._preprocessedSamples = []
+        self._thread = Thread(target=self._preprocessSamples, args=(samples, preprocessors))
         self._progressbar.setValue(0)
         self._progressbar.setMaximum(len(samples))
         self._timer.start(100)
         self.setWindowTitle(f"Preprocessing {len(samples)} sample(s) with {len(preprocessors)} preprocessor(s).")
-        self._process.start()
+        self._thread.start()
         self._btnCancel.setEnabled(True)
         self.show()
 
     def _checkOnPreprocessing(self) -> None:
-        if not self._queue.empty():
-            queueContent = self._queue.get()
-            if type(queueContent) == Sample:
-                self._preprocessedSamples.append(queueContent)
-                self._incrementProgressbar()
-
-            if len(self._preprocessedSamples) == self._progressbar.maximum():
-                self.PreprocessingFinished.emit(self._preprocessedSamples)
-                self._finishProcessing()
+        if len(self._preprocessedSamples) == self._progressbar.maximum():
+            self._finishProcessing()
 
     def _incrementProgressbar(self) -> None:
         """
@@ -233,7 +206,7 @@ class PreprocessingPerformer(QtWidgets.QWidget):
         self._progressbar.setValue(self._progressbar.value() + 1)
 
     def _promptForCancel(self) -> None:
-        if self._process.is_alive():
+        if self._thread.is_alive():
             reply = QtWidgets.QMessageBox.question(self, "Abort?", "Abort the preprocessing?",
                                                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                                                    QtWidgets.QMessageBox.No)
@@ -248,32 +221,22 @@ class PreprocessingPerformer(QtWidgets.QWidget):
 
     def _finishProcessing(self, aborted: bool = False) -> None:
         self._timer.stop()
-        self._queue.close()
-        self._process.join(timeout=2 if aborted else None)
-        self._progressbar.setValue(0)
-        self._preprocessedSamples = []
-        if aborted:
-            self.PreprocessingAborted.emit()
-
+        self._thread.join(timeout=2 if aborted else None)
+        self.PreprocessingFinished.emit()
         self.hide()
 
+    def _preprocessSamples(self, samples: List['Sample'], preprocessors: List['Preprocessor']) -> None:
+        """
+        Preprocess a list of samples with the list of preprocessors.
+        :param samples: List of SampleData objects to process
+        :param preprocessors: List of Preprocessors to use
+        """
+        for sample in samples:
+            if self._stopEvent.is_set():
+                return
 
-def preprocessSamples(samples: List['Sample'], preprocessors: List['Preprocessor'],
-                      queue: Queue, stopEvent: Event) -> None:
-    """
-    Preprocess a list of samples with the list of preprocessors.
-    :param samples: List of SampleData objects to process
-    :param preprocessors: List of Preprocessors to use
-    :param queue: The dataQueue to put preprocessed samples into
-    :param stopEvent: Event to check for process abortion
-    """
-    for sample in samples:
-        if stopEvent.is_set():
-            return
-
-        specObj: 'SpectraObject' = sample.specObj
-        backgroundInd: Set[int] = sample.getBackroundIndices()
-        time.sleep(3)
-        specObj.doPreprocessing(preprocessors, backgroundInd)
-
-        queue.put(sample)
+            specObj: 'SpectraObject' = sample.specObj
+            backgroundInd: Set[int] = sample.getBackroundIndices()
+            specObj.doPreprocessing(preprocessors, backgroundInd)
+            self._incrementProgressbar()
+            self._preprocessedSamples.append(sample)

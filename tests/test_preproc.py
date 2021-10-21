@@ -16,13 +16,13 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import time
 from unittest import TestCase
 from PyQt5 import QtWidgets
 import sys
 from typing import *
 import numpy as np
 from collections import Counter
-from copy import deepcopy
 
 from logger import getLogger
 from preprocessing.routines import NormMode
@@ -32,7 +32,7 @@ from gui.spectraPlots import ResultPlots
 from gui.nodegraph.nodes import NodeNormalize
 from tests.test_classifiers import MockMainWin, getPreprocessors
 if TYPE_CHECKING:
-    from gui.sampleview import SampleView
+    from gui.preprocessEditor import PreprocessingPerformer
     from dataObjects import Sample
 
 
@@ -74,19 +74,13 @@ class TestPreprocessingEditor(TestCase):
     def test_PreprocessUI(self) -> None:
         preprocEditor: PreprocessingSelector = PreprocessingSelector(MockMainWin(), MockResultsPlot())
         preprocEditor.getPreprocessors = getPreprocessors
+        preprocEditor.applyPreprocessingToSpectra()
 
-        samples: List['SampleView'] = preprocEditor._mainWin.getAllSamples()
-        origSampleData: List['Sample'] = [sample.getSampleData() for sample in samples]
-        preprocSampleDatas: List['Sample'] = []
-        for data in origSampleData:
-            preprocData: 'Sample' = deepcopy(data)
-            cubeShape = preprocData.specObj._cube.shape
-            preprocData.specObj._preprocessedCube = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
-            preprocSampleDatas.append(preprocData)
+        preprocPerformer: 'PreprocessingPerformer' = preprocEditor._processingPerformer
+        while preprocPerformer._thread.is_alive():
+            time.sleep(0.1)
 
-        preprocEditor._setPreprocessedData(preprocSampleDatas)
-
-        for sampleInMainWin, preprocData in zip(preprocEditor._mainWin.getAllSamples(), preprocSampleDatas):
+        for sampleInMainWin, preprocData in zip(preprocEditor._mainWin.getAllSamples(), preprocPerformer._preprocessedSamples):
             sample: 'Sample' = sampleInMainWin.getSampleData()
             self.assertTrue(preprocData == sample)
             self.assertTrue(np.array_equal(preprocData.specObj._preprocessedCube, sample.specObj._preprocessedCube))

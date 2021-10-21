@@ -70,36 +70,11 @@ def preprocessSpectra(specArr: np.ndarray, preprocessors: List['Preprocessor'], 
         preprocessedSpecs: np.ndarray = specArr
     else:
         t0 = time.time()
-        if len(specArr) < 1000:
-            preprocData: PreprocessData = PreprocessData(specArr, preprocessors, background)
-            preprocessedSpecs: np.ndarray = _applyPreprocessing(preprocData)
-        else:
-            preprocessedSpecs = _preprocessSpectraMultiProcessing(specArr, preprocessors, background)
+        preprocData: PreprocessData = PreprocessData(specArr, preprocessors, background)
+        preprocessedSpecs: np.ndarray = _applyPreprocessing(preprocData)
 
         preprocLogger.info(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
     return preprocessedSpecs
-
-
-def _preprocessSpectraMultiProcessing(specArr: np.ndarray, preprocessors: List['Preprocessor'], background: np.ndarray,
-                                      maxWorkers: int = 8) -> np.ndarray:
-    """
-    Preprocesses the given spectra array using a Process Pool Executor.
-    :param specArr: (NxM) array of N spectra with M wavelengths
-    :param preprocessors: List of preprocessors to apply
-    :param background: Averaged background spectrum.
-    :param maxWorkers: Max number of Workers for multiprocessing.
-    :return: processed (NxM) array
-    """
-    preprocLogger.debug(f"Preprocessing {len(specArr)} spectra with pool process executor.")
-    preprocDatas: List[PreprocessData] = []
-    splitArrays: List[np.ndarray] = splitUpArray(specArr, numParts=10)
-    for partArray in splitArrays:
-        preprocDatas.append(PreprocessData(partArray, preprocessors, background))
-
-    with ProcessPoolExecutor(max_workers=maxWorkers) as executor:
-        result: List[np.ndarray] = list(executor.map(_applyPreprocessing, preprocDatas))
-
-    return _recombineSpecArrays(result)
 
 
 def _applyPreprocessing(preprocData: 'PreprocessData') -> np.ndarray:
