@@ -34,11 +34,14 @@ from legacyConvert import assertUpToDateSample
 from gui.graphOverlays import GraphView, ThresholdSelector, getThresholdedImage
 from gui.dbWin import DBUploadWin
 from gui.dbQueryWin import DatabaseQueryWindow
+from gui.classUI import ClassInterpretationParams
+from classification.classifyProcedures import createClassImg
 
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from logging import Logger
     from particles import ParticleHandler
+    from classification.classifiers import BatchClassificationResult
 
 
 class MultiSampleView(QtWidgets.QScrollArea):
@@ -73,6 +76,12 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._logger.debug("New Sampleview added")
         self._recreateLayout()
         return newView
+
+    def updateClassificationResults(self):
+        classInterpParams: 'ClassInterpretationParams' = self._mainWinParent.getClassInterprationParams()
+        for sampleView in self._sampleviews:
+            sampleView.updateClassImageInGraphView(classInterpParams.specConfThreshold)
+            sampleView.updateParticlesInGraphUI(classInterpParams)
 
     def _assertIdenticalWavelengths(self) -> None:
         """
@@ -333,6 +342,9 @@ class MultiSampleView(QtWidgets.QScrollArea):
 
 
 class SampleView(QtWidgets.QMainWindow):
+    """
+    Subwindow for displaying a sample.
+    """
     SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     Renamed: QtCore.pyqtSignal = QtCore.pyqtSignal()
@@ -356,30 +368,31 @@ class SampleView(QtWidgets.QMainWindow):
         self.setCentralWidget(self._group)
 
         self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
-        self._brightnessSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Vertical)
-        self._contrastSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Vertical)
-        self._maxContrast: float = 5
-        self._maxBrightnessSpinbox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._imgAdjustWidget: ImageAdjustWidget = ImageAdjustWidget()
+        self._imgAdjustWidget.ValuesChanged.connect(self._graphView.updateImage)
 
         self._activeBtn: ActivateToggleButton = ActivateToggleButton()
         self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._downloadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
 
-        self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
-        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
-        self._selectByBrightnessBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Brightness Select/\nParticleDetection")
+        self._closeAct: QtWidgets.QAction = QtWidgets.QAction("Close")
+        self._uploadAct: QtWidgets.QAction = QtWidgets.QAction("Upload to Database")
+        self._downloadAct: QtWidgets.QAction = QtWidgets.QAction("Download from Database")
+        self._selectBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Brightness Select/\nParticleDetection")
+        self._adjustBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Adjust Brightness/Contrast")
+
+        self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Training")
+        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Inference")
         self._toggleParticleCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Show Particles")
-        self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
 
         self._toolbar = QtWidgets.QToolBar()
         self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
 
-        self._configureWidgets()
         self._establish_connections()
+        self._configureWidgets()
         self._createLayout()
         self._createToolbar()
+        self._createMenuBar()
+
         self._setupWidgetsFromSampleData()
 
     @property
@@ -489,6 +502,8 @@ class SampleView(QtWidgets.QMainWindow):
         saveSample: Sample = deepcopy(self._sampleData)
         saveSample.specObj = SpectraObject()
         saveSample.classOverlay = None
+        saveSample.batchResult = None
+        saveSample.particleHandler.resetParticleResults()
         return saveSample
 
     def getVisibleLabelledSpectra(self, preprocessed: bool) -> Dict[str, np.ndarray]:
@@ -538,7 +553,7 @@ class SampleView(QtWidgets.QMainWindow):
         """
         Get's the user selected max brightness value.
         """
-        return self._maxBrightnessSpinbox.value()
+        return self._imgAdjustWidget.getSelectedMaxBrightness()
 
     def setSampleData(self, data: 'Sample') -> None:
         """
@@ -555,11 +570,26 @@ class SampleView(QtWidgets.QMainWindow):
         """
         self._graphView.resetClassImage()
 
-    def updateParticlesInGraphUI(self) -> None:
+    def updateParticlesInGraphUI(self, interpretationParams: 'ClassInterpretationParams') -> None:
         """
         Forces an update of particles in the graph ui from the currently set sample data.
         """
-        self._graphView.updateParticleColors(self._sampleData.getParticleHandler())
+        self._graphView.updateParticleColors(self._sampleData.getParticleHandler(), interpretationParams)
+
+    def updateClassImageInGraphView(self, specConfCutoff: float) -> None:
+        """
+        Called after updating sample data. Creates a new class image and sets the graph display accordingly.
+        :param specConfCutoff: The Cutoff determining the minimal required confidence for a spectrum to be counted
+        as its class, otherwise it will be labelled "unknown".
+        """
+        if self._sampleData.batchResult is not None:
+            specObj: 'SpectraObject' = self.getSpecObj()
+            cubeShape = specObj.getPreprocessedCubeIfPossible().shape
+            assignments: np.ndarray = self._sampleData.getBatchResults(specConfCutoff)
+            colorDict: Dict[str, Tuple[int, int, int]] = self._mainWindow.getClassColorDict()
+
+            clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
+            self._graphView.updateClassImage(clfImg)
 
     def isActive(self) -> bool:
         return self._activeBtn.isChecked()
@@ -592,18 +622,6 @@ class SampleView(QtWidgets.QMainWindow):
     def _createLayout(self) -> None:
         self._layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         self._group.setLayout(self._layout)
-
-        adjustLayout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
-        adjustLayout.addWidget(VerticalLabel("Brightness"), 0, 0)
-        adjustLayout.addWidget(self._brightnessSlider, 0, 1)
-        adjustLayout.addWidget(VerticalLabel("Contrast"), 1, 0)
-        adjustLayout.addWidget(self._contrastSlider, 1, 1)
-        adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
-        adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
-        adjustLayout.addWidget(self._selectNoneBtn, 3, 0, 1, 2)
-        adjustLayout.addWidget(self._selectByBrightnessBtn, 4, 0, 1, 2)
-        adjustLayout.addWidget(self._toggleParticleCheckbox, 5, 0, 1, 2)
-        self._layout.addLayout(adjustLayout)
         self._layout.addWidget(self._graphView)
 
     def _createToolbar(self):
@@ -617,27 +635,38 @@ class SampleView(QtWidgets.QMainWindow):
         clsGroup.layout().addWidget(self._trainCheckBox)
         clsGroup.layout().addWidget(self._inferenceCheckBox)
 
-        actionsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Actions")
-        actionsGroup.setLayout(QtWidgets.QHBoxLayout())
-        actionsGroup.layout().addWidget(self._uploadBtn)
-        actionsGroup.layout().addWidget(self._downloadBtn)
-        actionsGroup.layout().addWidget(self._closeBtn)
-
         toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
         toolGroup.setFlat(True)
         toolGroup.setLayout(QtWidgets.QHBoxLayout())
-        toolGroup.layout().addWidget(self._activeBtn)
-        toolGroup.layout().addStretch()
+        # toolGroup.layout().addWidget(self._activeBtn)  # Can be re-included if considered necessary...
+        # toolGroup.layout().addStretch()
         toolGroup.layout().addWidget(nameGroup)
         toolGroup.layout().addStretch()
         toolGroup.layout().addWidget(clsGroup)
         toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(actionsGroup)
+        toolGroup.layout().addWidget(self._toggleParticleCheckbox)
 
         self._toolbar.addWidget(toolGroup)
 
+    def _createMenuBar(self) -> None:
+        sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample", self)
+        sampleMenu.addAction(self._adjustBrightnessAct)
+        sampleMenu.addSeparator()
+        sampleMenu.addAction(self._closeAct)
+
+        dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database", self)
+        dbMenu.addAction(self._uploadAct)
+        dbMenu.addAction(self._downloadAct)
+
+        particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles", self)
+        particlesMenu.addAction(self._selectBrightnessAct)
+
+        self.menuBar().addMenu(sampleMenu)
+        self.menuBar().addMenu(dbMenu)
+        self.menuBar().addMenu(particlesMenu)
+
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
-        for subwin in [self._dbWin, self._threshSelector]:
+        for subwin in [self._dbWin, self._threshSelector, self._imgAdjustWidget]:
             if subwin is not None:
                 subwin.close()
         a0.accept()
@@ -655,26 +684,6 @@ class SampleView(QtWidgets.QMainWindow):
             self.Activated.emit(self._name)
 
     def _configureWidgets(self) -> None:
-        self._brightnessSlider.setMinimum(-255)
-        self._brightnessSlider.setMaximum(255)
-        self._brightnessSlider.setValue(0)
-        self._brightnessSlider.setFixedHeight(150)
-
-        contrastSteps = 100
-        self._contrastSlider.setMinimum(0)
-        self._contrastSlider.setMaximum(contrastSteps)
-        self._contrastSlider.setValue(int(round(contrastSteps / self._maxContrast)))
-        self._contrastSlider.setFixedHeight(150)
-
-        self._maxBrightnessSpinbox.setMinimum(0.0)
-        self._maxBrightnessSpinbox.setMaximum(100.0)
-        self._maxBrightnessSpinbox.setValue(1.5)
-        self._maxBrightnessSpinbox.setSingleStep(1.0)
-
-        self._maxBrightnessSpinbox.valueChanged.connect(self._initiateImageUpdate)
-        self._brightnessSlider.valueChanged.connect(self._initiateImageUpdate)
-        self._contrastSlider.valueChanged.connect(self._initiateImageUpdate)
-
         self._toggleParticleCheckbox.setChecked(True)
         self._toggleParticleCheckbox.stateChanged.connect(self._toggleParticleVisibility)
 
@@ -687,32 +696,24 @@ class SampleView(QtWidgets.QMainWindow):
         self._editNameBtn.released.connect(self._renameSample)
         self._editNameBtn.setToolTip("Rename Sample.")
 
-        self._closeBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogDiscardButton')))
-        self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
-        self._closeBtn.setToolTip("Close Sample.")
+        self._closeAct.triggered.connect(lambda: self.Closed.emit(self._name))
+        self._closeAct.setToolTip("Close Sample.")
 
-        self._uploadBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowUp')))
-        self._uploadBtn.released.connect(self._uploadToSQL)
-        self._uploadBtn.setToolTip("Upload Spectra to SQL Database.")
+        self._uploadAct.triggered.connect(self._uploadToSQL)
+        self._uploadAct.setToolTip("Upload Spectra to SQL Database.")
 
-        self._downloadBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowDown')))
-        self._downloadBtn.released.connect(self._downloadFromSQL)
-        self._downloadBtn.setToolTip("Download Spectra from SQL Database.")
+        self._downloadAct.triggered.connect(self._downloadFromSQL)
+        self._downloadAct.setToolTip("Download Spectra from SQL Database.")
 
         self._trainCheckBox.setChecked(True)
         self._inferenceCheckBox.setChecked(True)
 
-        self._selectByBrightnessBtn.released.connect(self._selectByBrightness)
-        self._selectNoneBtn.released.connect(self._selectNone)
+        self._selectBrightnessAct.triggered.connect(self._selectByBrightness)
+        self._adjustBrightnessAct.triggered.connect(self._adjustBrightness)
 
     def _establish_connections(self) -> None:
         self._activeBtn.toggled.connect(self._checkActivation)
         self._graphView.NewSelection.connect(self._addNewSelection)
-
-    def _initiateImageUpdate(self) -> None:
-        self._graphView.updateImage(self._maxBrightnessSpinbox.value(),
-                                    self._brightnessSlider.value(),
-                                    self._contrastSlider.value() / self._maxContrast)
 
     @QtCore.pyqtSlot(str, set)
     def _addNewSelection(self, selectedClass: str,  selectedIndices: Set[int]) -> None:
@@ -735,6 +736,12 @@ class SampleView(QtWidgets.QMainWindow):
         self._threshSelector.ParticleDetectionRequired.connect(self._runParticleDetection)
 
         self._threshSelector.show()
+
+    def _adjustBrightness(self) -> None:
+        """
+        Shows the brightness and contrast adjust widget.
+        """
+        self._imgAdjustWidget.show()
 
     @QtCore.pyqtSlot(int, bool)
     def _finishThresholdSelection(self, thresh: int, bright: bool) -> None:
@@ -766,17 +773,6 @@ class SampleView(QtWidgets.QMainWindow):
         self._threshSelector = None
         self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
         self._mainWindow.enableWidgets()
-
-    def _selectNone(self) -> None:
-        """
-        If confirmed, all pixels are deselected
-        """
-        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to deselect all pixels?",
-                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                                             QtWidgets.QMessageBox.Yes)
-        if ret == QtWidgets.QMessageBox.Yes:
-            self._classes2Indices = {}
-            self._graphView.deselectAll()
 
     def _uploadToSQL(self) -> None:
         """
@@ -848,63 +844,65 @@ class SampleView(QtWidgets.QMainWindow):
         :param selectBright: If True, the bright areas are selected, otherwise the darker ones.
         """
         cube: np.ndarray = self._sampleData.specObj.getNotPreprocessedCube()
-        binImg: np.ndarray = getThresholdedImage(cube, self._maxBrightnessSpinbox.value(), threshold, selectBright)
+        binImg: np.ndarray = getThresholdedImage(cube, self._imgAdjustWidget.getSelectedMaxBrightness(),
+                                                 threshold, selectBright)
         particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
         particleHandler.getParticlesFromImage(binImg)
         self._graphView.setParticles(particleHandler.getParticles())
         self._closeThresholdSelector()
 
 
-class VerticalLabel(QtWidgets.QLabel):
+class ImageAdjustWidget(QtWidgets.QWidget):
     """
-    Vertically drawn Text Label, as adapted from:
-    https://stackoverflow.com/questions/3757246/pyqt-rotate-a-qlabel-so-that-its-positioned-diagonally-instead-of-horizontally
+    Widget for Image Adjustents.
     """
-    def __init__(self, text: str = ''):
-        super(VerticalLabel, self).__init__()
-        self.text: str = text
-        self._width: int = 5
-        self._height: int = 5
-        self._setWidthHeight()
+    ValuesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, int, float)  # (maxBrightness, Brightness, Contast)
 
-    def setText(self, text: str) -> None:
-        self.text = text
-        self._setWidthHeight()
+    def __init__(self):
+        super(ImageAdjustWidget, self).__init__()
+        self._brightnessSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._contrastSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._maxContrast: float = 5
+        self._maxBrightnessSpinbox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
 
-    def paintEvent(self, event):
-        if self.text != '':
-            painter = QtGui.QPainter(self)
-            painter.translate(0, self.height())
-            painter.rotate(-90)
+        self._configureWidgets()
+        self._createLayout()
 
-            x, y = self._getStartXY()
-            painter.drawText(y, x, self.text)
-            painter.end()
+    def getSelectedMaxBrightness(self) -> float:
+        return self._maxBrightnessSpinbox.value()
 
-    def _getStartXY(self) -> Tuple[int, int]:
-        """
-        Gets start Coordinates for the painter.
-        :return:
-        """
-        xoffset = int(self._width / 2)
-        yoffset = int(self._height / 2)
-        x = int(self.width() / 2) + yoffset
-        y = int(self.height() / 2) - xoffset
-        return x, y
+    def _configureWidgets(self) -> None:
+        self._brightnessSlider.setMinimum(-255)
+        self._brightnessSlider.setMaximum(255)
+        self._brightnessSlider.setValue(0)
+        self._brightnessSlider.setFixedWidth(300)
+        self._brightnessSlider.valueChanged.connect(self._emitChangedValues)
 
-    def minimumSizeHint(self):
-        return QtCore.QSize(self._height, self._width)
+        contrastSteps = 100
+        self._contrastSlider.setMinimum(0)
+        self._contrastSlider.setMaximum(contrastSteps)
+        self._contrastSlider.setValue(int(round(contrastSteps / self._maxContrast)))
+        self._contrastSlider.setFixedWidth(300)
+        self._contrastSlider.valueChanged.connect(self._emitChangedValues)
 
-    def sizeHint(self):
-        return QtCore.QSize(self._height, self._width)
+        self._maxBrightnessSpinbox.setMinimum(0.0)
+        self._maxBrightnessSpinbox.setMaximum(100.0)
+        self._maxBrightnessSpinbox.setValue(1.5)
+        self._maxBrightnessSpinbox.setSingleStep(1.0)
+        self._maxBrightnessSpinbox.valueChanged.connect(self._emitChangedValues)
 
-    def _setWidthHeight(self, padding: int = 5) -> None:
-        painter = QtGui.QPainter(self)
-        fm = QtGui.QFontMetrics(painter.font())
-        self._width = fm.boundingRect(self.text).width() + 2*padding
-        self._height = fm.boundingRect(self.text).height() + 2*padding
+    def _createLayout(self) -> None:
+        layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        layout.addRow("Brightness", self._brightnessSlider)
+        layout.addRow("Contrast", self._contrastSlider)
+        layout.addRow("Max Reflect.", self._maxBrightnessSpinbox)
 
-        self.setFixedSize(self.sizeHint())
+        self.setLayout(layout)
+
+    def _emitChangedValues(self):
+        self.ValuesChanged.emit(self._maxBrightnessSpinbox.value(),
+                                self._brightnessSlider.value(),
+                                self._contrastSlider.value() / self._maxContrast)
 
 
 class ActivateToggleButton(QtWidgets.QPushButton):
@@ -916,7 +914,7 @@ class ActivateToggleButton(QtWidgets.QPushButton):
         self.setCheckable(True)
         self.setChecked(True)
         self._adjustStyleAndMode()
-        self.setFixedSize(100, 30)
+        self.setFixedSize(70, 30)
         self.toggled.connect(self._adjustStyleAndMode)
 
     def _adjustStyleAndMode(self) -> None:

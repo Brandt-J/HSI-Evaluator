@@ -16,6 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+from dataclasses import dataclass
+
 from PyQt5 import QtWidgets, QtCore
 from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast, Set
 import numpy as np
@@ -95,10 +97,6 @@ class ClassCreator(QtWidgets.QGroupBox):
         self._createAndAcivateBackgroundClass()
         self._recreateLayout()
 
-    # def setClasses(self, classes: List[str]) -> None:
-    #     self._classes = classes
-    #     self._update()
-
     def activateClass(self, clsName: str) -> None:
         if clsName in self._classes:
             self._activeCls = clsName
@@ -145,14 +143,21 @@ class ClassCreator(QtWidgets.QGroupBox):
         """
         Returns a dictionary containing rgb colors for all present classes.
         """
-        colorDict: Dict[str, Tuple[int, int, int]] = {}
+        colorDict: Dict[str, Tuple[int, int, int]] = {"unknown": self._getColorOfClassUnknown()}
         for cls in self._classes:
             colorDict[cls.name] = self._colorHandler.getColorOfClassName(cls.name)
         return colorDict
 
     def getColorOfClassName(self, className: str) -> Tuple[int, int, int]:
-        return self._colorHandler.getColorOfClassName(className)
-    
+        if className == "unknown":
+            color: Tuple[int, int, int] = self._getColorOfClassUnknown()
+        else:
+            color: Tuple[int, int, int] = self._colorHandler.getColorOfClassName(className)
+        return color
+
+    def _getColorOfClassUnknown(self) -> Tuple[int, int, int]:
+        return (20, 20, 20)
+
     def getClassVisibility(self, className: str) -> bool:
         visible: bool = True
         for cls in self._classes:
@@ -293,11 +298,20 @@ class ColorHandler:
         self._name2color[className] = color
 
 
+@dataclass
+class ClassInterpretationParams:
+    specConfThreshold: float  # Spectra with a confidence lower than that are interpeted as "unknown"
+    partConfThreshold: float  # If less than that fraction of all spectra within a particle are of the same class, it's "unknown"
+    ignoreUnkowns: bool  # Whether or not to ignore unknown spectra when determining the particle's class
+
+
 class ClassificationUI(QtWidgets.QGroupBox):
     """
     UI Element for Classification of the current graph view(s).
     """
     ClassTransparencyUpdated: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
+    ClassificationFinished: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    ClassInterpretationParamsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(ClassInterpretationParams)
     PreprocessSpectra: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self, parent: 'MainWindow'):
@@ -312,16 +326,27 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._radioImage: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Whole Image")
         self._radioParticles: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Particles")
 
-        self._applyBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply Classifier")
+        self._applyBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Run Classifier Inference")
 
         self._transpSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self._progressbar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
         self._progressbar.setWindowTitle("Classification in Progress")
 
+        self._spinSpecConf: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._spinPartConf: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._checkIgnoreUnknowns: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Ignore 'Unknown'")
+
         self._layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         self.setLayout(self._layout)
         self._configureWidgets()
         self._createLayout()
+
+    def getClassInterpretationParams(self) -> ClassInterpretationParams:
+        """
+        Returns a struct containing the current parameters for interpreting the classification results.
+        """
+        return ClassInterpretationParams(self._spinSpecConf.value(), self._spinPartConf.value(),
+                                         self._checkIgnoreUnknowns.isChecked())
 
     def _runClassification(self) -> None:
         """
@@ -357,10 +382,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
         if properlyFinished:
             classifiedSamples: Union[None, List['Sample']] = self._inferenceProcessWindow.getResult()
             assert type(classifiedSamples) == list
-            if self._radioImage.isChecked():
-                self._updateClassImages(classifiedSamples)
-            else:
-                self._updateParticleClasses(classifiedSamples)
+            self._updateClassifiedSamples(classifiedSamples)
+            self.ClassificationFinished.emit()
         else:
             self._logger.info("Classifier Inference finished without getting a result")
 
@@ -382,22 +405,37 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._transpSlider.valueChanged.connect(self._emitTransparencyUpdate)
 
         self._applyBtn.released.connect(self._runClassification)
-        # self._applyBtn.setDisabled(True)
-
+        
         self._applyPreprocBtn.released.connect(lambda: self.PreprocessSpectra.emit())
         self._applyPreprocBtn.setMaximumWidth(130)
 
         self._radioParticles.setChecked(True)
+        
+        for spinbox in [self._spinSpecConf, self._spinPartConf]:
+            spinbox.setMinimum(0.0)
+            spinbox.setMaximum(1.0)
+            spinbox.setSingleStep(0.1)
+            spinbox.valueChanged.connect(self._emitClassInterpParamsUpdate)
+        
+        self._spinPartConf.setValue(0.5)
+        self._spinPartConf.setToolTip("Required confidence for infering a particle class.\n"
+                                      "Of the n spectra within the particles, the most abundand class needs to represent\n"
+                                      "at least the indicated fraction of all spectra.\n"
+                                      "If the most abundand class is less abundant, then the particle is labelled 'unknown'.")
+        self._spinSpecConf.setValue(0.75)
+        self._spinSpecConf.setToolTip("Required confidence for classifying a spectrum.\n"
+                                      "The highest class probability needs to be at least the indicated value, otherwise\n"
+                                      "the spectrum is labelled as 'unknown'")
+
+        self._checkIgnoreUnknowns.stateChanged.connect(self._emitClassInterpParamsUpdate)
+        self._checkIgnoreUnknowns.setToolTip("Whether or not to ignore 'unknown' spectra while deriving a particle's class.")
 
     def _createLayout(self) -> None:
+        layout = self._layout
         preprocGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Preprocess Spectra")
         preprocLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         preprocGroup.setLayout(preprocLayout)
         preprocLayout.addWidget(self._applyPreprocBtn)
-
-        self._layout.addWidget(preprocGroup)
-        self._layout.addWidget(self._clfSelector)
-        self._layout.addStretch()
 
         infOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Run classification on")
         infOptnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -405,52 +443,61 @@ class ClassificationUI(QtWidgets.QGroupBox):
         infOptnLayout.addWidget(self._radioImage)
         infOptnLayout.addWidget(self._radioParticles)
 
-        self._layout.addWidget(infOptnGroup)
-        self._layout.addWidget(self._applyBtn)
-        self._layout.addStretch()
-        self._layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
-        self._layout.addWidget(self._transpSlider)
-        self._layout.addStretch()
+        confidenceGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Classifcation Options")
+        confidenceLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        confidenceGroup.setLayout(confidenceLayout)
+        confidenceLayout.addRow("Spectra Confidence", self._spinSpecConf)
+        confidenceLayout.addRow("Particle Confidence", self._spinPartConf)
+        confidenceLayout.addRow(self._checkIgnoreUnknowns)
 
-    def _updateClassImages(self, finishedSamples: List['Sample']) -> None:
+        # layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        # contentsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        # contentsGroup.setFlat(True)
+        # contentsGroup.setLayout(layout)
+
+        layout.addWidget(preprocGroup)
+        layout.addWidget(self._clfSelector)
+        layout.addStretch()
+        layout.addWidget(infOptnGroup)
+        layout.addWidget(self._applyBtn)
+        layout.addWidget(confidenceGroup)
+        layout.addStretch()
+        layout.addWidget(QtWidgets.QLabel("Set Overlay Transparency"))
+        layout.addWidget(self._transpSlider)
+
+        # scrollArea: QtWidgets.QScrollArea = QtWidgets.QScrollArea()
+        # scrollArea.setWidget(contentsGroup)
+        #
+        # selfLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
+        # self.setLayout(selfLayout)
+        # selfLayout.addWidget(scrollArea)
+
+    def _updateClassifiedSamples(self, finishedSamples: List['Sample']) -> None:
         """
-        Takes Sample data(s) from finished classification and updates the according graph view(s).
+        Takes Sample data(s) from finished classification and updates the according sampleview(s).
         """
         allSamples: List['SampleView'] = self._mainWin.getAllSamples()
-        colorDict: Dict[str, Tuple[int, int, int]] = self._mainWin.getClassColorDict()
         for finishedSample in finishedSamples:
             sampleFound: bool = False
             for sample in allSamples:
                 if sample.getName() == finishedSample.name:
                     sample.setSampleData(finishedSample)
-                    graphView: 'GraphView' = sample.getGraphView()
-                    specObj: 'SpectraObject' = sample.getSpecObj()
-                    cubeShape = specObj.getPreprocessedCubeIfPossible().shape
-                    assignments: List[str] = finishedSample.getAndResetTmpClassResults()
-                    clfImg: np.ndarray = cp.createClassImg(cubeShape, assignments, colorDict)
                     self._logger.debug(f"Set class image for sample {finishedSample.name} in graph view")
-                    graphView.updateClassImage(clfImg)
                     sampleFound = True
                     break
             assert sampleFound, f'Could not find sample {sample.getName()} in present samples'
 
-    def _updateParticleClasses(self, finishedSamples: List['Sample']) -> None:
+    def _emitClassInterpParamsUpdate(self) -> None:
         """
-        Takes a list of finished samples and applies the particle results to the visual instances.
+        Sends an update when the spectra or particle confidence settings were changed.
+        Will be connected to methods updating the classification results.
         """
-        allSamples: List['SampleView'] = self._mainWin.getAllSamples()
-        for finishedSample in finishedSamples:
-            sampleFound: bool = False
-            for sample in allSamples:
-                if sample.getName() == finishedSample.name:
-                    sample.setSampleData(finishedSample)
-                    sample.updateParticlesInGraphUI()
-                    sampleFound = True
-                    break
+        newConf: ClassInterpretationParams = ClassInterpretationParams(self._spinSpecConf.value(),
+                                                                       self._spinPartConf.value(),
+                                                                       self._checkIgnoreUnknowns.isChecked())
+        self.ClassInterpretationParamsChanged.emit(newConf)
 
-            assert sampleFound, f'Could not find sample {sample.getName()} in present samples'
-
-
+        
 class ProcessWithStatusBarWindow(QtWidgets.QWidget):
     ProcessFinished: QtCore.pyqtSignal = QtCore.pyqtSignal(bool)  # True, if finished properly, false if aborted
 

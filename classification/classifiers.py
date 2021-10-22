@@ -25,6 +25,7 @@ import numpy as np
 from PyQt5 import QtWidgets
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.utils import to_categorical
 
 from logger import getLogger
@@ -42,6 +43,30 @@ class SavedClassifier:
     preproMethod: Union[None, str] = None
 
 
+class BatchClassificationResult:
+    """
+    Container for storing results from a classification of a batch of spectra.
+    """
+    def __init__(self, probabilityMatrix: np.ndarray, labelEncoder: 'LabelEncoder') -> None:
+        """
+        :param probabilityMatrix: (NxM) Matrix giving the probabilities for N spectra to belong to M classes
+        :param labelEncoder: Fitted label encoder for converting indices to string class names
+        """
+        self._probabilityMatrix: np.ndarray = probabilityMatrix
+        self._labelEncoder: 'LabelEncoder' = labelEncoder
+
+    def getResults(self, cutoff: float = 0.0) -> np.ndarray:
+        """
+        Returns the classification results as an array. Results with a max. probability of less than the cutoff are
+        set to "unknown".
+        """
+        maxIndices: np.ndarray = np.argmax(self._probabilityMatrix, axis=1)
+        results: np.ndarray = self._labelEncoder.inverse_transform(maxIndices).astype('U128')  # max length of 128 chars per class name
+        maxProbs: np.ndarray = np.max(self._probabilityMatrix, axis=1)
+        results[maxProbs < cutoff] = "unknown"
+        return results
+
+
 class BaseClassifier:
     """
     Base class for a classifier
@@ -50,7 +75,7 @@ class BaseClassifier:
 
     def __init__(self):
         self._logger: Logger = getLogger(f"classifier {self.title}")
-        self._uniqueLabels: Dict[str, int] = {}  # Dictionary mapping class names to their unique indices
+        self._labelEncoder: Union[None, LabelEncoder] = None
 
     def getControls(self) -> QtWidgets.QGroupBox:
         """
@@ -77,35 +102,12 @@ class BaseClassifier:
         """
         raise NotImplementedError
 
-    def _setUniqueLabels(self, ytest: np.ndarray, ytrain: np.ndarray) -> None:
+    def _fitLabelEncoder(self, ytest: np.ndarray, ytrain: np.ndarray) -> None:
         """
         Sets the unique labels for the current test/train set.
         """
-        self._uniqueLabels = {}
         allLabels: np.ndarray = np.hstack((ytest, ytrain))
-        for i, label in enumerate(np.unique(allLabels)):
-            self._uniqueLabels[label] = i
-
-    def _convertLabelsToNumbers(self, textlabels: np.ndarray) -> np.ndarray:
-        """
-        Takes an array of text labels and returns the corresponding array of indices, according to the unique labels.
-        """
-        return np.array([self._uniqueLabels[lbl] for lbl in textlabels])
-
-    def _convertNumbersToLabels(self, numberLabels: np.ndarray) -> np.ndarray:
-        """
-        Takes an array of text number and returns the corresponding array of text labels, according to the unique labels.
-        """
-        assert len(self._uniqueLabels) > 0
-        key_list = list(self._uniqueLabels.keys())
-        val_list = list(self._uniqueLabels.values())
-
-        textLabels: List[str] = []
-        for num in numberLabels:
-            position: int = val_list.index(num)
-            textLabels.append(key_list[position])
-
-        return np.array(textLabels)
+        self._labelEncoder = LabelEncoder().fit(allLabels)
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         """
@@ -113,11 +115,11 @@ class BaseClassifier:
         """
         raise NotImplementedError
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         """
         Predict labels for the given spectra
         :param spectra: (NxM) array of N spectra with M wavelengths.
-        :return
+        :return Batch Classification Result allowing to determine final class according to a confidence threshold-
         """
         raise NotImplementedError
 
@@ -151,7 +153,7 @@ class KNN(BaseClassifier):
         assert type(trainedClassifier) == KNN, f"Trained classifier is of wrong type. Expected KNN, " \
                                                f"got {type(trainedClassifier)}"
         self._clf = trainedClassifier._clf
-        self._uniqueLabels = trainedClassifier._uniqueLabels
+        self._labelEncoder = trainedClassifier._labelEncoder
         self._logger.info("Updated classifier after training")
 
     def _recreateSpinBox(self) -> None:
@@ -163,13 +165,13 @@ class KNN(BaseClassifier):
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         self._clf = KNeighborsClassifier(n_neighbors=self._k)
-        self._setUniqueLabels(y_test, y_train)
-        self._clf.fit(x_train, self._convertLabelsToNumbers(y_train))
+        self._fitLabelEncoder(y_test, y_train)
+        self._clf.fit(x_train, self._labelEncoder.transform(y_train))
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         assert self._clf is not None, "Classifier was not yet created!!"
-        labels: np.ndarray = self._clf.predict(spectra)
-        return self._convertNumbersToLabels(labels)
+        probMat: np.ndarray = self._clf.predict_proba(spectra)
+        return BatchClassificationResult(probMat, self._labelEncoder)
 
     def _update_k(self) -> None:
         self._k = self._kSpinBox.value()
@@ -206,18 +208,18 @@ class SVM(BaseClassifier):
                                                f"got {type(trainedClassifier)}"
         self._logger.info(f"About to update classifiers after training.. Clf on {self}: {self._clf}. \n Clf on {trainedClassifier}: {trainedClassifier._clf}")
         self._clf = trainedClassifier._clf
-        self._uniqueLabels = trainedClassifier._uniqueLabels
+        self._labelEncoder = trainedClassifier._labelEncoder
         self._logger.info(f"Updated classifier on {self} after training")
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-        self._clf = svm.SVC(kernel=self._kernel)
-        self._setUniqueLabels(y_test, y_train)
-        self._clf.fit(x_train, self._convertLabelsToNumbers(y_train))
+        self._clf = svm.SVC(kernel=self._kernel, probability=True)
+        self._fitLabelEncoder(y_test, y_train)
+        self._clf.fit(x_train, self._labelEncoder.transform(y_train))
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         assert self._clf is not None, "Classifier was not yet created!!"
-        labels: np.ndarray = self._clf.predict(spectra)
-        return self._convertNumbersToLabels(labels)
+        probMat: np.ndarray = self._clf.predict_proba(spectra)
+        return BatchClassificationResult(probMat, self._labelEncoder)
 
     def _recreateComboBox(self) -> None:
         self._kernelSelector = QtWidgets.QComboBox()
@@ -249,29 +251,28 @@ class NeuralNet(BaseClassifier):
         return optnGroup
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-        self._setUniqueLabels(y_test, y_train)
+        self._fitLabelEncoder(y_test, y_train)
         self._deleteLastTmpSave()
         self._currentTraininghash = hash(time.time())
-        self._clf = NeuralNetClf(x_train.shape[1], len(self._uniqueLabels))
-        y_train = to_categorical(self._convertLabelsToNumbers(y_train))
-        y_test = to_categorical(self._convertLabelsToNumbers(y_test))
+        self._clf = NeuralNetClf(x_train.shape[1], len(self._labelEncoder.classes_))
+        y_train = to_categorical(self._labelEncoder.transform(y_train))
+        y_test = to_categorical(self._labelEncoder.transform(y_test))
         self._clf.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=self._numEpochs)
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         if self._clf is None:
             if self._modelSavePath is None:
                 self._clf = loadModelFromFile(self._getTempModelSaveName())
             else:
                 self._clf = loadModelFromFile(self._modelSavePath)
 
-        predictions: np.ndarray = self._clf.predict(spectra)
-        labels: np.ndarray = np.array([np.argmax(predictions[i, :]) for i in range(predictions.shape[0])])
-        return self._convertNumbersToLabels(labels)
+        probMat: np.ndarray = self._clf.predict(spectra)
+        return BatchClassificationResult(probMat, self._labelEncoder)
 
     def updateClassifierFromTrained(self, trainedClassifier: 'NeuralNet') -> None:
         assert type(trainedClassifier) == NeuralNet, f"Trained classifier is of wrong type. Expected Neural Net, " \
                                                f"got {type(trainedClassifier)}"
-        self._uniqueLabels = trainedClassifier._uniqueLabels
+        self._labelEncoder = trainedClassifier._labelEncoder
         self._currentTraininghash = trainedClassifier._currentTraininghash
         self._logger.info(f"Updated classifier {self} after training")
 

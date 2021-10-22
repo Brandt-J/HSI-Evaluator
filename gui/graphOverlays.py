@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from sampleview import SampleView
     from particles import Particle, ParticleHandler
     from gui.particleUI import ParticleContour
+    from gui.classUI import ClassInterpretationParams
 
 
 class GraphView(QtWidgets.QGraphicsView):
@@ -41,7 +42,7 @@ class GraphView(QtWidgets.QGraphicsView):
     def __init__(self):
         super(GraphView, self).__init__()
         scene = self._setUpScene()
-        self.setMinimumSize(500, 500)
+        self.setMinimumSize(800, 500)
         self._mainWin: Union[None, 'MainWindow'] = None
         self._sampleView: Union[None, 'SampleView'] = None
         self._origCube: Union[None, np.ndarray] = None
@@ -112,18 +113,19 @@ class GraphView(QtWidgets.QGraphicsView):
         for item in self._particleItems:
             item.setVisible(visible)
 
-    def updateParticleColors(self, particleHandler: 'ParticleHandler'):
+    def updateParticleColors(self, particleHandler: 'ParticleHandler', interpretationParams: 'ClassInterpretationParams'):
         """
         Updates the colors of the particle items in the graphics scene.
+        :param particleHandler: Reference to particle handler
+        :param interpretationParams: The params for interpreting the spec results
         """
         for particleItem in self._particleItems:
-            assignment: str = particleHandler.getAssigmentOfParticleOfID(particleItem.getParticleID())
-            if assignment == "unknown":
-                color: Tuple[int, int, int] = (20, 20, 20)
-            else:
-                color: Tuple[int, int, int] = self._mainWin.getColorOfClass(assignment)
+            assignment: str = particleHandler.getAssigmentOfParticleOfID(particleItem.getParticleID(), interpretationParams)
+            color: Tuple[int, int, int] = self._mainWin.getColorOfClass(assignment)
             particleItem.setColor(color)
+        self.scene().update()
 
+    @QtCore.pyqtSlot(float, int, float)
     def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
         """
         Updating the previewed image with new zero value and contrast factor
@@ -151,6 +153,7 @@ class GraphView(QtWidgets.QGraphicsView):
         Updates the graph representation of the current classification to the given RGBA image.
         """
         self._classOverlay.updateImage(classImage)
+        self.scene().update()
 
     def resetClassImage(self) -> None:
         """

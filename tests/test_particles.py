@@ -1,9 +1,11 @@
 from unittest import TestCase
 
-import numpy as np
+from sklearn.preprocessing import LabelEncoder
 
 from particles import ParticleHandler, Particle
 from particledetection.detection import *
+from classification.classifiers import BatchClassificationResult
+from gui.classUI import ClassInterpretationParams
 
 
 class TestParticleHandler(TestCase):
@@ -58,13 +60,40 @@ class TestParticleHandler(TestCase):
         self.assertEqual(specVals2[0], valPart1)
 
     def test_getAssignment(self) -> None:
-        result: List[str] = ['class1']*9 + ['class2']*1
+        encoder: LabelEncoder = LabelEncoder().fit(np.array(["class1", "class2", "class3"]))
+        highProb, lowProb = 0.8, 0.6
+        highOtherProb, lowOtherProb = (1-highProb) / 2, (1-lowProb) / 2
+
+        numClass1HighProb, numClass1LowProb = 5, 3
+        numClass2HighProb, numClass2LowProb = 2, 2
+        numClass3HighProb, numClass3LowProb = 2, 1
+
+        probList = []
+        for _ in range(numClass1HighProb):
+            probList.append([highProb, highOtherProb, highOtherProb])
+        for _ in range(numClass1LowProb):
+            probList.append([lowProb, lowOtherProb, lowOtherProb])
+        for _ in range(numClass2HighProb):
+            probList.append([highOtherProb, highProb, highOtherProb])
+        for _ in range(numClass2LowProb):
+            probList.append([lowOtherProb, lowProb, lowOtherProb])
+        for _ in range(numClass3HighProb):
+            probList.append([highOtherProb, highOtherProb, highProb])
+        for _ in range(numClass3LowProb):
+            probList.append([lowOtherProb, lowOtherProb, lowProb])
+
+        probMat = np.array(probList)
+        batchRes: BatchClassificationResult = BatchClassificationResult(probMat, encoder)
         particle: Particle = Particle(0, None)
-        self.assertEqual(particle.getAssignment(), "unknown")
+        for ignoreUnknown in [True, False]:
+            for specConfCutoff in [0.7, 0.9]:
+                params: ClassInterpretationParams = ClassInterpretationParams(specConfCutoff, 0.5, ignoreUnknown)
+                self.assertEqual(particle.getAssignment(params), "unknown")
 
-        particle.setResultFromAssignments(result)
-        particle.setThreshold(0.9)
-        self.assertEqual(particle.getAssignment(), "class1")
+        particle.setBatchResult(batchRes)
 
-        particle.setThreshold(0.95)
-        self.assertEqual(particle.getAssignment(), "unknown")
+        for ignoreUnknown in [True, False]:
+            for specConfCutoff in [0.4, 0.7, 0.9]:  # all specs count, only high prob specs count, all specs unknown
+                for partthresh in [0.5, 0.75]:  # class1 abundancy is enough, class1 abundancy is NOT enough
+                    params = ClassInterpretationParams(specConfCutoff, partthresh, ignoreUnknown)
+                    particle.getAssignment(params)  # make sure all go through nicely.

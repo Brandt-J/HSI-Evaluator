@@ -27,9 +27,10 @@ from sklearn.model_selection import train_test_split
 
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
-from classification.classifiers import BaseClassifier, ClassificationError, KNN, SVM, NeuralNet
+from classification.classifiers import ClassificationError, KNN, SVM, NeuralNet
 
 if TYPE_CHECKING:
+    from classification.classifiers import BaseClassifier, BatchClassificationResult
     from particles import Particle
     from spectraObject import SpectraObject
     from dataObjects import Sample
@@ -91,10 +92,12 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
         return
 
     # validation
-    ypredicted = classifier.predict(xtest)
+    predResult: 'BatchClassificationResult' = classifier.predict(xtest)
+    ypredicted: np.ndarray = predResult.getResults(cutoff=0.0)
     reportDict: dict = classification_report(ytest, ypredicted, output_dict=True, zero_division=0)
     reportStr: str = classification_report(ytest, ypredicted, output_dict=False, zero_division=0)
     logger.info(reportStr)
+
     classifier.makePickleable()
     queue.put(TrainingResult(classifier, reportStr, reportDict))
 
@@ -133,13 +136,13 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
         specObject: 'SpectraObject' = sample.specObj
         specArr = specObject.getPreprocessedSpecArr()
         try:
-            assignments: np.ndarray = classifier.predict(specArr)
+            batchResult: 'BatchClassificationResult' = classifier.predict(specArr)
         except Exception as e:
             error: ClassificationError = ClassificationError(f"Error during classifier inference (image mode): {e}")
             queue.put(error)
 
         else:
-            sample.setTmpClassResults(assignments)
+            sample.setBatchResults(batchResult)
 
     elif mode == ClassifyMode.Particles:
         sample.resetParticleResults()
@@ -150,12 +153,12 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
         for particle in particles:
             specArr: np.ndarray = particle.getSpectra(cube)
             try:
-                assignments: np.ndarray = classifier.predict(specArr)
+                batchRes: 'BatchClassificationResult' = classifier.predict(specArr)
             except Exception as e:
                 error: ClassificationError = ClassificationError(f"Error during classifier inference (particle mode): {e}")
                 raise error
             else:
-                particle.setResultFromAssignments(assignments)
+                particle.setBatchResult(batchRes)
 
     return sample
 
@@ -195,11 +198,11 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 
-def createClassImg(cubeShape: tuple, assignments: List[str], colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
+def createClassImg(cubeShape: tuple, assignments: np.ndarray, colorCodes: Dict[str, Tuple[int, int, int]]) -> np.ndarray:
     """
     Creates an overlay image of the current classification
     :param cubeShape: Shape of the cube array
-    :param assignments: List of class names for each pixel
+    :param assignments: Array of class names for each pixel
     :param colorCodes: Dictionary mapping class names to rgb values
     :return: np.ndarray of RGBA image as classification overlay
     """

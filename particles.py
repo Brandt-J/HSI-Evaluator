@@ -19,11 +19,15 @@ If not, see <https://www.gnu.org/licenses/>.
 import cv2
 import numpy as np
 from typing import *
-from dataclasses import dataclass
 from collections import Counter
+from dataclasses import dataclass
 
 from particledetection.detection import getParticleContours
 
+if TYPE_CHECKING:
+    from classification.classifiers import BatchClassificationResult
+    from gui.classUI import ClassInterpretationParams
+    
 
 class ParticleHandler:
     __particleID: int = -1
@@ -55,13 +59,14 @@ class ParticleHandler:
         """
         return list(self._particles.values())
 
-    def getAssigmentOfParticleOfID(self, id: int) -> str:
+    def getAssigmentOfParticleOfID(self, id: int, interpretationParams: 'ClassInterpretationParams') -> str:
         """
         Returns the assignment of the partice specified by the id.
         :param id: The particle's id
+        :param interpretationParams: The parameters for interpreting the spectra results.
         :return: assignment
         """
-        return self._particles[id].getAssignment()
+        return self._particles[id].getAssignment(interpretationParams)
 
     def resetParticleResults(self) -> None:
         """
@@ -75,30 +80,31 @@ class ParticleHandler:
 class Particle:
     __id: int
     _contour: np.ndarray
-    _threshold: float = 0.5
-    _result: Union[None, Counter] = None
+    _result: Union[None, 'BatchClassificationResult'] = None
 
     def getID(self) -> int:
         return self.__id
 
-    def getAssignment(self) -> str:
+    def getAssignment(self, params: 'ClassInterpretationParams') -> str:
         """
         Returns the assignment string according the currently set threshold.
+        :param params: Parameters for correct result interpretation.
         """
         assignment: str = "unknown"
         if self._result is not None:
-            numTotal: int = sum(self._result.values())
-            mostFreqClass, highestCount = self._result.most_common(8)[0]
-            if highestCount / numTotal >= self._threshold:
+            classNames: np.ndarray = self._result.getResults(cutoff=params.specConfThreshold)
+            if params.ignoreUnkowns and not np.all(classNames == "unknown"):
+                classNames = classNames[classNames != "unknown"]
+
+            counter: Counter = Counter(classNames)
+            numTotal: int = sum(counter.values())
+            numClasses: int = len(counter)
+            mostFreqClass, highestCount = counter.most_common(numClasses)[0]
+
+            if highestCount / numTotal >= params.partConfThreshold:
                 assignment = mostFreqClass
 
         return assignment
-
-    def setThreshold(self, newThreshold: float) -> None:
-        """
-        Sets the new threshold for determining the assignment according the result.
-        """
-        self._threshold = newThreshold
 
     def getContour(self) -> np.ndarray:
         """
@@ -118,11 +124,11 @@ class Particle:
             specs.append(cube[:, y, x])
         return np.array(specs)
 
-    def setResultFromAssignments(self, assignments: List[str]) -> None:
+    def setBatchResult(self, batchRes: 'BatchClassificationResult') -> None:
         """
         Sets the results counter with the given assignments.
         """
-        self._result = Counter(assignments)
+        self._result = batchRes
 
     def resetResult(self) -> None:
         """

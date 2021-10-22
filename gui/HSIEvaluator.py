@@ -38,6 +38,7 @@ from gui.classUI import ClassCreator, ClassificationUI
 if TYPE_CHECKING:
     from logging import Logger
     from preprocessing.preprocessors import Preprocessor
+    from gui.classUI import ClassInterpretationParams
     from gui.sampleview import SampleView
     from spectraObject import SpectraCollection
 
@@ -156,6 +157,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def getCurrentClass(self) -> str:
         return self._clsCreator.getCurrentClass()
 
+    def getClassInterprationParams(self) -> 'ClassInterpretationParams':
+        return self._clfWidget.getClassInterpretationParams()
+
     def _promptLoadNPYSample(self) -> None:
         """Prompts for a npy file to open as sample"""
         fnames, _ = QtWidgets.QFileDialog.getOpenFileNames(self, "Select Files",
@@ -262,6 +266,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._clfWidget.setMaximumWidth(300)
         self._clfWidget.PreprocessSpectra.connect(self._preprocSelector.applyPreprocessingToSpectra)
+        self._clfWidget.ClassInterpretationParamsChanged.connect(self._multiSampleView.updateClassificationResults)
+        self._clfWidget.ClassificationFinished.connect(self._multiSampleView.updateClassificationResults)
+
         self._resultPlots.setMainWinRef(self)
 
     def _createMenuBar(self) -> None:

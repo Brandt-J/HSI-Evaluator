@@ -27,6 +27,7 @@ from legacyConvert import currentSampleVersion, currentViewVersion
 from particles import ParticleHandler
 
 if TYPE_CHECKING:
+    from classification.classifiers import BatchClassificationResult
     from particles import Particle
 
 
@@ -38,7 +39,7 @@ class Sample:
         self.filePath: str = ''  # Path to the spectra cube (.npy file)
         self.classes2Indices: Dict[str, Set[int]] = {}  # Stores pixel indices of selected classes
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object
-        self.tmpClassResults: List[str] = []
+        self.batchResult: Union[None, 'BatchClassificationResult'] = None
         self.particleHandler: ParticleHandler = ParticleHandler()
 
     def setDefaultName(self) -> None:
@@ -94,14 +95,12 @@ class Sample:
         """
         return self.specObj.getPreprocessedCubeIfPossible().copy()
 
-    def setTmpClassResults(self, assignments: List[str]) -> None:
-        self.tmpClassResults = assignments
+    def setBatchResults(self, batchResult: 'BatchClassificationResult') -> None:
+        self.batchResult = batchResult
 
-    def getAndResetTmpClassResults(self) -> List[str]:
-        assert len(self.tmpClassResults) > 0, f"Temp. Assignments for sample {self.name} where not set and cannot be retrieved."
-        resulst: List[str] = copy(self.tmpClassResults)
-        self.tmpClassResults = []
-        return resulst
+    def getBatchResults(self, cutOff: float) -> np.ndarray:
+        assert self.batchResult is not None
+        return self.batchResult.getResults(cutOff)
 
     def resetParticleResults(self) -> None:
         """

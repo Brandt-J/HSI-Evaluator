@@ -25,13 +25,15 @@ from unittest import TestCase
 import numpy as np
 from typing import *
 import tempfile
+from sklearn.preprocessing import LabelEncoder
 
-from classification.classifiers import SVM, NeuralNet
+from classification.classifiers import SVM, NeuralNet, BatchClassificationResult
 from classification.classifyProcedures import TrainingResult, ClassifyMode
 from dataObjects import Sample
 from particles import Particle
 from gui.classUI import ClassificationUI
-from gui.sampleview import SampleView
+from gui.HSIEvaluator import MainWindow
+from gui.sampleview import SampleView, MultiSampleView
 from tests.test_specObj import getPreprocessors
 
 if TYPE_CHECKING:
@@ -40,23 +42,39 @@ if TYPE_CHECKING:
     from gui.graphOverlays import GraphView
 
 
+class TestBatchClassificationResult(TestCase):
+    def test_get_results(self):
+        encoder: LabelEncoder = LabelEncoder().fit(np.array(["class1", "class2", "class3"]))
+        probMat: np.ndarray = np.array([[0.1, 0.8, 0.1],
+                                        [0.4, 0.4, 0.2],
+                                        [0.7, 0.3, 0.0]])
+
+        batchRes: BatchClassificationResult = BatchClassificationResult(probMat, encoder)
+        results: np.ndarray = batchRes.getResults(cutoff=0.0)
+        self.assertTrue(np.array_equal(results, np.array(["class2", "class1", "class1"])))
+
+        results = batchRes.getResults(cutoff=0.5)
+        self.assertTrue(np.array_equal(results, np.array(["class2", "unknown", "class1"])))
+
+        results = batchRes.getResults(cutoff=0.81)
+        self.assertTrue(np.array_equal(results, np.array(["unknown", "unknown", "unknown"])))
+
+
 class TestClassifiers(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QtWidgets.QApplication(sys.argv)
 
-    def test_SetUniqueLabels(self) -> None:
-        allLabels: np.ndarray = np.array(['class1']*10 + ['class2']*20 + ['class3']*30)
+    def test_fitLabelEncoder(self) -> None:
+        allLabels: np.ndarray = np.array(['class1'] * 10 + ['class2'] * 20 + ['class3'] * 30)
         np.random.shuffle(allLabels)
         labelsTrain: np.ndarray = allLabels[:40]
         labelsTest: np.ndarray = allLabels[40:]
 
         svm: SVM = SVM()
-        self.assertDictEqual(svm._uniqueLabels, {})
-        svm._setUniqueLabels(labelsTest, labelsTrain)
-        self.assertDictEqual(svm._uniqueLabels, {'class1': 0,
-                                                 'class2': 1,
-                                                 'class3': 2})
+        self.assertTrue(svm._labelEncoder is None)
+        svm._fitLabelEncoder(labelsTest, labelsTrain)
+        self.assertEqual(list(svm._labelEncoder.classes_), ['class1', 'class2', 'class3'])
 
     def testTrainAndClassify(self) -> None:
         mainWin: MockMainWin = MockMainWin()
@@ -71,6 +89,7 @@ class TestClassifiers(TestCase):
             if type(clf) == NeuralNet:
                 clf: NeuralNet = cast(NeuralNet, clf)
                 clf._numEpochs = 2
+                continue
 
             self._test_classifierTraining(clf, trainTab)
             self._test_classifierInference(classUI, clf, mainWin)
@@ -102,6 +121,8 @@ class TestClassifiers(TestCase):
             self.assertTrue(type(result) == list)
             self.assertEqual(len(result), 2)
 
+            mainWin._multiSampleView.updateClassificationResults()  # we have to call it manually here
+
             # Check that everything is correct
             if mode == ClassifyMode.WholeImage:
                 allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
@@ -122,8 +143,7 @@ class TestClassifiers(TestCase):
         self.assertTrue("class2" in clfReport.keys())
         for subDict in [clfReport["class1"], clfReport["class2"]]:
             if type(clf) != NeuralNet:  # the neural net probably performs pretty badly in this setup
-                self.assertTrue(subDict["precision"] == subDict[
-                    "recall"] == 1.0)  # The other classifiers should separate them perfectly.
+                self.assertTrue(subDict["precision"] == subDict["recall"] == 1.0)  # The other classifiers should separate them perfectly.
         if type(clf) == NeuralNet:
             self.assertTrue(trainTab._activeClf._currentTraininghash == result.classifier._currentTraininghash)
         else:
@@ -136,9 +156,10 @@ class TestClassifiers(TestCase):
             self.assertEqual(len(sampleParticles), 2)
             foundParticleClasses: Set[str] = set()
             for particle in sampleParticles:
-                res: 'Counter' = particle._result
-                self.assertEqual(len(res), 1)  # only one class found
-                for clsName in res.keys():  # Dict keys cannot be indexed, hence the loop...
+                res: 'BatchClassificationResult' = particle._result
+                resCounter: Counter = Counter(res.getResults(0.0))
+                self.assertEqual(len(resCounter), 1)  # only one class found
+                for clsName in resCounter.keys():  # Dict keys cannot be indexed, hence the loop...
                     foundParticleClasses.add(clsName)
 
             if checkForCorrectAssignment:
@@ -162,10 +183,11 @@ class TestClassifiers(TestCase):
         return allCorrect
 
 
-class MockMainWin:
+class MockMainWin(MainWindow):
     cubeShape: np.ndarray = np.array([10, 20, 20])
 
     def __init__(self):
+        super(MockMainWin, self).__init__()
         data1: Sample = Sample()
         data1.name = 'Sample1'
         data1.classes2Indices = {"class1": set(np.arange(20) + 20),
@@ -174,6 +196,7 @@ class MockMainWin:
         sample1._trainCheckBox.setChecked(True)
         sample1._inferenceCheckBox.setChecked(True)
         sample1.setSampleData(data1)
+        sample1.setMainWindowReferences(self)
 
         cube1: np.ndarray = createRandomCubeToClassLabels(self.cubeShape, data1.classes2Indices)
         sample1.setCube(cube1, np.arange(self.cubeShape[0]))
@@ -187,11 +210,13 @@ class MockMainWin:
         sample2._trainCheckBox.setChecked(True)
         sample2._inferenceCheckBox.setChecked(True)
         sample2.setSampleData(data2)
+        sample2.setMainWindowReferences(self)
         cube2: np.ndarray = createRandomCubeToClassLabels(self.cubeShape, data2.classes2Indices)
         sample2.setCube(cube2, np.arange(self.cubeShape[0]))
         sample2.getSampleData().particleHandler._particles = getParticlesForCube(cube2)
 
-        self._samples: List['SampleView'] = [sample1, sample2]
+        self._multiSampleView._sampleviews = [sample1, sample2]
+        # self._samples: List['SampleView'] =
 
     def disableWidgets(self):
         pass
@@ -202,16 +227,17 @@ class MockMainWin:
     def getPreprocessors(self):
         return getPreprocessors()
 
-    def getAllSamples(self) -> List['SampleView']:
-        return self._samples
+    # def getAllSamples(self) -> List['SampleView']:
+    #     return self._multiSampleView._sampleviews
 
     def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
         return {"class1": (0, 0, 0),
-                "class2": (255, 255, 255)}
+                "class2": (255, 255, 255),
+                "unknown": (20, 20, 20)}
 
     def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
         backgrounds: Dict[str, np.ndarray] = {}
-        for sample in self._samples:
+        for sample in self._multiSampleView._sampleviews:
             backgrounds[sample.getName()] = np.zeros(self.cubeShape[0])
         return backgrounds
 
