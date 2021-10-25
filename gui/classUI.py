@@ -689,6 +689,7 @@ class TrainClfTab(QtWidgets.QWidget):
         self.setLayout(self._layout)
 
         self._mainWin: 'MainWindow' = mainWin
+        self._logger: 'Logger' = getLogger("ClassifierTraining")
         self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._trainProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
@@ -717,7 +718,7 @@ class TrainClfTab(QtWidgets.QWidget):
 
         self._maxNumSpecsSpinBox.setMinimum(100)
         self._maxNumSpecsSpinBox.setMaximum(int(1e6))
-        self._maxNumSpecsSpinBox.setValue(5000)
+        self._maxNumSpecsSpinBox.setValue(50000)
 
         self._trainBtn.released.connect(self._trainClassifier)
         self._saveBtn.released.connect(self._promptToSaveClf)

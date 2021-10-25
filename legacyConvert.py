@@ -19,6 +19,7 @@ If not, see <https://www.gnu.org/licenses/>.
 
 from typing import TYPE_CHECKING, List, Union
 import difflib
+from collections import Counter
 
 from spectraObject import SpectraObject
 from logger import getLogger
@@ -83,6 +84,9 @@ def _updateSampleToVersion1(sampleData: 'Sample') -> 'Sample':
 def _updateSampleToVersion2(sampleData: 'Sample') -> 'Sample':
     logger.info(f"converting sample {sampleData.name} to Version 2")
     sampleData.batchResult = None
+    for id, particle in sampleData.particleHandler._particles.items():
+        if type(particle._result) == Counter:
+            particle._result = None
     return sampleData
 
 
