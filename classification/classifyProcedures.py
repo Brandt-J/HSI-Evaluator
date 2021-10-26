@@ -24,6 +24,7 @@ from multiprocessing import Queue, Event
 from dataclasses import dataclass
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
+import imblearn
 
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
@@ -52,6 +53,17 @@ class ClassifyMode(Enum):
     Particles = 1
 
 
+class BalanceMode(Enum):
+    """
+    Mode for choosing a balancing method of the training data.
+    """
+    NoBalancing = 0
+    UnderRandom = 1
+    UnderNearMiss = 2
+    OverRandom = 3
+    OverSMOTE = 4
+
+
 @dataclass
 class TrainingResult:
     """
@@ -63,7 +75,7 @@ class TrainingResult:
 
 
 def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', maxSpecsPerClass: int,
-                    testSize: float, queue: Queue, stopEvent: Event) -> None:
+                    testSize: float, balanceMode: BalanceMode, queue: Queue, stopEvent: Event) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     The classifier will be put back in the queue after training and validation.
@@ -72,6 +84,7 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     :param maxSpecsPerClass: The maximum number of spectra per class to use
     :param testSize: Fraction of the data used for testing
     :param queue: Dataqueue for communication between processes.
+    :param balanceMode: Desired mode for balancing the dataset.
     :param stopEvent: Event that is set if computation should be stopped.
     """
     if stopEvent.is_set():
@@ -79,7 +92,7 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
 
     logger: 'Logger' = getLogger("TrainingProcess")
     # training
-    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, maxSpecsPerClass, testSize)
+    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, maxSpecsPerClass, testSize, balanceMode)
     logger.debug(f"starting training on {xtrain.shape[0]} spectra")
     t0 = time.time()
     try:
@@ -163,13 +176,14 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
     return sample
 
 
-def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float,
+def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float, balanceMode: BalanceMode,
                                    ignoreBackground: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
     :param sampleList: List of sampleviews to use
     :param maxSpecsPerClass: Max. number of spectra per class
     :param testSize: Fraction of the data to use as test size
+    :param balanceMode: Dataset balancing mode to use
     :param ignoreBackground: Whether or not to skip background pixels
     :return: Tuple[Xtrain, Xtest, ytrain, ytest]
     """
@@ -195,6 +209,16 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
                 spectra = np.vstack((spectra, specs))
 
     labels: np.ndarray = np.array(labels)
+
+    if balanceMode == BalanceMode.UnderRandom:
+        spectra, labels = imblearn.under_sampling.RandomUnderSampler().fit_resample(spectra, labels)
+    elif balanceMode == BalanceMode.UnderNearMiss:
+        spectra, labels = imblearn.under_sampling.NearMiss().fit_resample(spectra, labels)
+    elif balanceMode == BalanceMode.OverRandom:
+        spectra, labels = imblearn.over_sampling.RandomOverSampler().fit_resample(spectra, labels)
+    elif balanceMode == BalanceMode.OverSMOTE:
+        spectra, labels = imblearn.over_sampling.SMOTE().fit_resample(spectra, labels)
+
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 

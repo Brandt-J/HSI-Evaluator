@@ -333,6 +333,11 @@ class DownloadedSpectrum:
         self.className = self.className.replace("Poly(ethylene terephthalate)", "PET")
         self.className = self.className.replace("Poly(methyl methacrylate)", "PMMA")
         self.className = self.className.replace("Poly(vinyl chloride)", "PVC")
+        self.className = self.className.replace("Polyamide", "PA")
+        self.className = self.className.replace("Polycarbonate", "PC")
+        self.className = self.className.replace("Acrylonitrile butadiene styrene", "ABS")
+        self.className = self.className.replace("Polypropylene", "PP")
+
 
     def getConcatenatedName(self) -> str:
         """

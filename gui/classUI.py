@@ -694,6 +694,7 @@ class TrainClfTab(QtWidgets.QWidget):
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._trainProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
         self._maxNumSpecsSpinBox: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
+        self._balanceMethodComboBox: QtWidgets.QComboBox = QtWidgets.QComboBox()
 
         self._clfCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._trainBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Train Classifier")
@@ -720,6 +721,9 @@ class TrainClfTab(QtWidgets.QWidget):
         self._maxNumSpecsSpinBox.setMaximum(int(1e6))
         self._maxNumSpecsSpinBox.setValue(50000)
 
+        balanceModes: List[str] = list(cp.BalanceMode.__members__.keys())
+        self._balanceMethodComboBox.addItems(balanceModes)
+
         self._trainBtn.released.connect(self._trainClassifier)
         self._saveBtn.released.connect(self._promptToSaveClf)
 
@@ -729,6 +733,7 @@ class TrainClfTab(QtWidgets.QWidget):
         trainOptnGroup.setLayout(trainOptnLayout)
         trainOptnLayout.addRow("Max. Num. of Spectra per class", self._maxNumSpecsSpinBox)
         trainOptnLayout.addRow("Test Fraction", self._testFracSpinBox)
+        trainOptnLayout.addRow("Balancing", self._balanceMethodComboBox)
 
         btnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         btnLayout.addWidget(self._trainBtn)
@@ -770,10 +775,22 @@ class TrainClfTab(QtWidgets.QWidget):
         else:
             self._mainWin.disableWidgets()
             self._activeClf.makePickleable()
+            if self._balanceMethodComboBox.currentText() == "NoBalancing":
+                balanceMode: cp.BalanceMode = cp.BalanceMode.NoBalancing
+            elif self._balanceMethodComboBox.currentText() == "UnderRandom":
+                balanceMode: cp.BalanceMode = cp.BalanceMode.UnderRandom
+            elif self._balanceMethodComboBox.currentText() == "UnderNearMiss":
+                balanceMode: cp.BalanceMode = cp.BalanceMode.UnderNearMiss
+            elif self._balanceMethodComboBox.currentText() == "OverRandom":
+                balanceMode: cp.BalanceMode = cp.BalanceMode.OverRandom
+            elif self._balanceMethodComboBox.currentText() == "OverSMOTE":
+                balanceMode: cp.BalanceMode = cp.BalanceMode.OverSMOTE
+
             self._trainProcessWindow = ProcessWithStatusBarWindow(cp.trainClassifier,
                                                                   (trainSamples, self._activeClf,
                                                                    self._maxNumSpecsSpinBox.value(),
-                                                                   self._testFracSpinBox.value()),
+                                                                   self._testFracSpinBox.value(),
+                                                                   balanceMode),
                                                                   str, cp.TrainingResult)
             self._trainProcessWindow.setWindowTitle(f"Training on {len(trainSamples)} samples.")
             self._trainProcessWindow.ProcessFinished.connect(self._onTrainingFinishedOrAborted)
