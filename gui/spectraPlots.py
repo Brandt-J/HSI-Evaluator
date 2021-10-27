@@ -95,6 +95,9 @@ class ResultPlots(QtWidgets.QWidget):
         self._specPlot.updatePlot(spectra)
         self._specPlot.finishPlotting()
 
+    def updateCursorSpectrum(self, intensities: np.ndarray) -> None:
+        self._specPlot.updateCursorSpectrum(intensities)
+
     @QtCore.pyqtSlot(np.ndarray)
     def updateScatterPlot(self, spectra: np.ndarray) -> None:
         self._scatterPlot.resetPlots()
@@ -166,15 +169,6 @@ class ResultPlots(QtWidgets.QWidget):
     #         legendName = getLegendName()
     #         self._specPlot.plotSpectra(cls_specs, i, linestyle, color, legendName)
     #         self._scatterPlot.addSpectraToPCA(cls_specs, linestyle, color, legendName)
-
-    def updateCursorSpectrum(self, x: int, y: int) -> None:
-        pass  # TODO: REFACTOR to directly take spectrum as input
-        # spec: np.ndarray = self._specObj.getSpectrumaAtXY(x, y)
-        # if self._cursorSpec is None:
-        #     self._cursorSpec = self._specAx.plot(self._specObj.getWavelengths(), spec, color='gray')[0]
-        # else:
-        #     self._cursorSpec.set_ydata(spec)
-        # self._canvas.draw()
 
     def _configureWidgets(self) -> None:
         self._numSpecSpinner.setMinimum(0)
@@ -327,9 +321,9 @@ class SpecPlot(QtWidgets.QWidget):
         """
         Called after finishing plotting a set of spectra.
         """
-        # if self._cursorSpec is not None:
-        #     cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
-        #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavelengths(), cursorSpec, color='gray')[0]
+        if self._cursorSpec is not None:
+            cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
+            self._cursorSpec = self._specAx.plot(self._mainWindow.getWavelengths(), cursorSpec, color='gray')[0]
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")
@@ -340,6 +334,18 @@ class SpecPlot(QtWidgets.QWidget):
                 self._specAx.legend(self._legendItems)
         self._figure.tight_layout()
         self._plotDescriptors()
+        self._canvas.draw()
+
+    def updateCursorSpectrum(self, intensities: np.ndarray) -> None:
+        """
+        Updates the spectrum under the mouse position.
+        """
+        if self._cursorSpec is None:
+            wavelengths: np.ndarray = self._mainWin.getWavelengths()
+            self._cursorSpec = self._specAx.plot(wavelengths, intensities, color='gray')[0]
+        else:
+            self._cursorSpec.set_ydata(intensities)
+
         self._canvas.draw()
 
     def _createLayout(self) -> None:

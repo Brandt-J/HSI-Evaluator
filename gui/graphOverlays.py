@@ -164,14 +164,6 @@ class GraphView(QtWidgets.QGraphicsView):
     def updateClassImgTransp(self, newAlpha: float) -> None:
         self._classOverlay.setAlpha(np.clip(newAlpha, 0.0, 1.0))
         self.scene().update()
-    #
-    # def showClassImage(self) -> None:
-    #     self._classOverlay.show()
-    #     self._selectionOverlay.hide()
-    #
-    # def hideClassImage(self) -> None:
-    #     self._classOverlay.hide()
-    #     self._selectionOverlay.show()
 
     def getPixelsOfColor(self, rgb: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -239,10 +231,15 @@ class GraphView(QtWidgets.QGraphicsView):
             self._startDrag = p0
         elif self._selecting:
             self._selectionOverlay.updateSelection(self.mapToScene(event.pos()), self._mainWin.getCurrentColor())
-        elif self._mainWin is not None:
+        elif self._mainWin is not None and self._origCube is not None:
             pos: QtCore.QPointF = self.mapToScene(event.pos())
             x, y = int(round(pos.x())), int(round(pos.y()))
-            self._mainWin.getresultPlots().updateCursorSpectrum(x, y)
+            if 0 <= x < self._origCube.shape[2] and 0 <= y < self._origCube.shape[1]:
+                cursorSpec: np.ndarray = self._origCube[:, y, x][np.newaxis, :]
+                for proc in self._mainWin.getPreprocessors():
+                    cursorSpec = proc.applyToSpectra(cursorSpec)
+
+                self._mainWin.getresultPlots().updateCursorSpectrum(cursorSpec[0])
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
