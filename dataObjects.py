@@ -53,7 +53,7 @@ class Sample:
         """Used for saving the files"""
         return getFilePathHash(self.filePath)
 
-    def getBackroundIndices(self) -> Set[int]:
+    def _getBackroundIndices(self) -> Set[int]:
         """
         Returns the indices of background pixels.
         """
@@ -79,21 +79,34 @@ class Sample:
 
         return isEqual
 
-    def getLabelledPreprocessedSpectra(self) -> Dict[str, np.ndarray]:
+    def getLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra, in form of a dictionary.
         :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self.classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getPreprocessedCubeIfPossible())
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self.specObj.getCube())
         return spectra
 
-    def getPreprocessedSpecCube(self) -> np.ndarray:
-        """
-        Returns a copy of the preprocessed spectra cube.
-        """
-        return self.specObj.getPreprocessedCubeIfPossible().copy()
+    def getAveragedBackgroundSpectrum(self) -> np.ndarray:
+        cube: np.ndarray = self.specObj.getCube()
+        background: np.ndarray = np.zeros(cube.shape[0])
+        backgrounIndices: Set[int] = self._getBackroundIndices()
+        if len(backgrounIndices) > 0:
+            indices: np.ndarray = np.array(list(backgrounIndices))
+            background = np.mean(getSpectraFromIndices(indices, cube), axis=0)
+
+        return background
+
+    # def getPreprocessedSpecCube(self) -> np.ndarray:
+    #     """
+    #     Returns a copy of the preprocessed spectra cube.
+    #     """
+    #     return self.specObj.getPreprocessedCubeIfPossible().copy()
+    #
+    def getSpecCube(self) -> np.ndarray:
+        return self.specObj.getCube()
 
     def setBatchResults(self, batchResult: 'BatchClassificationResult') -> None:
         self.batchResult = batchResult

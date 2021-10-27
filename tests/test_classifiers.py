@@ -29,18 +29,18 @@ from sklearn.preprocessing import LabelEncoder
 
 from classification.classifiers import SVM, NeuralNet, BatchClassificationResult
 from classification.classifyProcedures import TrainingResult, ClassifyMode
+from tests.test_specObj import getPreprocessors
 from dataObjects import Sample
 from particles import Particle
 from gui.classUI import ClassificationUI
 from gui.HSIEvaluator import MainWindow
-from gui.sampleview import SampleView, MultiSampleView
-from tests.test_specObj import getPreprocessors
+from gui.sampleview import SampleView
 
 if TYPE_CHECKING:
     from gui.classUI import TrainClfTab, LoadClfTab
     from collections import Counter
     from gui.graphOverlays import GraphView
-
+    from preprocessing.preprocessors import Preprocessor
 
 class TestBatchClassificationResult(TestCase):
     def test_get_results(self):
@@ -78,7 +78,7 @@ class TestClassifiers(TestCase):
 
     def testTrainAndClassify(self) -> None:
         mainWin: MockMainWin = MockMainWin()
-        classUI: ClassificationUI = ClassificationUI(mainWin)
+        classUI: ClassificationUI = mainWin._clfWidget
         trainTab: 'TrainClfTab' = classUI._clfSelector._trainClfTab
 
         self.assertTrue(trainTab._activeClf is not None)
@@ -216,7 +216,6 @@ class MockMainWin(MainWindow):
         sample2.getSampleData().particleHandler._particles = getParticlesForCube(cube2)
 
         self._multiSampleView._sampleviews = [sample1, sample2]
-        # self._samples: List['SampleView'] =
 
     def disableWidgets(self):
         pass
@@ -225,21 +224,16 @@ class MockMainWin(MainWindow):
         pass
 
     def getPreprocessors(self):
-        return getPreprocessors()
-
-    # def getAllSamples(self) -> List['SampleView']:
-    #     return self._multiSampleView._sampleviews
+        returnProc: List['Preprocessor'] = []
+        for proc in getPreprocessors():
+            if proc.label.find("PCA") != -1:  # other preprocessors might disturb the constructed classification here (we basically separate the fake samples by their absolute offset.
+                returnProc.append(proc)
+        return []
 
     def getClassColorDict(self) -> Dict[str, Tuple[int, int, int]]:
         return {"class1": (0, 0, 0),
                 "class2": (255, 255, 255),
                 "unknown": (20, 20, 20)}
-
-    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
-        backgrounds: Dict[str, np.ndarray] = {}
-        for sample in self._multiSampleView._sampleviews:
-            backgrounds[sample.getName()] = np.zeros(self.cubeShape[0])
-        return backgrounds
 
 
 def createRandomCubeToClassLabels(cubeShape: np.ndarray, cls2Ind: Dict[str, Set[int]]) -> np.ndarray:

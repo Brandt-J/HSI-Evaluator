@@ -312,7 +312,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
     ClassTransparencyUpdated: QtCore.pyqtSignal = QtCore.pyqtSignal(float)
     ClassificationFinished: QtCore.pyqtSignal = QtCore.pyqtSignal()
     ClassInterpretationParamsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(ClassInterpretationParams)
-    PreprocessSpectra: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self, parent: 'MainWindow'):
         super(ClassificationUI, self).__init__()
@@ -320,8 +319,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._logger: 'Logger' = getLogger("ClassificationUI")
 
         self._inferenceProcessWindow: Union[None, ProcessWithStatusBarWindow] = None
-        
-        self._applyPreprocBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Apply to Samples")
+
         self._clfSelector: ClfSelector = ClfSelector(parent)
         self._radioImage: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Whole Image")
         self._radioParticles: QtWidgets.QRadioButton = QtWidgets.QRadioButton("Particles")
@@ -369,7 +367,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
             activeClf.makePickleable()
             clfMode: cp.ClassifyMode = cp.ClassifyMode.WholeImage if self._radioImage.isChecked() else cp.ClassifyMode.Particles
             self._inferenceProcessWindow = ProcessWithStatusBarWindow(cp.classifySamples,
-                                                                      (inferenceSamples, activeClf, clfMode),
+                                                                      (inferenceSamples, activeClf, clfMode,
+                                                                       self._mainWin.getPreprocessors()),
                                                                        str, list)
             self._inferenceProcessWindow.setWindowTitle(f"Inference on {len(inferenceSamples)} samples.")
             self._inferenceProcessWindow.ProcessFinished.connect(self._onClassificationFinishedOrAborted)
@@ -405,9 +404,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._transpSlider.valueChanged.connect(self._emitTransparencyUpdate)
 
         self._applyBtn.released.connect(self._runClassification)
-        
-        self._applyPreprocBtn.released.connect(lambda: self.PreprocessSpectra.emit())
-        self._applyPreprocBtn.setMaximumWidth(130)
 
         self._radioParticles.setChecked(True)
         
@@ -432,10 +428,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
     def _createLayout(self) -> None:
         layout = self._layout
-        preprocGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Preprocess Spectra")
-        preprocLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        preprocGroup.setLayout(preprocLayout)
-        preprocLayout.addWidget(self._applyPreprocBtn)
 
         infOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Run classification on")
         infOptnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
@@ -450,12 +442,6 @@ class ClassificationUI(QtWidgets.QGroupBox):
         confidenceLayout.addRow("Particle Confidence", self._spinPartConf)
         confidenceLayout.addRow(self._checkIgnoreUnknowns)
 
-        # layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        # contentsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        # contentsGroup.setFlat(True)
-        # contentsGroup.setLayout(layout)
-
-        layout.addWidget(preprocGroup)
         layout.addWidget(self._clfSelector)
         layout.addStretch()
         layout.addWidget(infOptnGroup)
@@ -786,8 +772,10 @@ class TrainClfTab(QtWidgets.QWidget):
             elif self._balanceMethodComboBox.currentText() == "OverSMOTE":
                 balanceMode: cp.BalanceMode = cp.BalanceMode.OverSMOTE
 
+            preproc = self._mainWin.getPreprocessors()
             self._trainProcessWindow = ProcessWithStatusBarWindow(cp.trainClassifier,
                                                                   (trainSamples, self._activeClf,
+                                                                   self._mainWin.getPreprocessors(),
                                                                    self._maxNumSpecsSpinBox.value(),
                                                                    self._testFracSpinBox.value(),
                                                                    balanceMode),

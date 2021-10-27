@@ -71,20 +71,6 @@ class TestPreprocessingEditor(TestCase):
             indSampleName: int = int(sampleName.split('_')[1])
             self.assertTrue(np.array_equal(newSpecs[i, :], specs[indSampleName, :]))
 
-    def test_PreprocessUI(self) -> None:
-        preprocEditor: PreprocessingSelector = PreprocessingSelector(MockMainWin(), MockResultsPlot())
-        preprocEditor.getPreprocessors = getPreprocessors
-        preprocEditor.applyPreprocessingToSpectra()
-
-        preprocPerformer: 'PreprocessingPerformer' = preprocEditor._processingPerformer
-        while preprocPerformer._thread.is_alive():
-            time.sleep(0.1)
-
-        for sampleInMainWin, preprocData in zip(preprocEditor._mainWin.getAllSamples(), preprocPerformer._preprocessedSamples):
-            sample: 'Sample' = sampleInMainWin.getSampleData()
-            self.assertTrue(preprocData == sample)
-            self.assertTrue(np.array_equal(preprocData.specObj._preprocessedCube, sample.specObj._preprocessedCube))
-
 
 class TestPreprocNodes(TestCase):
     def setUp(self) -> None:

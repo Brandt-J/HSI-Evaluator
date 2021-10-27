@@ -112,9 +112,11 @@ class Particle:
         """
         return self._contour
 
-    def getSpectra(self, cube: np.ndarray) -> np.ndarray:
+    def getSpectraArray(self, cube: np.ndarray) -> np.ndarray:
         """
         Takes the spectrum cube and extracts the spectra according the particle's contour.
+        :param cube: 3D spec cube
+        :return: MxN array of M specs with N wavelenghts
         """
         specs: List[np.ndarray] = []
         mask: np.ndarray = np.zeros(cube.shape[1:])

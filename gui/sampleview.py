@@ -41,7 +41,6 @@ if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from logging import Logger
     from particles import ParticleHandler
-    from classification.classifiers import BatchClassificationResult
 
 
 class MultiSampleView(QtWidgets.QScrollArea):
@@ -188,51 +187,28 @@ class MultiSampleView(QtWidgets.QScrollArea):
             clsNames += list(sample.getClassNames())
         return set(clsNames)
 
-    def getLabelledSpectraFromActiveView(self, preprocessed) -> SpectraCollection:
+    def getLabelledSpectraFromActiveView(self) -> SpectraCollection:
         """
         Gets the labelled Spectra, in form of a dictionary, from the active sampleview
-        :param preprocessed: Whether or not to retrieve preprocessed spectra.
         :return: SpectraCollection with all the daata
         """
         specColl: SpectraCollection = SpectraCollection()
         for view in self._sampleviews:
             if view.isActive():
-                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra(preprocessed)
+                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra()
                 specColl.addSpectraDict(spectra, view.getName())
                 break
         return specColl
 
-    def getLabelledSpectraFromAllViews(self, preprocessed) -> SpectraCollection:
+    def getLabelledSpectraFromAllViews(self) -> SpectraCollection:
         """
         Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
-        :param preprocessed: Whether or not to retrieve preprocessed spectra.
         :return: SpectraCollectionObject
         """
         specColl: SpectraCollection = SpectraCollection()
         for view in self._sampleviews:
-            specColl.addSpectraDict(view.getVisibleLabelledSpectra(preprocessed), view.getName())
+            specColl.addSpectraDict(view.getVisibleLabelledSpectra(), view.getName())
         return specColl
-
-    def getBackgroundOfActiveSample(self) -> np.ndarray:
-        """
-        Returns the averaged background spectrum of the active sample.
-        """
-        background: Union[None, np.ndarray] = None
-        for sample in self._sampleviews:
-            if sample.isActive():
-                background = sample.getAveragedBackground()
-                break
-        assert background is not None
-        return background
-
-    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
-        """
-        Returns the averaged backgounds of all samples.
-        """
-        backgrounds: Dict[str, np.ndarray] = {}
-        for view in self._sampleviews:
-            backgrounds[view.getName()] = view.getAveragedBackground()
-        return backgrounds
 
     def closeAllSamples(self) -> None:
         """
@@ -462,36 +438,6 @@ class SampleView(QtWidgets.QMainWindow):
     def getWavelengths(self) -> np.ndarray:
         return self._sampleData.specObj.getWavelengths()
 
-    def getAveragedBackground(self) -> np.ndarray:
-        """
-        Returns the averaged background spectrum of the sample. If no background was selected, a np.zeros array is returned.
-        :return: np.ndarray of background spectrum
-        """
-        cube: np.ndarray = self.getNotPreprocessedCube()
-        background: np.ndarray = np.zeros(cube.shape[0])
-        backgrounIndices: Set[int] = self._sampleData.getBackroundIndices()
-        if len(backgrounIndices) > 0:
-            indices: np.ndarray = np.array(list(backgrounIndices))
-            background = np.mean(getSpectraFromIndices(indices, cube), axis=0)
-
-        else:
-            self._logger.warning(
-                f'Sample: {self._name}: No Background found, although it was requested.. '
-                f'Present Classes are: {list(self._classes2Indices.keys())}. Returning a np.zeros Background')
-
-        return background
-
-    def getBackgroundPixelIndices(self) -> Set[int]:
-        """
-        Returns a list of pixels in the background class
-        """
-        backgroundIndices: Set[int] = set()
-        for cls, pixelIndices in self._classes2Indices.items():
-            if cls.lower() == "background":
-                backgroundIndices = pixelIndices
-                break
-        return backgroundIndices
-
     def getSampleData(self) -> 'Sample':
         return self._sampleData
 
@@ -506,19 +452,16 @@ class SampleView(QtWidgets.QMainWindow):
         saveSample.particleHandler.resetParticleResults()
         return saveSample
 
-    def getVisibleLabelledSpectra(self, preprocessed: bool) -> Dict[str, np.ndarray]:
+    def getVisibleLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
         Gets the labelled Spectra that are currently set as visible, in form of a dictionary.
-        :param preprocessed: Whether or not to retrieve preprocessed spectra.
         :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             if self._mainWindow.classIsVisible(name):
-                if preprocessed:
-                    spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getPreprocessedCubeIfPossible())
-                else:
-                    spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getNotPreprocessedCube())
+                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.getSpecCube())
+
         return spectra
 
     def getClassNames(self) -> List[str]:
@@ -529,24 +472,12 @@ class SampleView(QtWidgets.QMainWindow):
 
     def getAllLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
-        Gets all the labelled spectra in form of a dictionary.
+        Gets all the labelled spectra in form of a dictionary. The spectra are NOT preprocessed
         :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)),
-                                                  self._sampleData.specObj.getPreprocessedCubeIfPossible())
-        return spectra
-
-    def getAllLabelledNOTPreprocesssedSpectra(self) -> Dict[str, np.ndarray]:
-        """
-        Gets all the labelled, NOT preprocessed spectra in form of a dictionary.
-        :return: Dictionary [className, NxM array of N spectra with M wavelengths]
-        """
-        spectra: Dict[str, np.ndarray] = {}
-        for name, indices in self._classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)),
-                                                  self._sampleData.specObj.getNotPreprocessedCube())
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.getSpecCube())
         return spectra
 
     def getSelectedMaxBrightness(self) -> float:
@@ -584,7 +515,7 @@ class SampleView(QtWidgets.QMainWindow):
         """
         if self._sampleData.batchResult is not None:
             specObj: 'SpectraObject' = self.getSpecObj()
-            cubeShape = specObj.getPreprocessedCubeIfPossible().shape
+            cubeShape = specObj.getCube().shape
             assignments: np.ndarray = self._sampleData.getBatchResults(specConfCutoff)
             colorDict: Dict[str, Tuple[int, int, int]] = self._mainWindow.getClassColorDict()
 
@@ -843,7 +774,7 @@ class SampleView(QtWidgets.QMainWindow):
         :param threshold: The threshold to use (int, 0...255)
         :param selectBright: If True, the bright areas are selected, otherwise the darker ones.
         """
-        cube: np.ndarray = self._sampleData.specObj.getNotPreprocessedCube()
+        cube: np.ndarray = self._sampleData.specObj.getCube()
         binImg: np.ndarray = getThresholdedImage(cube, self._imgAdjustWidget.getSelectedMaxBrightness(),
                                                  threshold, selectBright)
         particleHandler: 'ParticleHandler' = self._sampleData.particleHandler

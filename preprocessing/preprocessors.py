@@ -17,15 +17,12 @@ along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
 
-import time
 from typing import *
-from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import dataclasses
 
 from logger import getLogger
 if TYPE_CHECKING:
-    from multiprocessing import Queue
     from logging import Logger
 
 preprocLogger: 'Logger' = getLogger("Preprocessing")
@@ -69,11 +66,9 @@ def preprocessSpectra(specArr: np.ndarray, preprocessors: List['Preprocessor'], 
     if len(preprocessors) == 0:
         preprocessedSpecs: np.ndarray = specArr
     else:
-        t0 = time.time()
         preprocData: PreprocessData = PreprocessData(specArr, preprocessors, background)
         preprocessedSpecs: np.ndarray = _applyPreprocessing(preprocData)
 
-        preprocLogger.info(f'preprocessing spectra took {round(time.time()-t0, 2)} seconds')
     return preprocessedSpecs
 
 

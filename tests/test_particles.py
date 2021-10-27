@@ -45,7 +45,7 @@ class TestParticleHandler(TestCase):
         particleList: List[Particle] = [Particle(ParticleHandler.getNewParticleID(), cnt) for cnt in contours]
         self.assertEqual(len(particleList), 2)
 
-        specArr1, specArr2 = particleList[0].getSpectra(cube), particleList[1].getSpectra(cube)
+        specArr1, specArr2 = particleList[0].getSpectraArray(cube), particleList[1].getSpectraArray(cube)
         specVals1: np.ndarray = np.unique(specArr1)
         specVals2: np.ndarray = np.unique(specArr2)
 

@@ -54,23 +54,6 @@ def fakeSpecProcess(spectra: np.ndarray) -> np.ndarray:
 
 
 class TestSpecObject(TestCase):
-    def test_Preprocessing(self):
-        preprocessors: List['Preprocessor'] = getPreprocessors()
-        specObj: SpectraObject = SpectraObject()
-
-        for preproc in preprocessors:
-            preproc.applyToSpectra = fakeSpecProcess
-
-        cubeShape: Tuple[int, int, int] = (100, 3, 3)
-        randomCube: np.ndarray = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
-        specObj.setCube(randomCube)
-        backroundIndices: Set[int] = {0, 1, 2, 3, 4}
-        specObj.doPreprocessing(preprocessors, backroundIndices)
-
-        preprocCube: np.ndarray = specObj._preprocessedCube
-        expectedCube: np.ndarray = randomCube + len(preprocessors)  # each preprocessor adds 1 to the cube.
-        self.assertTrue(np.allclose(preprocCube, expectedCube))
-
     def test_SplitSpecArr(self):
         specArr: np.ndarray = np.random.rand(100, 30)
         for num in range(1, 10):
@@ -100,7 +83,6 @@ class TestSpecObject(TestCase):
             self.assertEqual(len(uniqueInLayer), 1)
             self.assertEqual(uniqueInLayer[0], i)
 
-        self.assertTrue(specObj._preprocessedCube is None)
         self.assertTrue(np.array_equal(specObj._wavelengths, shorterWavelenghts))
 
         # reset cube
@@ -121,7 +103,6 @@ class TestSpecObject(TestCase):
             else:
                 self.assertEqual(uniqueInLayer[0], origLen-1)
 
-        self.assertTrue(specObj._preprocessedCube is None)
         self.assertTrue(np.array_equal(specObj._wavelengths, longerWavelengths))
 
 

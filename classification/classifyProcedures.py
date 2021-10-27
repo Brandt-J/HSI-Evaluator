@@ -29,9 +29,11 @@ import imblearn
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
 from classification.classifiers import ClassificationError, KNN, SVM, NeuralNet
+from preprocessing.preprocessors import preprocessSpectra
 
 if TYPE_CHECKING:
     from classification.classifiers import BaseClassifier, BatchClassificationResult
+    from preprocessing.preprocessors import Preprocessor
     from particles import Particle
     from spectraObject import SpectraObject
     from dataObjects import Sample
@@ -74,15 +76,16 @@ class TrainingResult:
     validReportDict: dict
 
 
-def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', maxSpecsPerClass: int,
-                    testSize: float, balanceMode: BalanceMode, queue: Queue, stopEvent: Event) -> None:
+def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', preprocessors: List['Preprocessor'],
+                    maxSpecsPerClass: int, testSize: float, balanceMode: BalanceMode, queue: Queue, stopEvent: Event) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     The classifier will be put back in the queue after training and validation.
     :param trainSampleList: List of Sample objects used for classifier training
-    :param classifier: The Classifier to use
-    :param maxSpecsPerClass: The maximum number of spectra per class to use
-    :param testSize: Fraction of the data used for testing
+    :param classifier: The Classifier to use.
+    :param preprocessors: The preprocessors to use.
+    :param maxSpecsPerClass: The maximum number of spectra per class to use.
+    :param testSize: Fraction of the data used for testing.
     :param queue: Dataqueue for communication between processes.
     :param balanceMode: Desired mode for balancing the dataset.
     :param stopEvent: Event that is set if computation should be stopped.
@@ -90,9 +93,11 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     if stopEvent.is_set():
         return
 
+    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, maxSpecsPerClass, testSize,
+                                                                  balanceMode, preprocessors)
+
     logger: 'Logger' = getLogger("TrainingProcess")
     # training
-    xtrain, xtest, ytrain, ytest = getTestTrainSpectraFromSamples(trainSampleList, maxSpecsPerClass, testSize, balanceMode)
     logger.debug(f"starting training on {xtrain.shape[0]} spectra")
     t0 = time.time()
     try:
@@ -116,12 +121,13 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
 
 
 def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassifier', mode: 'ClassifyMode',
-                    queue: Queue, stopEvent: Event) -> None:
+                    preprocessors: List['Preprocessor'], queue: Queue, stopEvent: Event) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param inferenceSampleList: List of Samples on which we want to run classification.
     :param classifier: The Classifier to use
     :param mode: The classification mode to do.
+    :param preprocessors: Preprocessors to use.
     :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is Set if the process should be cancelled
     """
@@ -129,25 +135,28 @@ def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassi
     for sample in inferenceSampleList:
         if stopEvent.is_set():
             return
-        completed: 'Sample' = classifySample(sample, classifier, mode, queue)
+        completed: 'Sample' = classifySample(sample, classifier, mode, preprocessors, queue)
         finishedSamples.append(completed)
         queue.put("finished Sample")
     queue.put(finishedSamples)
 
 
-def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode, queue: 'Queue') -> 'Sample':
+def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode,
+                   preprocessors: List['Preprocessor'], queue: 'Queue') -> 'Sample':
     """
     Estimates the classes for each spectrum
     :param sample: The Sample to classifiy
-    :param classifier: The Classifier object to use
-    :param mode: The classification mode to apply
-    :param queue: The dataqueue to push errors to
+    :param classifier: The Classifier object to use.
+    :param mode: The classification mode to apply.
+    :param preprocessors: The preprocessors to apply.
+    :param queue: The dataqueue to push errors to.
     """
     logger: 'Logger' = getLogger("Classifier Application")
 
+    background: np.ndarray = sample.getAveragedBackgroundSpectrum()
     if mode == ClassifyMode.WholeImage:
         specObject: 'SpectraObject' = sample.specObj
-        specArr = specObject.getPreprocessedSpecArr()
+        specArr: np.ndarray = preprocessSpectra(specObject.getSpecArray(), preprocessors, background)
         try:
             batchResult: 'BatchClassificationResult' = classifier.predict(specArr)
         except Exception as e:
@@ -160,11 +169,12 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
     elif mode == ClassifyMode.Particles:
         sample.resetParticleResults()
         particles: List['Particle'] = sample.getAllParticles()
-        cube: np.ndarray = sample.getPreprocessedSpecCube()
+        cube: np.ndarray = sample.getSpecCube()
         if len(particles) == 0:
             logger.warning(f"No particles found in sample {sample.name}, cannot classify them..")
         for particle in particles:
-            specArr: np.ndarray = particle.getSpectra(cube)
+            specArr: np.ndarray = particle.getSpectraArray(cube)
+            specArr = preprocessSpectra(specArr, preprocessors, background)
             try:
                 batchRes: 'BatchClassificationResult' = classifier.predict(specArr)
             except Exception as e:
@@ -177,36 +187,37 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float, balanceMode: BalanceMode,
-                                   ignoreBackground: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+                                   preprocessors: List['Preprocessor']) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Gets all labelled spectra from the indicated sampleview. Spectra and labels are concatenated in one array, each.
-    :param sampleList: List of sampleviews to use
-    :param maxSpecsPerClass: Max. number of spectra per class
-    :param testSize: Fraction of the data to use as test size
-    :param balanceMode: Dataset balancing mode to use
-    :param ignoreBackground: Whether or not to skip background pixels
+    :param sampleList: List of sampleviews to use.
+    :param maxSpecsPerClass: Max. number of spectra per class.
+    :param testSize: Fraction of the data to use as test size.
+    :param balanceMode: Dataset balancing mode to use.
+    :param preprocessors: The preprocessors to apply.
     :return: Tuple[Xtrain, Xtest, ytrain, ytest]
     """
     logger: 'Logger' = getLogger("PrepareSpecsForTraining")
     labels: List[str] = []
     spectra: Union[None, np.ndarray] = None
     for sample in sampleList:
-        spectraDict: Dict[str, np.ndarray] = sample.getLabelledPreprocessedSpectra()
-        for name, specs in spectraDict.items():
-            if ignoreBackground and name.lower() == "background":
-                continue
-
-            numSpecs = specs.shape[0]
+        spectraDict: Dict[str, np.ndarray] = sample.getLabelledSpectra()
+        background: np.ndarray = sample.getAveragedBackgroundSpectrum()
+        for name, specArr in spectraDict.items():
+            numSpecs = specArr.shape[0]
             if numSpecs > maxSpecsPerClass:
-                specs = getRandomSpectraFromArray(specs, maxSpecsPerClass)
-                logger.debug(f"Reduced {numSpecs} spectra from {name} to {specs.shape[0]} spectra")
+                specArr = getRandomSpectraFromArray(specArr, maxSpecsPerClass)
+                logger.debug(f"Reduced {numSpecs} spectra from {name} to {specArr.shape[0]} spectra")
                 numSpecs = maxSpecsPerClass
 
             labels += [name]*numSpecs
+
+            specArr = preprocessSpectra(specArr, preprocessors, background)
+
             if spectra is None:
-                spectra = specs
+                spectra = specArr
             else:
-                spectra = np.vstack((spectra, specs))
+                spectra = np.vstack((spectra, specArr))
 
     labels: np.ndarray = np.array(labels)
 
@@ -231,13 +242,11 @@ def createClassImg(cubeShape: tuple, assignments: np.ndarray, colorCodes: Dict[s
     :return: np.ndarray of RGBA image as classification overlay
     """
     clfImg: np.ndarray = np.zeros((cubeShape[1], cubeShape[2], 4), dtype=np.uint8)
-    i: int = 0  # counter for cube
-    t0 = time.time()
+    i: int = 0
     for y in range(cubeShape[1]):
         for x in range(cubeShape[2]):
             clfImg[y, x, :3] = colorCodes[assignments[i]]
             clfImg[y, x, 3] = 255
             i += 1
 
-    print('generating class image', round(time.time()-t0, 2))
     return clfImg

@@ -100,34 +100,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def getresultPlots(self) -> 'ResultPlots':
         return self._resultPlots
 
-    def getLabelledSpectraFromActiveView(self, preprocessed) -> 'SpectraCollection':
+    def getLabelledSpectraFromActiveView(self) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from the currently active sampleview.
-        :param preprocessed: Whether or not to retrieve preprocessed data.
         :return: Spectra Collection with all data
         """
-        return self._multiSampleView.getLabelledSpectraFromActiveView(preprocessed)
+        return self._multiSampleView.getLabelledSpectraFromActiveView()
 
-    def getLabelledSpectraFromAllViews(self, preprocessed) -> 'SpectraCollection':
+    def getLabelledSpectraFromAllViews(self) -> 'SpectraCollection':
         """
         Gets the currently labelled Spectra from all active samples, grouped i a dictionary with samplename as key
-        :param preprocessed: Whether or not to retrieve preprocessed data.
         :return: Spectra Collection with all data
         """
-        return self._multiSampleView.getLabelledSpectraFromAllViews(preprocessed)
-
-    def getBackgroundOfActiveSample(self) -> np.ndarray:
-        """
-        Returns the averaged background spectrum of the currently active sample.
-        """
-        raise NotImplementedError
-        # return self._multiSampleView.getBackgroundOfActiveSample()
-
-    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
-        """
-        Returns the averaged backgounds of all samples.
-        """
-        return self._multiSampleView.getBackgroundsOfAllSamples()
+        return self._multiSampleView.getLabelledSpectraFromAllViews()
 
     def getAllSamples(self) -> List['SampleView']:
         """
@@ -265,7 +250,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)
-        self._clfWidget.PreprocessSpectra.connect(self._preprocSelector.applyPreprocessingToSpectra)
         self._clfWidget.ClassInterpretationParamsChanged.connect(self._multiSampleView.updateClassificationResults)
         self._clfWidget.ClassificationFinished.connect(self._multiSampleView.updateClassificationResults)
 

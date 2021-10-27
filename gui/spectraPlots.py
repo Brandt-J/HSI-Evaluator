@@ -323,7 +323,7 @@ class SpecPlot(QtWidgets.QWidget):
         """
         if self._cursorSpec is not None:
             cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
-            self._cursorSpec = self._specAx.plot(self._mainWindow.getWavelengths(), cursorSpec, color='gray')[0]
+            self._cursorSpec = self._specAx.plot(self._mainWin.getWavelengths(), cursorSpec, color='gray')[0]
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")

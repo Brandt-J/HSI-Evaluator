@@ -175,12 +175,13 @@ def deriv_smooth(input_data: np.ndarray, polydegree: int, derivative: int = 0, w
     :return: corrected data in same shape
     """
     # Checks for Savitzky-Golay bounds
-    if windowSize > input_data.shape[0]:
-        windowSize = input_data.shape[0]
+    if windowSize > input_data.shape[1]:
+        windowSize = input_data.shape[1]
     if windowSize % 2 == 0:
         windowSize += 1
     if polydegree >= windowSize:
         windowSize = polydegree + 1
+
     output_data = savgol_filter(input_data, windowSize, polydegree, deriv=derivative)
     return output_data
 
