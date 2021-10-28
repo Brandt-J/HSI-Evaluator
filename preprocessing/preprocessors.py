@@ -18,6 +18,8 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 import functools
 from typing import *
+
+import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.neighbors import LocalOutlierFactor
@@ -51,18 +53,27 @@ class DimReductProc(Preprocessor):
     def __init__(self):
         self._pca: PCA = PCA(n_components=3)
         self._tsne: TSNE = TSNE(n_components=3)
+        self._reductFunc: Callable[[np.ndarray], np.ndarray] = self._pca.fit_transform
+        self._numComps: int = 3
         self.updateProcAndLabel(pca=True)
 
     def updateProcAndLabel(self, pca: bool, numComps: int = 3) -> None:
+        self._numComps = numComps
         if pca:
             self._pca = PCA(n_components=numComps)
-            self.applyToSpectra = self._pca.fit_transform
+            self._reductFunc = self._pca.fit_transform
             self.label = f"PCA {numComps} Components"
         else:
             self._tsne = TSNE(n_components=numComps)
-            self.applyToSpectra = self._tsne.fit_transform
+            self._reductFunc = self._tsne.fit_transform
             self.label = f"TSNE {numComps} Components"
 
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        if spectra.shape[0] <= self._numComps:
+            processedSpecs: np.ndarray = spectra
+        else:
+            processedSpecs: np.ndarray = self._reductFunc(spectra)
+        return processedSpecs
 
 class SNVProc(Preprocessor):
     label = "SNV"

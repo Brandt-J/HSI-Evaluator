@@ -278,6 +278,7 @@ class NeuralNet(BaseClassifier):
 
     def makePickleable(self) -> None:
         if self._spinEpochs is not None:
+            self._numEpochs = self._spinEpochs.value()
             self._spinEpochs.valueChanged.disconnect()
             self._spinEpochs = None
         if self._clf is not None:

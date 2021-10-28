@@ -29,6 +29,7 @@ import imblearn
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
 from classification.classifiers import ClassificationError, KNN, SVM, NeuralNet
+from preprocessing.preprocessors import MSCProc
 
 if TYPE_CHECKING:
     from classification.classifiers import BaseClassifier, BatchClassificationResult
