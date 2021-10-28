@@ -10,3 +10,5 @@ config.cfg
 /classification/spectra.npy
 
 classification/logs/
+
+classification/spectra.txt

@@ -29,11 +29,10 @@ import imblearn
 from logger import getLogger
 from helperfunctions import getRandomSpectraFromArray
 from classification.classifiers import ClassificationError, KNN, SVM, NeuralNet
-from preprocessing.preprocessors import preprocessSpectra
 
 if TYPE_CHECKING:
     from classification.classifiers import BaseClassifier, BatchClassificationResult
-    from preprocessing.preprocessors import Preprocessor
+    from preprocessing.preprocessors import Preprocessor, MSCProc
     from particles import Particle
     from spectraObject import SpectraObject
     from dataObjects import Sample
@@ -210,9 +209,10 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
                 logger.debug(f"Reduced {numSpecs} spectra from {name} to {specArr.shape[0]} spectra")
                 numSpecs = maxSpecsPerClass
 
-            labels += [name]*numSpecs
+            classLabels = [name]*numSpecs
+            labels += classLabels
 
-            specArr = preprocessSpectra(specArr, preprocessors, background)
+            specArr = preprocessSpectra(specArr, preprocessors, background, labels=classLabels)
 
             if spectra is None:
                 spectra = specArr
@@ -250,3 +250,40 @@ def createClassImg(cubeShape: tuple, assignments: np.ndarray, colorCodes: Dict[s
             i += 1
 
     return clfImg
+
+
+def preprocessSpectra(specArr: np.ndarray, preprocessors: List['Preprocessor'], background: np.ndarray,
+                      labels: Optional[np.ndarray] = None) -> np.ndarray:
+    """
+    Applies the specified preprocessing to the spectra array.
+    :param specArr: (MxN) shape array of M spectra with N wavelenghts.
+    :param preprocessors: List of preprocessors to apply
+    :param background: Averaged background spectrum.
+    :param labels: Optional: Array of M labels
+    :return: preprocessed spectra array
+    """
+    specArr = specArr.copy()  # We don't want to override any original data...
+    for preprocessor in preprocessors:
+        if type(preprocessor) == MSCProc:
+            preprocessor: MSCProc = cast(MSCProc, preprocessor)
+            specArr = preprocessor.applyToSpectra(specArr, labels)
+        else:
+            specArr = preprocessor.applyToSpectra(specArr)
+
+    return specArr
+
+
+def splitUpArray(specArr: np.ndarray, numParts: int = 8) -> List[np.ndarray]:
+    """
+    Splits up the given array into a list of arrays.
+    :param specArr: (NxM) shape array of N spectra with w wavelenghts.
+    :param numParts: number of parts
+    :param: List with numParts arrays.
+    """
+    arrList: List[np.ndarray] = []
+    stepSize: int = specArr.shape[0] // numParts + 1
+    for i in range(numParts):
+        start = i*stepSize
+        end = min([(i+1)*stepSize, specArr.shape[0]])
+        arrList.append(specArr[start:end, :])
+    return arrList

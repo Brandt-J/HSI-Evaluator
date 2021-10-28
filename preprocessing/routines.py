@@ -16,7 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import time
 from enum import Enum
 import numba
 import numpy as np
@@ -192,6 +191,8 @@ def msc(spectra: np.ndarray):
     Multiplicative Scatter Correction technique performed with mean of the sample data as the reference.
     Adapted from: https://nirpyresearch.com/two-scatter-correction-techniques-nir-spectroscopy-python/
     :param spectra: MxN array of M spectra with N wavenumbers
+    :params labels: Optional, the M labels for the spectra. If given, the spectra are grouped according their labels
+    and processed in these batches.
     :returns: corrected spectra: Scatter corrected spectra data
     """
     spectra = spectra.copy()
@@ -225,29 +226,3 @@ class NormMode(Enum):
     Area = 0
     Length = 1
     Max = 2
-
-
-if __name__ == '__main__':
-    # Some benchmarking with random data...
-
-    arr: np.ndarray = np.random.rand(250000, 100)
-    for _ in range(2):
-        t0 = time.time()
-        normalizeIntensities(arr, NormMode.Length)
-        print(f"normalize {time.time()-t0} seconds")
-
-        t0 = time.time()
-        deriv_smooth(arr, windowSize=11, derivative=1, polydegree=2)
-        print(f"savgol {time.time() - t0} seconds")
-
-        t0 = time.time()
-        snv(arr)
-        print(f"snv {time.time() - t0} seconds")
-
-        t0 = time.time()
-        detrend(arr)
-        print(f"detrend {time.time() - t0} seconds")
-
-        t0 = time.time()
-        msc(arr)
-        print(f"msc {time.time() - t0} seconds")

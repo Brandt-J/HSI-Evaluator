@@ -16,12 +16,15 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
+import functools
 from typing import *
-import numpy as np
-import dataclasses
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.neighbors import LocalOutlierFactor
 
 from logger import getLogger
+from preprocessing.routines import *
+
 if TYPE_CHECKING:
     from logging import Logger
 
@@ -30,6 +33,7 @@ preprocLogger: 'Logger' = getLogger("Preprocessing")
 
 class Preprocessor:
     label: str = ''
+    specLabels: Union[None, np.ndarray] = None
     backgroundSpec: Union[None, np.ndarray] = None
 
     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
@@ -40,98 +44,92 @@ class Preprocessor:
         """
         raise NotImplementedError
 
-    def setBackground(self, background: np.ndarray) -> np.ndarray:
-        """
-        Sets a background spectrum. Can be overridden, if required.
-        """
-        raise NotImplementedError
 
+class DimReductProc(Preprocessor):
+    label = "Dimensionality Reduction"
 
-@dataclasses.dataclass
-class PreprocessData:
-    specArr: np.ndarray
-    preprocQueue: List['Preprocessor']
-    background: np.ndarray
+    def __init__(self):
+        self._pca: PCA = PCA(n_components=3)
+        self._tsne: TSNE = TSNE(n_components=3)
+        self.updateProcAndLabel(pca=True)
 
-
-def preprocessSpectra(specArr: np.ndarray, preprocessors: List['Preprocessor'], background: np.ndarray) -> np.ndarray:
-    """
-    Applies the specified preprocessing to the spectra array.
-    :param specArr: (MxN) shape array of M spectra with N wavelenghts.
-    :param preprocessors: List of preprocessors to apply
-    :param background: Averaged background spectrum.
-    :return: preprocessed spectra array
-    """
-    specArr = specArr.copy()  # We don't want to override any original data...
-    if len(preprocessors) == 0:
-        preprocessedSpecs: np.ndarray = specArr
-    else:
-        preprocData: PreprocessData = PreprocessData(specArr, preprocessors, background)
-        preprocessedSpecs: np.ndarray = _applyPreprocessing(preprocData)
-
-    return preprocessedSpecs
-
-
-def _applyPreprocessing(preprocData: 'PreprocessData') -> np.ndarray:
-    """
-    Applies preprocessing, as defined by the PreprocessData obect.
-    :param preprocData: The PreprocessingData to use
-    :return: (NxM) array of N preprocessed spectra with M wavelenghts.
-    """
-    for preprocessor in preprocData.preprocQueue:
-        if preprocessor.label == "Background":
-            preprocessor.setBackground(preprocData.background)
-        preprocData.specArr = preprocessor.applyToSpectra(preprocData.specArr)
-    return preprocData.specArr
-
-
-def _recombineSpecArrays(specArrs: List[np.ndarray]) -> np.ndarray:
-    """
-    Recombines the arrays in the list by vertically stacking them.
-    """
-    newArr: Union[None, np.ndarray] = None
-    for arr in specArrs:
-        if newArr is None:
-            newArr = arr
+    def updateProcAndLabel(self, pca: bool, numComps: int = 3) -> None:
+        if pca:
+            self._pca = PCA(n_components=numComps)
+            self.applyToSpectra = self._pca.fit_transform
+            self.label = f"PCA {numComps} Components"
         else:
-            newArr = np.vstack((newArr, arr))
-    return newArr
+            self._tsne = TSNE(n_components=numComps)
+            self.applyToSpectra = self._tsne.fit_transform
+            self.label = f"TSNE {numComps} Components"
 
 
-def splitUpArray(specArr: np.ndarray, numParts: int = 8) -> List[np.ndarray]:
-    """
-    Splits up the given array into a list of arrays.
-    :param specArr: (NxM) shape array of N spectra with w wavelenghts.
-    :param numParts: number of parts
-    :param: List with numParts arrays.
-    """
-    arrList: List[np.ndarray] = []
-    stepSize: int = specArr.shape[0] // numParts + 1
-    for i in range(numParts):
-        start = i*stepSize
-        end = min([(i+1)*stepSize, specArr.shape[0]])
-        arrList.append(specArr[start:end, :])
-    return arrList
+class SNVProc(Preprocessor):
+    label = "SNV"
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return snv(spectra)
 
 
-# class Background(Preprocessor):
-#     label = 'Subtract Background'
-#
-#     def __init__(self):
-#         super(Background, self).__init__()
-#         self._backgroundSpec: np.ndarray = None
-#
-#     def setBackground(self, backgroundSpec: np.ndarray) -> None:
-#         if not np.array_equal(backgroundSpec, np.zeros_like(backgroundSpec)):
-#             backgroundSpec = (backgroundSpec - backgroundSpec.min()) / (backgroundSpec.max() - backgroundSpec.min())
-#         self._backgroundSpec = backgroundSpec
-#
-#     def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
-#         if self._backgroundSpec is not None:
-#             spectra = spectra.copy()
-#             for i in range(spectra.shape[0]):
-#                 curSpec = spectra[i, :].copy()
-#                 curSpec = (curSpec - curSpec.min()) / (curSpec.max() - curSpec.min())
-#                 curSpec -= self._backgroundSpec
-#                 spectra[i, :] = curSpec
-#         return spectra
+class DetrendProc(Preprocessor):
+    label = "Detrend"
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return detrend(spectra)
+
+
+class NormalizeProc(Preprocessor):
+    label = "Normalize"
+
+    def __init__(self):
+        super(NormalizeProc, self).__init__()
+        self._normMode: NormMode = NormMode.Area
+        self._updateLabel()
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return normalizeIntensities(spectra, self._normMode)
+
+    def setNormMode(self, newMode: NormMode) -> None:
+        self._normMode = newMode
+        self._updateLabel()
+
+    def _updateLabel(self) -> None:
+        self.label = f"Normalization: {self._normMode}"
+
+
+class MSCProc(Preprocessor):
+    label = "Normalize"
+
+    def applyToSpectra(self, spectra: np.ndarray, labels: Optional[np.ndarray] = None) -> np.ndarray:
+        import matplotlib.pyplot as plt
+        from collections import Counter
+
+        if labels is None:
+            procSpecs: np.ndarray = msc(spectra)
+        else:
+            procSpecs: np.ndarray = np.zeros_like(spectra)
+            for lbl in np.unique(labels):
+                ind: np.ndarray = np.where(labels == lbl)[0]
+                correctedSpecs: np.ndarray = msc(spectra[ind, :])
+
+
+                procSpecs[ind, :] = correctedSpecs
+
+        return procSpecs
+
+
+class SavGolProc(Preprocessor):
+    label = "Savitzky-Golay"
+
+    def __init__(self):
+        super(SavGolProc, self).__init__()
+        self._savGolFunc: Callable[[np.ndarry], np.ndarray] = functools.partial(deriv_smooth, polydegree=2,
+                                                                                derivative=1, windowSize=5)
+
+    def applyToSpectra(self, spectra: np.ndarray) -> np.ndarray:
+        return self._savGolFunc(spectra)
+
+    def updatePreprocessor(self, winSize: int, degree: int, deriv: int) -> None:
+        self._savGolFunc = functools.partial(deriv_smooth, polydegree=degree,
+                                                              derivative=deriv, windowSize=winSize)
+        self.label = f"Smooth {winSize} + Derivative {deriv}"

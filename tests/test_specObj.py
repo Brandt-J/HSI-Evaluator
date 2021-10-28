@@ -24,7 +24,7 @@ from PyQt5 import QtWidgets
 import sys
 
 from spectraObject import SpectraObject, SpectraCollection, WavelengthsNotSetError
-from preprocessing.preprocessors import splitUpArray
+from classification.classifyProcedures import splitUpArray
 from gui.nodegraph.nodes import nodeTypes
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:

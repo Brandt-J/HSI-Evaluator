@@ -16,13 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 import functools
 
 from gui.nodegraph.nodecore import *
-from preprocessing.routines import *
-from preprocessing.preprocessors import Preprocessor
+from preprocessing.preprocessors import *
 
 if TYPE_CHECKING:
     from gui.nodegraph.nodegraph import NodeGraph
@@ -104,7 +101,7 @@ class NodeDimReduct(BaseNode):
         super(NodeDimReduct, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS, DataType.DISCRETE])]
         self._outputs = [Output(self, 'Spectra', DataType.DISCRETE)]
-        self._preprocessor = Preprocessor()
+        self._preprocessor: DimReductProc = DimReductProc()
 
         self._pcaBtn: QtWidgets.QRadioButton = QtWidgets.QRadioButton("PCA")
         self._pcaBtn.setChecked(True)
@@ -148,25 +145,16 @@ class NodeDimReduct(BaseNode):
         self._pcaBtn.setChecked(paramsDict["pcaChecked"])
 
     def _updatePreprocessor(self) -> None:
-        # def applyPreproc(spectra: np.ndarray, dimRedObj: Union[PCA, TSNE]) -> np.ndarray:
-        #     return dimRedObj.fit_transform(spectra)
-
         numComps: int = self._numcompSpin.value()
-        if self._pcaBtn.isChecked():
-            pca: PCA = PCA(n_components=numComps)
-            self._preprocessor.label = f"PCA, {numComps} components"
-            self._preprocessor.applyToSpectra = pca.fit_transform
-        else:
+        pca: bool = self._pcaBtn.isChecked()
+        if not pca:
             if numComps > 3:
                 QtWidgets.QMessageBox.about(self._parentGraph, "Info",
                                             "Num Components cannot be greater than 3 with t-SNE.\n"
                                             "Calculating only three components.")
                 numComps = 3
-            tsne: TSNE = TSNE(n_components=numComps)
-            self._preprocessor.label = f"t-SNE, {numComps} components"
-            self._preprocessor.applyToSpectra = tsne.fit_transform
 
-        # self._preprocessor.applyToSpectra = functools.partial(applyPreproc, dimRedObj=dimRed)
+        self._preprocessor.updateProcAndLabel(pca, numComps)
 
 
 class NodeSNV(BaseNode):
@@ -176,9 +164,7 @@ class NodeSNV(BaseNode):
         super(NodeSNV, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
-        self._preprocessor = Preprocessor()
-        self._preprocessor.label = "SNV"
-        self._preprocessor.applyToSpectra = snv
+        self._preprocessor: SNVProc = SNVProc()
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> np.ndarray:
@@ -196,9 +182,7 @@ class NodeNormalize(BaseNode):
         super(NodeNormalize, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
-        self._preprocessor = Preprocessor()
-        self._preprocessor.label = "Normalize"
-        self._preprocessor.applyToSpectra = normalizeIntensities
+        self._preprocessor: NormalizeProc = NormalizeProc()
 
         self._modeCombo: QtWidgets.QComboBox = QtWidgets.QComboBox()
         self._modeCombo.addItems(self.lbl2Mode.keys())
@@ -227,8 +211,7 @@ class NodeNormalize(BaseNode):
 
     def _updatePreprocessor(self) -> None:
         mode: NormMode = self.lbl2Mode[self._modeCombo.currentText()]
-        self._preprocessor.applyToSpectra = functools.partial(normalizeIntensities, mode=mode)
-        self._preprocessor.label = f"Normalize: {mode}"
+        self._preprocessor.setNormMode(mode)
 
 
 class NodeDetrend(BaseNode):
@@ -238,9 +221,7 @@ class NodeDetrend(BaseNode):
         super(NodeDetrend, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
-        self._preprocessor = Preprocessor()
-        self._preprocessor.label = "Detrend"
-        self._preprocessor.applyToSpectra = detrend
+        self._preprocessor: DetrendProc = DetrendProc()
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> np.ndarray:
@@ -255,14 +236,14 @@ class NodeMSC(BaseNode):
         super(NodeMSC, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
-        self._preprocessor = Preprocessor()
-        self._preprocessor.label = "MSC"
-        self._preprocessor.applyToSpectra = msc
+        self._preprocessor: MSCProc = MSCProc()
+
         self._populateLayoutAndCreateIO()
 
     def getOutput(self, outputName: str = '') -> np.ndarray:
         inputSpectra: np.ndarray = self._inputs[0].getValue()
         return self._preprocessor.applyToSpectra(inputSpectra)
+
 
 
 class NodeBackground(BaseNode):
@@ -289,7 +270,7 @@ class NodeSmoothDeriv(BaseNode):
         super(NodeSmoothDeriv, self).__init__(nodeGraphParent, logger, pos)
         self._inputs = [Input('Spectra', [DataType.CONTINUOUS])]
         self._outputs = [Output(self, 'Spectra', DataType.CONTINUOUS)]
-        self._preprocessor = Preprocessor()
+        self._preprocessor: SavGolProc = SavGolProc()
 
         self._derivSpin: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
         self._derivSpin.setMinimum(0)
@@ -339,9 +320,7 @@ class NodeSmoothDeriv(BaseNode):
 
     def _updatePreprocessor(self) -> None:
         deriv, winSize, degree = self._derivSpin.value(), self._winSizeSpin.value(), self._degreeSpin.value()
-        self._preprocessor.applyToSpectra = functools.partial(deriv_smooth, polydegree=degree,
-                                                              derivative=deriv, windowSize=winSize)
-        self._preprocessor.label = f"Smooth {winSize} + Derivative {deriv}"
+        self._preprocessor.updatePreprocessor(winSize, degree, deriv)
 
 
 nodeTypes: List[Type['BaseNode']] = [val for key, val in locals().items() if key.startswith('Node')]
