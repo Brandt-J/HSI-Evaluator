@@ -23,6 +23,7 @@ from collections import Counter
 
 from spectraObject import SpectraObject
 from logger import getLogger
+from particles import ParticleHandler
 from gui.nodegraph.nodegraph import NodeGraph
 from gui.nodegraph.nodes import nodeTypes
 
@@ -84,6 +85,8 @@ def _updateSampleToVersion1(sampleData: 'Sample') -> 'Sample':
 def _updateSampleToVersion2(sampleData: 'Sample') -> 'Sample':
     logger.info(f"converting sample {sampleData.name} to Version 2")
     sampleData.batchResult = None
+    if not hasattr(sampleData, "particleHandler"):
+        sampleData.particleHandler = ParticleHandler()
     for id, particle in sampleData.particleHandler._particles.items():
         if type(particle._result) == Counter:
             particle._result = None

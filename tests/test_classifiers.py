@@ -223,7 +223,7 @@ class MockMainWin(MainWindow):
     def enableWidgets(self):
         pass
 
-    def getPreprocessors(self):
+    def getPreprocessorsForClassification(self):
         returnProc: List['Preprocessor'] = []
         for proc in getPreprocessors():
             if proc.label.find("PCA") != -1:  # other preprocessors might disturb the constructed classification here (we basically separate the fake samples by their absolute offset.

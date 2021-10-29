@@ -132,17 +132,19 @@ class NodeGraph(QtWidgets.QGraphicsView):
         node.select()
         self._selectedNode = node
 
-    def getPreprocessors(self) -> List['Preprocessor']:
+    def getPreprocessorsForClassification(self) -> List['Preprocessor']:
         """
         Returns a stack of Preprocessors for the current classficiation setup.
         """
-        preprocStack: List['Preprocessor'] = []
-        for node in self._getClassificationPath():
-            preproc: Union[None, 'Preprocessor'] = node.getPreprocessor()
-            if preproc is not None:
-                preprocStack.append(preproc)
+        path: List['BaseNode'] = self._getClassificationPath()
+        return self._getProcessorStackFromPath(path)
 
-        return preprocStack
+    def getPrprocessorsForSpecPreview(self) -> List['Preprocessor']:
+        """
+        Returns a stack of Preprocessors for the current spectra preview.
+        """
+        path: List['BaseNode'] = self._getSpecPreviewPath()
+        return self._getProcessorStackFromPath(path)
 
     def clearNodeCache(self) -> None:
         """
@@ -261,16 +263,29 @@ class NodeGraph(QtWidgets.QGraphicsView):
         Gets the path of Nodes starting from the Spectra Input node to the Classification Node. Returns an empty list
         if there is no valid connection.
         """
+        return self._getPathOfNode(self._nodeClf)
+
+    def _getSpecPreviewPath(self) -> List['BaseNode']:
+        """
+        Gets the path of Nodes starting from the Spectra Input node to the Spec Preview Node. Returns an empty list
+        if there is no valid connection.
+        """
+        return self._getPathOfNode(self._nodeSpecPlot)
+
+    def _getPathOfNode(self, targetNode: 'BaseNode') -> List['BaseNode']:
+        """
+        Returns the path of any node to the start node. Retuns an empty list if there is no valid connection.
+        """
         def allNodesVisited(visited: List['BaseNode']) -> bool:
             return len(visited) == len(self._nodes) + len(self._getRequiredNodes())
 
         nodePath: List['BaseNode'] = []
-        if self._nodeClf.isConnectedToInput():
+        if targetNode.isConnectedToInput():
             startReached: bool = False
             newNodeFound: bool = True
             visitedNodes: List['BaseNode'] = []
 
-            paths: List[List['BaseNode']] = [[self._nodeClf]]
+            paths: List[List['BaseNode']] = [[targetNode]]
             while not startReached and not allNodesVisited(visitedNodes) and newNodeFound:
                 newNodeFound = False
                 for curPath in paths:
@@ -294,6 +309,18 @@ class NodeGraph(QtWidgets.QGraphicsView):
                             paths.append(copy(curPath))
 
         return nodePath
+
+    def _getProcessorStackFromPath(self, nodePath: List['BaseNode']) -> List['Preprocessor']:
+        """
+        Takes a node path and returns the according processor stack.
+        """
+        preprocStack: List['Preprocessor'] = []
+        for node in nodePath:
+            preproc: Union[None, 'Preprocessor'] = node.getPreprocessor()
+            if preproc is not None:
+                preprocStack.append(preproc)
+
+        return preprocStack
 
     def _getNodeOfID(self, nodeID: int) -> 'BaseNode':
         wantedNode: 'BaseNode' = None

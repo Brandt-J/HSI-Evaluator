@@ -232,14 +232,7 @@ class GraphView(QtWidgets.QGraphicsView):
         elif self._selecting:
             self._selectionOverlay.updateSelection(self.mapToScene(event.pos()), self._mainWin.getCurrentColor())
         elif self._mainWin is not None and self._origCube is not None:
-            pos: QtCore.QPointF = self.mapToScene(event.pos())
-            x, y = int(round(pos.x())), int(round(pos.y()))
-            if 0 <= x < self._origCube.shape[2] and 0 <= y < self._origCube.shape[1]:
-                cursorSpec: np.ndarray = self._origCube[:, y, x][np.newaxis, :]
-                for proc in self._mainWin.getPreprocessors():
-                    cursorSpec = proc.applyToSpectra(cursorSpec)
-
-                self._mainWin.getresultPlots().updateCursorSpectrum(cursorSpec[0])
+            self._sendCursorSpectrum(self.mapToScene(event.pos()))
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
@@ -250,6 +243,15 @@ class GraphView(QtWidgets.QGraphicsView):
             self._selecting = False
             pixelIndices: Set[int] = self._selectionOverlay.finishSelection(pos)
             self._emitNewSelection(pixelIndices)
+
+    def _sendCursorSpectrum(self, pos: QtCore.QPointF) -> None:
+        x, y = int(round(pos.x())), int(round(pos.y()))
+        if 0 <= x < self._origCube.shape[2] and 0 <= y < self._origCube.shape[1]:
+            cursorSpec: np.ndarray = self._origCube[:, y, x][np.newaxis, :]
+            for proc in self._mainWin.getPreprocessorsForSpecPreview():
+                cursorSpec = proc.applyToSpectra(cursorSpec)
+
+            self._mainWin.getresultPlots().updateCursorSpectrum(cursorSpec[0])
 
     def _emitNewSelection(self, pixelIndices: Set[int]) -> None:
         self.NewSelection.emit(self._mainWin.getCurrentClass(), pixelIndices)

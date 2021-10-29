@@ -112,9 +112,6 @@ class MSCProc(Preprocessor):
     label = "Normalize"
 
     def applyToSpectra(self, spectra: np.ndarray, labels: Optional[np.ndarray] = None) -> np.ndarray:
-        import matplotlib.pyplot as plt
-        from collections import Counter
-
         if labels is None:
             procSpecs: np.ndarray = msc(spectra)
         else:
@@ -122,8 +119,6 @@ class MSCProc(Preprocessor):
             for lbl in np.unique(labels):
                 ind: np.ndarray = np.where(labels == lbl)[0]
                 correctedSpecs: np.ndarray = msc(spectra[ind, :])
-
-
                 procSpecs[ind, :] = correctedSpecs
 
         return procSpecs

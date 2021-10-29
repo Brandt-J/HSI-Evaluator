@@ -126,12 +126,19 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         return self._multiSampleView.getActiveSample()
 
-    def getPreprocessors(self) -> List['Preprocessor']:
+    def getPreprocessorsForClassification(self) -> List['Preprocessor']:
         """
         Returns the stack of Preprocessors for the current classification setup (i.e., as connected to the "Classification"
         node in the nodegraph.
         """
-        return self._preprocSelector.getPreprocessors()
+        return self._preprocSelector.getPreprocessorsForClassification()
+
+    def getPreprocessorsForSpecPreview(self):
+        """
+        Returns the stack of Preprocessors for the spectra preview (i.e., as connected to the "Spectra" node in the
+        nodegraph.
+        """
+        return self._preprocSelector.getPreprocessorsForSpecPreview()
 
     def getWavelengths(self) -> np.ndarray:
         return self._multiSampleView.getWavelengths()
@@ -215,7 +222,7 @@ class MainWindow(QtWidgets.QMainWindow):
         assert os.path.exists(fname), f"The specified file to load: {fname} does not exist."
         with open(fname, "rb") as fp:
             loadedView: View = pickle.load(fp)
-            loadedView = assertUpToDateView(loadedView)  # TODO: map from processStack to processingGraph
+            loadedView = assertUpToDateView(loadedView)
         view: View = View()
         view.__dict__.update(loadedView.__dict__)
 

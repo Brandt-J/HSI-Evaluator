@@ -228,6 +228,7 @@ class SpecPlot(QtWidgets.QWidget):
         self._showLegendCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._stackSpinner: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._cursorCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
 
         self._specAx: plt.Axes = self._figure.add_subplot()
         # self._descAx: plt.Axes = self._specAx.twinx()
@@ -301,27 +302,11 @@ class SpecPlot(QtWidgets.QWidget):
         self._legendItems = []
         self._canvas.draw()
 
-    # def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
-    #                  color: List[float], legendName: str) -> None:
-    #     """
-    #     Plots the spectra array.
-    #     :param spectra: (NxM) array of N spectra with M wavelengths
-    #     :param index: index of specset, used for optional offset.
-    #     :param linestyle: the linestyle code to use
-    #     :param color: The rgb color to use (or rgba)
-    #     :param legendName: The legendname of the given spec set.
-    #     """
-    #     spectra: np.ndarray = self._prepareSpecsForPlot(spectra)
-    #     self._specAx.plot(self._mainWin.getWavelengths(), spectra - index * self._stackSpinner.value(),
-    #                       linestyle=linestyle, color=color)
-    #
-    #     self._legendItems.append(legendName)
-
     def finishPlotting(self) -> None:
         """
         Called after finishing plotting a set of spectra.
         """
-        if self._cursorSpec is not None:
+        if self._cursorSpec is not None and self._avgCheckBox.isChecked():
             cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
             self._cursorSpec = self._specAx.plot(self._mainWin.getWavelengths(), cursorSpec, color='gray')[0]
 
@@ -340,22 +325,28 @@ class SpecPlot(QtWidgets.QWidget):
         """
         Updates the spectrum under the mouse position.
         """
-        if self._cursorSpec is None:
-            wavelengths: np.ndarray = self._mainWin.getWavelengths()
-            self._cursorSpec = self._specAx.plot(wavelengths, intensities, color='gray')[0]
-        else:
-            self._cursorSpec.set_ydata(intensities)
+        if self._cursorCheckBox.isChecked():
+            if self._cursorSpec is None:
+                wavelengths: np.ndarray = self._mainWin.getWavelengths()
+                self._cursorSpec = self._specAx.plot(wavelengths, intensities, color='gray')[0]
+            else:
+                self._cursorSpec.set_ydata(intensities)
 
-        self._canvas.draw()
+            self._canvas.draw()
 
     def _createLayout(self) -> None:
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        optionsLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        optionsLayout.addRow("Average spectra per class", self._avgCheckBox)
-        optionsLayout.addRow("Stack amount", self._stackSpinner)
-        optionsLayout.addRow("Show legend", self._showLegendCheckBox)
-        optionsLayout.addRow("Show legend outside plot", self._legendOutsideCheckBox)
-        # optionsLayout.addRow("Show descriptors", self._showDescCheckBox)
+        optionsLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        col1: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        col2: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        col1.addRow("Average spectra per class", self._avgCheckBox)
+        col1.addRow("Stack amount", self._stackSpinner)
+        col1.addRow("Show legend", self._showLegendCheckBox)
+        col2.addRow("Show legend outside plot", self._legendOutsideCheckBox)
+        col2.addRow("Show cursor spectrum", self._cursorCheckBox)
+        # col2.addRow("Show descriptors", self._showDescCheckBox)
+        optionsLayout.addLayout(col1)
+        optionsLayout.addLayout(col2)
 
         layout.addLayout(optionsLayout)
         layout.addWidget(self._canvas)
@@ -372,6 +363,9 @@ class SpecPlot(QtWidgets.QWidget):
         self._avgCheckBox.setChecked(True)
         self._avgCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._showDescCheckBox.setChecked(True)
+
+        self._cursorCheckBox.setChecked(True)
+        self._avgCheckBox.toggled.connect(self._onPlotSettingsChanged)
 
         self._legendOutsideCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._showLegendCheckBox.setChecked(True)

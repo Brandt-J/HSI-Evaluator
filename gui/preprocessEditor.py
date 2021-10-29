@@ -19,14 +19,12 @@ If not, see <https://www.gnu.org/licenses/>.
 import random
 
 from PyQt5 import QtWidgets, QtCore
-from typing import List, TYPE_CHECKING, Union, Set
+from typing import List, TYPE_CHECKING, Union
 import numpy as np
 from collections import Counter
-from threading import Thread, Event
-from dataObjects import Sample
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
-    from spectraObject import SpectraCollection, SpectraObject
+    from spectraObject import SpectraCollection
     from gui.HSIEvaluator import MainWindow
     from gui.spectraPlots import ResultPlots
     from preprocessing.preprocessors import Preprocessor
@@ -83,11 +81,17 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         else:
             self._showNoSpectraWarning()
 
-    def getPreprocessors(self) -> List['Preprocessor']:
+    def getPreprocessorsForClassification(self) -> List['Preprocessor']:
         """
         Returns a list of the preprocessors connected to the Classification Node.
         """
-        return self._nodeGraph.getPreprocessors()
+        return self._nodeGraph.getPreprocessorsForClassification()
+
+    def getPreprocessorsForSpecPreview(self) -> List['Preprocessor']:
+        """
+        Returns a list of the preprocessors connected to the Spectra Node.
+        """
+        return self._nodeGraph.getPrprocessorsForSpecPreview()
 
     def getProcessingGraph(self) -> List[dict]:
         """

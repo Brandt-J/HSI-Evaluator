@@ -368,8 +368,8 @@ class ClassificationUI(QtWidgets.QGroupBox):
             clfMode: cp.ClassifyMode = cp.ClassifyMode.WholeImage if self._radioImage.isChecked() else cp.ClassifyMode.Particles
             self._inferenceProcessWindow = ProcessWithStatusBarWindow(cp.classifySamples,
                                                                       (inferenceSamples, activeClf, clfMode,
-                                                                       self._mainWin.getPreprocessors()),
-                                                                       str, list)
+                                                                       self._mainWin.getPreprocessorsForClassification()),
+                                                                      str, list)
             self._inferenceProcessWindow.setWindowTitle(f"Inference on {len(inferenceSamples)} samples.")
             self._inferenceProcessWindow.ProcessFinished.connect(self._onClassificationFinishedOrAborted)
             self._inferenceProcessWindow.setProgressBarMaxVal(len(inferenceSamples))
@@ -772,10 +772,9 @@ class TrainClfTab(QtWidgets.QWidget):
             elif self._balanceMethodComboBox.currentText() == "OverSMOTE":
                 balanceMode: cp.BalanceMode = cp.BalanceMode.OverSMOTE
 
-            preproc = self._mainWin.getPreprocessors()
             self._trainProcessWindow = ProcessWithStatusBarWindow(cp.trainClassifier,
                                                                   (trainSamples, self._activeClf,
-                                                                   self._mainWin.getPreprocessors(),
+                                                                   self._mainWin.getPreprocessorsForClassification(),
                                                                    self._maxNumSpecsSpinBox.value(),
                                                                    self._testFracSpinBox.value(),
                                                                    balanceMode),
