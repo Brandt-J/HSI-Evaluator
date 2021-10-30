@@ -306,7 +306,7 @@ class SpecPlot(QtWidgets.QWidget):
         """
         Called after finishing plotting a set of spectra.
         """
-        if self._cursorSpec is not None and self._avgCheckBox.isChecked():
+        if self._cursorSpec is not None and self._cursorCheckBox.isChecked():
             cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
             self._cursorSpec = self._specAx.plot(self._mainWin.getWavelengths(), cursorSpec, color='gray')[0]
 
@@ -365,7 +365,7 @@ class SpecPlot(QtWidgets.QWidget):
         self._showDescCheckBox.setChecked(True)
 
         self._cursorCheckBox.setChecked(True)
-        self._avgCheckBox.toggled.connect(self._onPlotSettingsChanged)
+        self._cursorCheckBox.toggled.connect(self._onPlotSettingsChanged)
 
         self._legendOutsideCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._showLegendCheckBox.setChecked(True)
