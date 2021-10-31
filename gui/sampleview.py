@@ -55,7 +55,7 @@ class MultiSampleView(QtWidgets.QScrollArea):
         self._mainWinParent: 'MainWindow' = mainWinParent
         self._sampleviews: List['SampleView'] = []
         self._logger: 'Logger' = getLogger('MultiSampleView')
-        self.setMinimumWidth(750)
+        self.setMinimumWidth(900)
 
     def addSampleView(self) -> 'SampleView':
         """
@@ -77,10 +77,9 @@ class MultiSampleView(QtWidgets.QScrollArea):
         return newView
 
     def updateClassificationResults(self):
-        classInterpParams: 'ClassInterpretationParams' = self._mainWinParent.getClassInterprationParams()
         for sampleView in self._sampleviews:
-            sampleView.updateClassImageInGraphView(classInterpParams.specConfThreshold)
-            sampleView.updateParticlesInGraphUI(classInterpParams)
+            sampleView.updateClassImageInGraphView()
+            sampleView.updateParticlesInGraphUI()
 
     def _assertIdenticalWavelengths(self) -> None:
         """
@@ -501,18 +500,18 @@ class SampleView(QtWidgets.QMainWindow):
         """
         self._graphView.resetClassImage()
 
-    def updateParticlesInGraphUI(self, interpretationParams: 'ClassInterpretationParams') -> None:
+    def updateParticlesInGraphUI(self) -> None:
         """
         Forces an update of particles in the graph ui from the currently set sample data.
         """
+        interpretationParams: 'ClassInterpretationParams' = self._mainWindow.getClassInterprationParams()
         self._graphView.updateParticleColors(self._sampleData.getParticleHandler(), interpretationParams)
 
-    def updateClassImageInGraphView(self, specConfCutoff: float) -> None:
+    def updateClassImageInGraphView(self) -> None:
         """
         Called after updating sample data. Creates a new class image and sets the graph display accordingly.
-        :param specConfCutoff: The Cutoff determining the minimal required confidence for a spectrum to be counted
-        as its class, otherwise it will be labelled "unknown".
         """
+        specConfCutoff: float = self._mainWindow.getClassInterprationParams().specConfThreshold
         if self._sampleData.batchResult is not None:
             specObj: 'SpectraObject' = self.getSpecObj()
             cubeShape = specObj.getCube().shape

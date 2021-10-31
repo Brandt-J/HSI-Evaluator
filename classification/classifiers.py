@@ -83,25 +83,6 @@ class BaseClassifier:
         """
         return QtWidgets.QGroupBox(self.title)
 
-    def makePickleable(self) -> None:
-        """
-        Can be overloaded if the classifier cannot be pickled, because it stores QWidgets, for instance.
-        We are using processes, so the classifier needs to be pickleable.
-        """
-        pass
-
-    def restoreNotPickleable(self) -> None:
-        """
-        Restores the originale version, see comment to makePickleable method
-        """
-        pass
-
-    def updateClassifierFromTrained(self, trainedClf: 'BaseClassifier') -> None:
-        """
-        Updates the classifier from training. Should copy the actual classifier object and the unique labels!
-        """
-        raise NotImplementedError
-
     def _fitLabelEncoder(self, ytest: np.ndarray, ytrain: np.ndarray) -> None:
         """
         Sets the unique labels for the current test/train set.
@@ -140,21 +121,6 @@ class KNN(BaseClassifier):
         optnGroup.setLayout(QtWidgets.QFormLayout())
         optnGroup.layout().addRow("Num. Neighbors:", self._kSpinBox)
         return optnGroup
-
-    def makePickleable(self) -> None:
-        if self._kSpinBox is not None:
-            self._kSpinBox.valueChanged.disconnect()
-            self._kSpinBox = None
-
-    def restoreNotPickleable(self) -> None:
-        self._recreateSpinBox()
-
-    def updateClassifierFromTrained(self, trainedClassifier: 'KNN') -> None:
-        assert type(trainedClassifier) == KNN, f"Trained classifier is of wrong type. Expected KNN, " \
-                                               f"got {type(trainedClassifier)}"
-        self._clf = trainedClassifier._clf
-        self._labelEncoder = trainedClassifier._labelEncoder
-        self._logger.info("Updated classifier after training")
 
     def _recreateSpinBox(self) -> None:
         self._kSpinBox = QtWidgets.QSpinBox()
@@ -195,22 +161,6 @@ class SVM(BaseClassifier):
         group.setLayout(layout)
         return group
 
-    def makePickleable(self) -> None:
-        if self._kernelSelector is not None:
-            self._kernelSelector.currentTextChanged.disconnect()
-            self._kernelSelector = None
-
-    def restoreNotPickleable(self) -> None:
-        self._recreateComboBox()
-
-    def updateClassifierFromTrained(self, trainedClassifier: 'SVM') -> None:
-        assert type(trainedClassifier) == SVM, f"Trained classifier is of wrong type. Expected SVM, " \
-                                               f"got {type(trainedClassifier)}"
-        self._logger.info(f"About to update classifiers after training.. Clf on {self}: {self._clf}. \n Clf on {trainedClassifier}: {trainedClassifier._clf}")
-        self._clf = trainedClassifier._clf
-        self._labelEncoder = trainedClassifier._labelEncoder
-        self._logger.info(f"Updated classifier on {self} after training")
-
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         self._clf = svm.SVC(kernel=self._kernel, probability=True)
         self._fitLabelEncoder(y_test, y_train)
@@ -239,7 +189,6 @@ class NeuralNet(BaseClassifier):
         self._clf: Union[None, NeuralNetClf] = None
         self._spinEpochs: Union[None, QtWidgets.QSpinBox] = QtWidgets.QSpinBox()
         self._numEpochs: int = 20
-        self._currentTraininghash: int = -1
         self._modelSavePath: Union[None, str] = None
         self._recreateEpochsSpinbox()
 
@@ -252,8 +201,6 @@ class NeuralNet(BaseClassifier):
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         self._fitLabelEncoder(y_test, y_train)
-        self._deleteLastTmpSave()
-        self._currentTraininghash = hash(time.time())
         self._clf = NeuralNetClf(x_train.shape[1], len(self._labelEncoder.classes_))
         y_train = to_categorical(self._labelEncoder.transform(y_train))
         y_test = to_categorical(self._labelEncoder.transform(y_test))
@@ -261,41 +208,13 @@ class NeuralNet(BaseClassifier):
 
     def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         if self._clf is None:
-            if self._modelSavePath is None:
-                self._clf = loadModelFromFile(self._getTempModelSaveName())
-            else:
+            if self._modelSavePath is not None:
                 self._clf = loadModelFromFile(self._modelSavePath)
+            else:
+                raise ClassificationError("Neural Net Classifier does not exist and is not saved")
 
         probMat: np.ndarray = self._clf.predict(spectra)
         return BatchClassificationResult(probMat, self._labelEncoder)
-
-    def updateClassifierFromTrained(self, trainedClassifier: 'NeuralNet') -> None:
-        assert type(trainedClassifier) == NeuralNet, f"Trained classifier is of wrong type. Expected Neural Net, " \
-                                               f"got {type(trainedClassifier)}"
-        self._labelEncoder = trainedClassifier._labelEncoder
-        self._currentTraininghash = trainedClassifier._currentTraininghash
-        self._logger.info(f"Updated classifier {self} after training")
-
-    def makePickleable(self) -> None:
-        if self._spinEpochs is not None:
-            self._numEpochs = self._spinEpochs.value()
-            self._spinEpochs.valueChanged.disconnect()
-            self._spinEpochs = None
-        if self._clf is not None:
-            self._saveKerasModelToDiskAndSetToNone()
-
-    def _saveKerasModelToDiskAndSetToNone(self) -> None:
-        if self._modelSavePath is None:
-            fname: str = self._getTempModelSaveName()
-        else:
-            fname = self._modelSavePath
-
-        self._clf.save(fname)
-        self._logger.info(f"Saved keras model to: {fname}, hash: {self._currentTraininghash}")
-        self._clf = None
-
-    def restoreNotPickleable(self) -> None:
-        self._recreateEpochsSpinbox()
 
     def _recreateEpochsSpinbox(self) -> None:
         self._spinEpochs = QtWidgets.QSpinBox()
@@ -309,30 +228,6 @@ class NeuralNet(BaseClassifier):
         Updates the numepochs value according to the spinbox value. Triggered by using the spinbox.
         """
         self._numEpochs = self._spinEpochs.value()
-
-    def _getTempModelSaveName(self) -> str:
-        """
-        Returns a valid path for saving the neural net model.
-        """
-        dirname: str = os.path.join(self._getTmpModelSaveFolder(), "NeuralNetDump" + str(self._currentTraininghash))
-        os.makedirs(dirname, exist_ok=True)
-        return dirname
-
-    def _deleteLastTmpSave(self) -> None:
-        """
-        Deletes the last temporary save of the neural net model, if there is any.
-        """
-        folder: str = self._getTmpModelSaveFolder()
-        for tmpSaveModel in os.listdir(folder):
-            shutil.rmtree(os.path.join(folder, tmpSaveModel))
-
-    def _getTmpModelSaveFolder(self) -> str:
-        """
-        Returns the folder for storing temporary Models.
-        """
-        folder: str = os.path.join(getAppFolder(), "TmpNeuralNetSave")
-        os.makedirs(folder, exist_ok=True)
-        return folder
 
 
 class ClassificationError(Exception):

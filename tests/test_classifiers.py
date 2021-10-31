@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from gui.graphOverlays import GraphView
     from preprocessing.preprocessors import Preprocessor
 
+
 class TestBatchClassificationResult(TestCase):
     def test_get_results(self):
         encoder: LabelEncoder = LabelEncoder().fit(np.array(["class1", "class2", "class3"]))
@@ -113,19 +114,13 @@ class TestClassifiers(TestCase):
                 classUI._radioImage.setChecked(False)
 
             classUI._runClassification()
-            while classUI._inferenceProcessWindow._process.is_alive():
-                classUI._inferenceProcessWindow._checkOnProcess()
+            while classUI._thread.is_alive():
+                classUI._checkOnClassification()
                 time.sleep(0.1)
-
-            result: List['Sample'] = classUI._inferenceProcessWindow.getResult()
-            self.assertTrue(type(result) == list)
-            self.assertEqual(len(result), 2)
-
-            mainWin._multiSampleView.updateClassificationResults()  # we have to call it manually here
 
             # Check that everything is correct
             if mode == ClassifyMode.WholeImage:
-                allCorrect = self.graphViewsUpdatedProperly(mainWin, result)
+                allCorrect = self.graphViewsUpdatedProperly(mainWin)
                 self.assertTrue(allCorrect)
 
             elif mode == ClassifyMode.Particles:
@@ -133,10 +128,10 @@ class TestClassifiers(TestCase):
 
     def _test_classifierTraining(self, clf, trainTab):
         trainTab._trainClassifier()
-        while trainTab._trainProcessWindow._process.is_alive():
-            trainTab._trainProcessWindow._checkOnProcess()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
+        while trainTab._thread.is_alive():
+            trainTab._checKOnTraining()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
             time.sleep(0.1)
-        result: 'TrainingResult' = trainTab._trainProcessWindow.getResult()
+        result: 'TrainingResult' = trainTab._trainResult
         self.assertTrue(type(result) == TrainingResult)
         clfReport: dict = result.validReportDict
         self.assertTrue("class1" in clfReport.keys())
@@ -167,19 +162,18 @@ class TestClassifiers(TestCase):
                 self.assertTrue("class1" in foundParticleClasses)
                 self.assertTrue("class2" in foundParticleClasses)
 
-    def graphViewsUpdatedProperly(self, mainWin: 'MockMainWin', finishedSamples: List['Sample']):
+    def graphViewsUpdatedProperly(self, mainWin: 'MockMainWin'):
         allCorrect: bool = True
-        for finishedSample in finishedSamples:
+        for sample in mainWin.getAllSamples():
             sampleCorrect: bool = False
-            for sample in mainWin.getAllSamples():
-                if sample.getName() == finishedSample.name:
-                    graphView: 'GraphView' = sample.getGraphView()
-                    self.assertTrue(graphView._classOverlay._overlayArr is not None)
-                    sampleCorrect = True
-                    break
+            graphView: 'GraphView' = sample.getGraphView()
+            self.assertTrue(graphView._classOverlay._overlayArr is not None)
+            sampleCorrect = True
+
             if not sampleCorrect:
                 allCorrect = False
                 break
+
         return allCorrect
 
 

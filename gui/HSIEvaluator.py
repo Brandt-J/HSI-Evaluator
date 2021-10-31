@@ -258,7 +258,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._clfWidget.setMaximumWidth(300)
         self._clfWidget.ClassInterpretationParamsChanged.connect(self._multiSampleView.updateClassificationResults)
-        self._clfWidget.ClassificationFinished.connect(self._multiSampleView.updateClassificationResults)
 
         self._resultPlots.setMainWinRef(self)
 
@@ -306,10 +305,6 @@ class MainWindow(QtWidgets.QMainWindow):
         clsTabView.addTab(self._clsCreator, "Select Classes")
         clsTabView.addTab(self._clfWidget, "Select/Apply Classifier")
         clsTabView.setFixedWidth(max([self._clsCreator.width(), self._clfWidget.width()]))
-        # clsLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        # clsLayout.addWidget(self._clsCreator)
-        # clsLayout.addStretch()
-        # clsLayout.addWidget(self._clfWidget)
 
         splitter1: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter1.addWidget(self._preprocSelector)

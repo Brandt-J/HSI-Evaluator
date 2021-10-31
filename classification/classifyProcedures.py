@@ -20,7 +20,7 @@ import time
 import numpy as np
 from typing import *
 from enum import Enum
-from multiprocessing import Queue, Event
+from threading import Event
 from dataclasses import dataclass
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
@@ -33,6 +33,7 @@ from preprocessing.preprocessors import MSCProc
 
 if TYPE_CHECKING:
     from classification.classifiers import BaseClassifier, BatchClassificationResult
+    from gui.sampleview import SampleView
     from preprocessing.preprocessors import Preprocessor, MSCProc
     from particles import Particle
     from spectraObject import SpectraObject
@@ -77,7 +78,8 @@ class TrainingResult:
 
 
 def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', preprocessors: List['Preprocessor'],
-                    maxSpecsPerClass: int, testSize: float, balanceMode: BalanceMode, queue: Queue, stopEvent: Event) -> None:
+                    maxSpecsPerClass: int, testSize: float, balanceMode: BalanceMode, stopEvent: Event,
+                    receiveTrainResultFunc: Callable[[TrainingResult], None]) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     The classifier will be put back in the queue after training and validation.
@@ -86,9 +88,9 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     :param preprocessors: The preprocessors to use.
     :param maxSpecsPerClass: The maximum number of spectra per class to use.
     :param testSize: Fraction of the data used for testing.
-    :param queue: Dataqueue for communication between processes.
     :param balanceMode: Desired mode for balancing the dataset.
     :param stopEvent: Event that is set if computation should be stopped.
+    :param receiveTrainResultFunc: Function to send the training result to.
     """
     if stopEvent.is_set():
         return
@@ -103,7 +105,6 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     try:
         classifier.train(xtrain, xtest, ytrain, ytest)
     except Exception as e:
-        queue.put(ClassificationError(f"Error during classifier Training: {e}"))
         raise ClassificationError(f"Error during classifier Training: {e}")
     logger.debug(f'Training {classifier.title} on {xtrain.shape[0]} spectra took {round(time.time() - t0, 2)} seconds')
     if stopEvent.is_set():
@@ -116,42 +117,42 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     reportStr: str = classification_report(ytest, ypredicted, output_dict=False, zero_division=0)
     logger.info(reportStr)
 
-    classifier.makePickleable()
-    queue.put(TrainingResult(classifier, reportStr, reportDict))
+    receiveTrainResultFunc(TrainingResult(classifier, reportStr, reportDict))
 
 
-def classifySamples(inferenceSampleList: List['Sample'], classifier: 'BaseClassifier', mode: 'ClassifyMode',
-                    preprocessors: List['Preprocessor'], queue: Queue, stopEvent: Event) -> None:
+def classifySamples(inferenceSampleList: List['SampleView'], classifier: 'BaseClassifier', mode: 'ClassifyMode',
+                    preprocessors: List['Preprocessor'], stopEvent: Event, iterationCallback: Callable) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param inferenceSampleList: List of Samples on which we want to run classification.
     :param classifier: The Classifier to use
     :param mode: The classification mode to do.
     :param preprocessors: Preprocessors to use.
-    :param queue: Dataqueue for communication between processes.
     :param stopEvent: Event that is Set if the process should be cancelled
+    :param iterationCallback: Function that is called after finishing each sample
     """
-    finishedSamples: List['Sample'] = []
     for sample in inferenceSampleList:
         if stopEvent.is_set():
             return
-        completed: 'Sample' = classifySample(sample, classifier, mode, preprocessors, queue)
-        finishedSamples.append(completed)
-        queue.put("finished Sample")
-    queue.put(finishedSamples)
+        classifySample(sample.getSampleData(), classifier, mode, preprocessors)
+
+        if mode == ClassifyMode.WholeImage:
+            sample.updateClassImageInGraphView()
+        else:
+            sample.updateParticlesInGraphUI()
+
+        iterationCallback()
 
 
-def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode,
-                   preprocessors: List['Preprocessor'], queue: 'Queue') -> 'Sample':
+def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode, preprocessors: List['Preprocessor']) -> None:
     """
     Estimates the classes for each spectrum
     :param sample: The Sample to classifiy
     :param classifier: The Classifier object to use.
     :param mode: The classification mode to apply.
     :param preprocessors: The preprocessors to apply.
-    :param queue: The dataqueue to push errors to.
     """
-    logger: 'Logger' = getLogger("Classifier Application")
+    logger: 'Logger' = getLogger("Classifier Inference")
 
     background: np.ndarray = sample.getAveragedBackgroundSpectrum()
     if mode == ClassifyMode.WholeImage:
@@ -160,9 +161,7 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
         try:
             batchResult: 'BatchClassificationResult' = classifier.predict(specArr)
         except Exception as e:
-            error: ClassificationError = ClassificationError(f"Error during classifier inference (image mode): {e}")
-            queue.put(error)
-
+            raise ClassificationError(f"Error during classifier inference (image mode): {e}")
         else:
             sample.setBatchResults(batchResult)
 
@@ -178,12 +177,9 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
             try:
                 batchRes: 'BatchClassificationResult' = classifier.predict(specArr)
             except Exception as e:
-                error: ClassificationError = ClassificationError(f"Error during classifier inference (particle mode): {e}")
-                raise error
+                raise ClassificationError(f"Error during classifier inference (particle mode): {e}")
             else:
                 particle.setBatchResult(batchRes)
-
-    return sample
 
 
 def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass: int, testSize: float, balanceMode: BalanceMode,
