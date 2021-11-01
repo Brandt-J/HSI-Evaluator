@@ -16,6 +16,8 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import os.path
+import pickle
 from dataclasses import dataclass
 
 from PyQt5 import QtWidgets, QtCore
@@ -35,8 +37,6 @@ from projectPaths import getClassifierSaveFolder
 if TYPE_CHECKING:
     from gui.HSIEvaluator import MainWindow
     from gui.sampleview import SampleView
-    from gui.graphOverlays import GraphView
-    from spectraObject import SpectraObject
     from logging import Logger
 
 
@@ -501,9 +501,10 @@ class ClfSelector(QtWidgets.QGroupBox):
         self._validResult: ValidationResult = ValidationResult()
         self._tabView.currentChanged.connect(self._onTabChanged)
         self._trainClfTab.NewValidationResult.connect(self._validResult.showResult)
+        self._loadClfTab.NewValidationResult.connect(self._validResult.showResult)
 
         # scrollArea: QtWidgets.QScrollArea = QtWidgets.QScrollArea()
-        # scrollArea.setWidget(self._validResult)  # TODO: Reimplement Scrollarea..
+        # scrollArea.setWidget(self._validResult)  # TODO: Consider reimplementing scrollarea..
 
         layout.addWidget(self._tabView)
         layout.addWidget(self._validResult)
@@ -524,22 +525,57 @@ class ClfSelector(QtWidgets.QGroupBox):
     def _onTabChanged(self) -> None:
         """Called, when the training or loading tab is changed"""
         self._validResult.clearResult()
+        self._tabView.currentWidget().onTabActivated()
 
 
 class LoadClfTab(QtWidgets.QWidget):
     """
     Tab for loading an already trained classifier from disk.
     """
+    NewValidationResult: QtCore.pyqtSignal = QtCore.pyqtSignal(dict)
+
     def __init__(self):
         super(LoadClfTab, self).__init__()
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         self.setLayout(layout)
-        layout.addWidget(QtWidgets.QLabel("Load a Classifier"))
 
-        self._activeClf: Union[None, 'BaseClassifier'] = None
+        loadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Load")
+        loadBtn.released.connect(self._promptForLoading)
+        self._clfLabel: QtWidgets.QLabel = QtWidgets.QLabel("No classifier loaded")
+
+        layout.addWidget(loadBtn)
+        layout.addWidget(self._clfLabel)
+
+        self._activeClf: Optional['BaseClassifier'] = None
+        self._currentresult: Optional[dict] = None
+
+    def onTabActivated(self) -> None:
+        if self._activeClf is not None and self._currentresult is not None:
+            self.NewValidationResult.emit(self._currentresult)
 
     def getActiveClf(self) -> Union[None, 'BaseClassifier']:
         return self._activeClf
+
+    def _promptForLoading(self) -> None:
+        fname, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select classifier to load",
+                                                         directory=getClassifierSaveFolder(), filter="*clf")
+        if fname:
+            self._loadClassifier(fname)
+
+    def _loadClassifier(self, fname) -> None:
+        """
+        Loads the classifier from the specified path.
+        :param fname: Absolute path to pickled classifier.
+        """
+        with open(fname, "rb") as fp:
+            savedClf: SavedClassifier = pickle.load(fp)
+        self.NewValidationResult.emit(savedClf.validReport)
+
+        self._currentresult = savedClf.validReport
+        self._activeClf = savedClf.clf
+        self._activeClf.afterLoad()
+        clfName: str = os.path.basename(fname).split(".")[0]
+        self._clfLabel.setText(f"Loaded '{clfName}'")
 
 
 class TrainClfTab(QtWidgets.QWidget):
@@ -557,11 +593,12 @@ class TrainClfTab(QtWidgets.QWidget):
         self._logger: 'Logger' = getLogger("ClassifierTraining")
         self._activeClfControls: QtWidgets.QGroupBox = QtWidgets.QGroupBox("No Classifier Selected!")
         self._testFracSpinBox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._currentTrainResult: Optional[dict] = None
+
         self._thread: Thread = Thread()
         self._stopEvent: Event = Event()
         self._timer: QtCore.QTimer = QtCore.QTimer()
         self._trainResult: Union[None, 'cp.TrainingResult'] = None
-        # self._progressBar: QtWidgets.QProgressBar = QtWidgets.QProgressBar()
         self._progressBar: Union[QtWidgets.QProgressDialog] = None
 
         self._maxNumSpecsSpinBox: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
@@ -577,6 +614,10 @@ class TrainClfTab(QtWidgets.QWidget):
         self._configureWidgets()
         self._createLayout()
         self._selectClassifier(self._classifiers[0].title)
+
+    def onTabActivated(self) -> None:
+        if self._activeClf is not None and self._currentTrainResult is not None:
+            self.NewValidationResult.emit(self._currentTrainResult)
 
     def getActiveClf(self) -> Union[None, 'BaseClassifier']:
         return self._activeClf
@@ -679,8 +720,11 @@ class TrainClfTab(QtWidgets.QWidget):
         """
         Prompts the user for a file location to save the active classifier to.
         """
+        ending: str = 'clf'
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Select Location to save classfier to",
-                                                         directory=getClassifierSaveFolder(), filter="*clf")
+                                                         directory=getClassifierSaveFolder(), filter=f"*{ending}")
+        if not fname.endswith(ending):
+            fname += f".{ending}"
         if fname:
             self._saveClassifier(fname)
 
@@ -689,7 +733,14 @@ class TrainClfTab(QtWidgets.QWidget):
         Saves the active classifier to the specified directory.
         :param fname: Full path to classifier save file.
         """
-        saveClf: SavedClassifier = SavedClassifier(self._activeClf, self)
+        assert self._activeClf is not None
+        assert self._currentTrainResult is not None
+        self._activeClf.makePickleable(fname)
+        saveClf: SavedClassifier = SavedClassifier(self._activeClf, self._currentTrainResult)
+        with open(fname, "wb") as fp:
+            pickle.dump(saveClf, fp)
+
+        self._activeClf.restoreNotPickleable()
 
     def _checKOnTraining(self) -> None:
         """
@@ -708,6 +759,7 @@ class TrainClfTab(QtWidgets.QWidget):
             self._logger.info("Training finished without getting a result.")
         else:
             self._trainResult = cast(cp.TrainingResult, self._trainResult)
+            self._currentTrainResult = self._trainResult.validReportDict
             self.NewValidationResult.emit(self._trainResult.validReportDict)
 
         self._progressBar.hide()

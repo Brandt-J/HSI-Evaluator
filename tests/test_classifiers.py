@@ -77,32 +77,40 @@ class TestClassifiers(TestCase):
         svm._fitLabelEncoder(labelsTest, labelsTrain)
         self.assertEqual(list(svm._labelEncoder.classes_), ['class1', 'class2', 'class3'])
 
-    def testTrainAndClassify(self) -> None:
+    def testTrain_Classify_and_Save(self) -> None:
         mainWin: MockMainWin = MockMainWin()
         classUI: ClassificationUI = mainWin._clfWidget
         trainTab: 'TrainClfTab' = classUI._clfSelector._trainClfTab
+        loadTab: 'LoadClfTab' = classUI._clfSelector._loadClfTab
 
         self.assertTrue(trainTab._activeClf is not None)
-        classUI._clfSelector._tabView.setCurrentIndex(classUI._clfSelector._trainIndex)
 
         for clf in trainTab._classifiers:
+            classUI._clfSelector._tabView.setCurrentIndex(classUI._clfSelector._trainIndex)  # select Train-Tab
+            classUI._clfSelector._onTabChanged()
             trainTab._selectClassifier(clf.title)
             if type(clf) == NeuralNet:
                 clf: NeuralNet = cast(NeuralNet, clf)
                 clf._numEpochs = 2
-                continue
 
             self._test_classifierTraining(clf, trainTab)
             self._test_classifierInference(classUI, clf, mainWin)
 
-            # with tempfile.TemporaryDirectory() as tmpdirname:
-            #     savePath: str = os.path.join(tmpdirname, "testclfsave.clf")
-            #     trainTab._saveClassifier(savePath)
-            #
-            #     self.assertTrue(os.path.exists(savePath))
-            #
-            #     classUI._clfSelector._tabView.setCurrentIndex(classUI._clfSelector._trainIndex)
-            #     self.assertDictEqual(classUI._clfSelector._validResult._currentResults, {})
+            with tempfile.TemporaryDirectory() as tmpdirname:
+                savePath: str = os.path.join(tmpdirname, "testclfsave.clf")
+                trainTab._saveClassifier(savePath)
+                self.assertTrue(os.path.exists(savePath))
+                curResultDict: dict = trainTab._currentTrainResult
+
+                classUI._clfSelector._tabView.setCurrentIndex(classUI._clfSelector._trainIndex)  # select Load Tab
+                classUI._clfSelector._onTabChanged()
+
+                loadTab._loadClassifier(savePath)
+                classUI._clfSelector._validResult.showResult(classUI._clfSelector._validResult._currentResults)  # have to call it manually again, signals not working here..
+                self.assertDictEqual(classUI._clfSelector._validResult._currentResults, curResultDict)
+
+                self.assertTrue(loadTab._activeClf._clf is not None)
+                self.assertTrue(classUI._clfSelector.getActiveClassifier()._clf is not None)
 
     def _test_classifierInference(self, classUI, clf, mainWin):
         for mode in [ClassifyMode.WholeImage, ClassifyMode.Particles]:
@@ -131,19 +139,17 @@ class TestClassifiers(TestCase):
         while trainTab._thread.is_alive():
             trainTab._checKOnTraining()  # we have to call it manually here, the Qt main loop isn't running and timers don't work
             time.sleep(0.1)
+
+        trainTab._onTrainingFinishedOrAborted()  # Again, call it manually
+
         result: 'TrainingResult' = trainTab._trainResult
         self.assertTrue(type(result) == TrainingResult)
         clfReport: dict = result.validReportDict
         self.assertTrue("class1" in clfReport.keys())
         self.assertTrue("class2" in clfReport.keys())
-        for subDict in [clfReport["class1"], clfReport["class2"]]:
-            if type(clf) != NeuralNet:  # the neural net probably performs pretty badly in this setup
+        if type(clf) != NeuralNet:  # the neural net probably performs pretty badly in this setup
+            for subDict in [clfReport["class1"], clfReport["class2"]]:
                 self.assertTrue(subDict["precision"] == subDict["recall"] == 1.0)  # The other classifiers should separate them perfectly.
-        if type(clf) == NeuralNet:
-            self.assertTrue(trainTab._activeClf._currentTraininghash == result.classifier._currentTraininghash)
-        else:
-            self.assertTrue(
-                trainTab._activeClf._clf is result.classifier._clf)  # The actual classifier has to be the very same object!
 
     def assertParticlesCorrect(self, mainWin, checkForCorrectAssignment: bool):
         for sample in mainWin.getAllSamples():

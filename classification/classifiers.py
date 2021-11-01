@@ -16,11 +16,9 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import os
-import shutil
-import time
+import os.path
 from dataclasses import dataclass
-from typing import Dict, List, Union, TYPE_CHECKING
+from typing import Optional, Union, TYPE_CHECKING
 import numpy as np
 from PyQt5 import QtWidgets
 from sklearn import svm
@@ -29,7 +27,6 @@ from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.utils import to_categorical
 
 from logger import getLogger
-from projectPaths import getAppFolder
 from classification.neuralNet import NeuralNetClf, loadModelFromFile
 
 if TYPE_CHECKING:
@@ -40,7 +37,7 @@ if TYPE_CHECKING:
 class SavedClassifier:
     clf: 'BaseClassifier'
     validReport: dict
-    preproMethod: Union[None, str] = None
+    preproMethod: Optional[str] = None
 
 
 class BatchClassificationResult:
@@ -76,6 +73,7 @@ class BaseClassifier:
     def __init__(self):
         self._logger: Logger = getLogger(f"classifier {self.title}")
         self._labelEncoder: Union[None, LabelEncoder] = None
+        self._clf = None  # the actual classifier object
 
     def getControls(self) -> QtWidgets.QGroupBox:
         """
@@ -103,6 +101,25 @@ class BaseClassifier:
         :return Batch Classification Result allowing to determine final class according to a confidence threshold-
         """
         raise NotImplementedError
+
+    def makePickleable(self, fname: str) -> None:
+        """
+        Overload to make the classifier object pickleable
+        :param fname: If of use - the fname where the classifier object will be saved to.
+        """
+        pass
+
+    def restoreNotPickleable(self) -> None:
+        """
+        Overload to restore the original, not pickleable state.
+        """
+        pass
+
+    def afterLoad(self) -> None:
+        """
+        Can be overriden if logic needs to be run after loading the classifier with pickle.
+        """
+        pass
 
 
 class KNN(BaseClassifier):
@@ -138,6 +155,14 @@ class KNN(BaseClassifier):
         assert self._clf is not None, "Classifier was not yet created!!"
         probMat: np.ndarray = self._clf.predict_proba(spectra)
         return BatchClassificationResult(probMat, self._labelEncoder)
+
+    def makePickleable(self, fname: str) -> None:
+        self._update_k()
+        self._kSpinBox.valueChanged.disconnect()
+        self._kSpinBox = None
+
+    def restoreNotPickleable(self) -> None:
+        self._recreateSpinBox()
 
     def _update_k(self) -> None:
         self._k = self._kSpinBox.value()
@@ -180,6 +205,14 @@ class SVM(BaseClassifier):
     def _updateClassifier(self) -> None:
         self._kernel = self._kernelSelector.currentText()
 
+    def makePickleable(self, fname: str) -> None:
+        self._updateClassifier()
+        self._kernelSelector.currentTextChanged.disconnect()
+        self._kernelSelector = None
+
+    def restoreNotPickleable(self) -> None:
+        self._recreateComboBox()
+
 
 class NeuralNet(BaseClassifier):
     title = "Neural Net"
@@ -208,13 +241,35 @@ class NeuralNet(BaseClassifier):
 
     def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         if self._clf is None:
-            if self._modelSavePath is not None:
-                self._clf = loadModelFromFile(self._modelSavePath)
-            else:
-                raise ClassificationError("Neural Net Classifier does not exist and is not saved")
+            raise ClassificationError("Neural Net Classifier does not exist.")
 
         probMat: np.ndarray = self._clf.predict(spectra)
         return BatchClassificationResult(probMat, self._labelEncoder)
+
+    def makePickleable(self, fname: str) -> None:
+        self._numEpochs = self._spinEpochs.value()
+        self._spinEpochs.valueChanged.disconnect()
+        self._spinEpochs = None
+
+        self._saveKerasModel(fname)
+        self._clf = None
+
+    def restoreNotPickleable(self) -> None:
+        self._recreateEpochsSpinbox()
+        self._loadKerasModel()
+
+    def afterLoad(self) -> None:
+        self._loadKerasModel()
+
+    def _saveKerasModel(self, fname: str) -> None:
+        fpath, ending = fname.split(".")
+        self._modelSavePath = fpath + "_kerasmdl" + ending
+        self._clf.save(self._modelSavePath)
+
+    def _loadKerasModel(self) -> None:
+        assert self._modelSavePath is not None, "No model save path for the keras model to load."
+        assert os.path.exists(self._modelSavePath), f"No saved model found at: {self._modelSavePath}"
+        self._clf = loadModelFromFile(self._modelSavePath)
 
     def _recreateEpochsSpinbox(self) -> None:
         self._spinEpochs = QtWidgets.QSpinBox()
