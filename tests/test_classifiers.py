@@ -39,7 +39,7 @@ from gui.sampleview import SampleView
 if TYPE_CHECKING:
     from gui.classUI import TrainClfTab, LoadClfTab
     from collections import Counter
-    from gui.graphOverlays import GraphView
+    from gui.graphOverlays import GraphOverlays
     from preprocessing.preprocessors import Preprocessor
 
 
@@ -172,7 +172,7 @@ class TestClassifiers(TestCase):
         allCorrect: bool = True
         for sample in mainWin.getAllSamples():
             sampleCorrect: bool = False
-            graphView: 'GraphView' = sample.getGraphView()
+            graphView: 'GraphOverlays' = sample.getGraphOverlayObj()
             self.assertTrue(graphView._classOverlay._overlayArr is not None)
             sampleCorrect = True
 

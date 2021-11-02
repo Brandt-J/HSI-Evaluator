@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QPoint
 import numpy as np
 
-from gui.graphOverlays import SelectionOverlay, getBrightOrDarkIndices, GraphView
+from gui.graphOverlays import SelectionOverlay, getBrightOrDarkIndices, GraphOverlays
 
 
 class TestSelectionView(TestCase):

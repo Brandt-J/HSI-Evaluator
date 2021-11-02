@@ -22,54 +22,47 @@ import numba
 from PyQt5 import QtWidgets, QtCore, QtGui
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PIL import Image, ImageEnhance
-from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict
+from typing import Tuple, Union, TYPE_CHECKING, Set, List, Dict, Optional
 
 from gui.particleUI import getContourItemForParticle
 
 if TYPE_CHECKING:
     from HSIEvaluator import MainWindow
-    from sampleview import SampleView
+    from gui.sampleview import SampleView
     from particles import Particle, ParticleHandler
     from gui.particleUI import ParticleContour
     from gui.classUI import ClassInterpretationParams
 
 
-class GraphView(QtWidgets.QGraphicsView):
+class GraphOverlays(QtCore.QObject):
     SelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     NewSelection: QtCore.pyqtSignal = QtCore.pyqtSignal(str, set)  # Tuple[class_name, set of pixelIndices]
+    ParticlesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(str)  # name of sampleview
 
     def __init__(self):
-        super(GraphView, self).__init__()
-        scene = self._setUpScene()
-        self.setMinimumSize(800, 500)
+        super(GraphOverlays, self).__init__()
         self._mainWin: Union[None, 'MainWindow'] = None
         self._sampleView: Union[None, 'SampleView'] = None
         self._origCube: Union[None, np.ndarray] = None
-        self._item = QtWidgets.QGraphicsPixmapItem()
-        self._selectionOverlay: SelectionOverlay = SelectionOverlay()
+        self._selectionOverlay: SelectionOverlay = SelectionOverlay(self)
         self._classOverlay: ClassificationOverlay = ClassificationOverlay()
         self._particleItems: List['ParticleContour'] = []
-        scene.addItem(self._item)
-        scene.addItem(self._selectionOverlay)
-        scene.addItem(self._classOverlay)
-        self._startDrag = None
-        self._selecting: bool = False
-
-        self.setMouseTracking(True)
 
     def setParentReferences(self, _sampleViewRef: 'SampleView', mainWinRef: 'MainWindow') -> None:
         self._sampleView = _sampleViewRef
         self._mainWin = mainWinRef
+        self._selectionOverlay.setParentItem(_sampleViewRef)
+        self._selectionOverlay.setMainWinRef(mainWinRef)
+        self._classOverlay.setParentItem(_sampleViewRef)
 
-    def setUpToCube(self, cube: np.ndarray) -> None:
+    def setUpToCube(self, cube: np.ndarray) -> QtGui.QPixmap:
         """
         Sets references to the cube and initiates the selection overlay to the correct shape.
         """
         self._origCube = cube
         img = cube2RGB(cube)
         self._selectionOverlay.initOverlay(img.shape)
-        self._item.setPixmap(npy2Pixmap(img))
+        return npy2Pixmap(img)
 
     def setCurrentlyPresentSelection(self, classes2Ind: Dict[str, Set[int]]) -> None:
         """
@@ -97,14 +90,12 @@ class GraphView(QtWidgets.QGraphicsView):
         """
         Takes a list of particles and creates visual objects accordingly. Previously present particles are removed.
         """
-        for item in self._particleItems:
-            self.scene().removeItem(item)
         self._particleItems = []
-
         for particle in particles:
-            newConcour: 'ParticleContour' = getContourItemForParticle(particle)
-            self._particleItems.append(newConcour)
-            self.scene().addItem(newConcour)
+            newContour: 'ParticleContour' = getContourItemForParticle(particle)
+            newContour.setParentItem(self._sampleView)
+            self._particleItems.append(newContour)
+        self.ParticlesChanged.emit(self._sampleView.getName())
 
     def setParticleVisibility(self, visible: bool) -> None:
         """
@@ -125,35 +116,11 @@ class GraphView(QtWidgets.QGraphicsView):
             particleItem.setColor(color)
         self.scene().update()
 
-    @QtCore.pyqtSlot(float, int, float)
-    def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
-        """
-        Updating the previewed image with new zero value and contrast factor
-        :param maxBrightness: Highest brightness to clip to
-        :param newZero: integer value of the new zero value
-        :param newContrast: float factor for contrast adjustment (1.0 = unchanged)
-        :return:
-        """
-        newImg: np.ndarray = cube2RGB(self._origCube, maxBrightness)
-        if newZero != 0:
-            newImg = newImg.astype(np.float)
-            newImg = np.clip(newImg + newZero, 0, 255)
-            newImg = newImg.astype(np.uint8)
-
-        if newContrast != 1.0:
-            img: Image = Image.fromarray(newImg)
-            contrastObj = ImageEnhance.Contrast(img)
-            newImg = np.array(contrastObj.enhance(newContrast))
-
-        self._item.setPixmap(npy2Pixmap(newImg))
-        self.scene().update()
-
     def updateClassImage(self, classImage: np.ndarray) -> None:
         """
         Updates the graph representation of the current classification to the given RGBA image.
         """
         self._classOverlay.updateImage(classImage)
-        self.scene().update()
 
     def resetClassImage(self) -> None:
         """
@@ -163,7 +130,6 @@ class GraphView(QtWidgets.QGraphicsView):
 
     def updateClassImgTransp(self, newAlpha: float) -> None:
         self._classOverlay.setAlpha(np.clip(newAlpha, 0.0, 1.0))
-        self.scene().update()
 
     def getPixelsOfColor(self, rgb: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -178,6 +144,15 @@ class GraphView(QtWidgets.QGraphicsView):
         """
         avgImg: np.ndarray = np.mean(cube2RGB(self._origCube, self._sampleView.getSelectedMaxBrightness()), axis=2)
         return avgImg
+
+    def getCube(self) -> np.ndarray:
+        return self._origCube
+
+    def getGraphicItems(self) -> List[QtWidgets.QGraphicsItem]:
+        """
+        Returns a list of graphicsItems to be displayed from this sample.
+        """
+        return [self._selectionOverlay, self._classOverlay] + self._particleItems
 
     def removeColor(self, rgb: Tuple[int, int, int]) -> None:
         self._selectionOverlay.removeColor(rgb)
@@ -213,73 +188,16 @@ class GraphView(QtWidgets.QGraphicsView):
         self._emitNewSelection(indices)
         self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
 
-    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == QtCore.Qt.MiddleButton:
-            self._startDrag = event.pos()
-        elif event.button() == QtCore.Qt.LeftButton and self._mainWin is not None:
-            pos: QtCore.QPoint = self.mapToScene(event.pos())
-            if pos.x() < self._origCube.shape[2] and pos.y() < self._origCube.shape[1]:
-                self._selectionOverlay.startNewSelection(pos, self._mainWin.getCurrentColor())
-                self._selecting = True
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        if self._startDrag is not None:
-            p0 = event.pos()
-            move = self._startDrag - p0
-            self.horizontalScrollBar().setValue(move.x() + self.horizontalScrollBar().value())
-            self.verticalScrollBar().setValue(move.y() + self.verticalScrollBar().value())
-            self._startDrag = p0
-        elif self._selecting:
-            self._selectionOverlay.updateSelection(self.mapToScene(event.pos()), self._mainWin.getCurrentColor())
-        elif self._mainWin is not None and self._origCube is not None:
-            self._sendCursorSpectrum(self.mapToScene(event.pos()))
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == QtCore.Qt.MiddleButton:
-            self._startDrag = None
-        elif event.button() == QtCore.Qt.LeftButton and self._mainWin is not None and self._selecting:
-            pos: QtCore.QPoint = self.mapToScene(event.pos())
-            self._selectionOverlay.updateSelection(pos, self._mainWin.getCurrentColor())
-            self._selecting = False
-            pixelIndices: Set[int] = self._selectionOverlay.finishSelection(pos)
-            self._emitNewSelection(pixelIndices)
-
-    def _sendCursorSpectrum(self, pos: QtCore.QPointF) -> None:
-        x, y = int(round(pos.x())), int(round(pos.y()))
-        if 0 <= x < self._origCube.shape[2] and 0 <= y < self._origCube.shape[1]:
-            cursorSpec: np.ndarray = self._origCube[:, y, x][np.newaxis, :]
-            for proc in self._mainWin.getPreprocessorsForSpecPreview():
-                cursorSpec = proc.applyToSpectra(cursorSpec)
-
-            self._mainWin.getresultPlots().updateCursorSpectrum(cursorSpec[0])
-
-    def _emitNewSelection(self, pixelIndices: Set[int]) -> None:
-        self.NewSelection.emit(self._mainWin.getCurrentClass(), pixelIndices)
-        self.SelectionChanged.emit()
-        self.scene().update()
-
-    def wheelEvent(self, event: QtGui.QWheelEvent):
-        factor = 1.01**(event.angleDelta().y()/8)
-        self.scale(factor, factor)
-        event.accept()
-
-    def _setUpScene(self) -> QtWidgets.QGraphicsScene:
-        scene = QtWidgets.QGraphicsScene(self)
-        scene.setItemIndexMethod(QtWidgets.QGraphicsScene.NoIndex)
-        scene.setBackgroundBrush(QtCore.Qt.darkGray)
-        self.setScene(scene)
-        self.setCacheMode(QtWidgets.QGraphicsView.CacheBackground)
-        self.setViewportUpdateMode(QtWidgets.QGraphicsView.BoundingRectViewportUpdate)
-        self.setRenderHint(QtGui.QPainter.Antialiasing)
-        return scene
-
 
 class SelectionOverlay(QtWidgets.QGraphicsObject):
-    def __init__(self):
+    def __init__(self, graphOverlayParent: 'GraphOverlays'):
         super(SelectionOverlay, self).__init__()
-        self._startDrag: Union[None, Tuple[int, int]] = None  # x, y
-        self._overlayArr: Union[None, np.ndarray] = None
-        self._overlayPix: Union[None, QtGui.QPixmap] = None
+        self._selecting: bool = False
+        self._graphParent: 'GraphOverlays' = graphOverlayParent
+        self._mainWin: Optional['MainWindow'] = None
+        self._startDrag: Optional[Tuple[int, int]] = None  # x, y
+        self._overlayArr: Optional[np.ndarray] = None
+        self._overlayPix: Optional[QtGui.QPixmap] = None
         self._alpha: float = 0.8
         self.setZValue(1)
 
@@ -288,6 +206,35 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
         if self._overlayArr is not None:
             brect = QtCore.QRectF(0, 0, self._overlayArr.shape[0], self._overlayArr.shape[1])
         return brect
+
+    def setMainWinRef(self, mainWinRef: 'MainWindow') -> None:
+        self._mainWin = mainWinRef
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == QtCore.Qt.LeftButton and event.modifiers() == QtCore.Qt.NoModifier and self._mainWin is not None:
+            pos: QtCore.QPoint = self.mapToItem(self, event.pos())
+            cubeShape = self._graphParent.getCube().shape
+            if pos.x() < cubeShape[2] and pos.y() < cubeShape[1]:
+                self.startNewSelection(pos, self._mainWin.getCurrentColor())
+                self._selecting = True
+        else:
+            super(SelectionOverlay, self).mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._selecting and self._mainWin is not None:
+            self.updateSelection(self.mapToItem(self, event.pos()), self._mainWin.getCurrentColor())
+        else:
+            super(SelectionOverlay, self).mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == QtCore.Qt.LeftButton and self._mainWin is not None and self._selecting:
+            pos: QtCore.QPoint = self.mapToItem(self, event.pos())
+            self.updateSelection(pos, self._mainWin.getCurrentColor())
+            self._selecting = False
+            pixelIndices: Set[int] = self.finishSelection(pos)
+            self._emitNewSelection(pixelIndices)
+        else:
+            super(SelectionOverlay, self).mouseReleaseEvent(event)
 
     def initOverlay(self, shape: Tuple[int, int, int]) -> None:
         self._overlayArr = np.zeros((shape[0], shape[1], 4), dtype=np.uint8)
@@ -312,6 +259,10 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
         x0, x1, y0, y1 = self._getStartStopCoords(pos)
         self._startDrag = None
         return self._getCurrentSelectionIndices(x0, x1, y0, y1)
+
+    def _emitNewSelection(self, pixelIndices: Set[int]) -> None:
+        self._graphParent.NewSelection.emit(self._mainWin.getCurrentClass(), pixelIndices)
+        self._graphParent.SelectionChanged.emit()
 
     def deselectAll(self) -> None:
         self.initOverlay(self._overlayArr.shape)

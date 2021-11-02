@@ -28,8 +28,8 @@ from readConfig import sampleDirectory
 from dataObjects import View, getFilePathHash
 from loadCube import loadCube
 from legacyConvert import assertUpToDateView
-from gui.sampleview import MultiSampleView
-from gui.graphOverlays import GraphView
+from gui.multisampleview import MultiSampleView
+from gui.graphOverlays import GraphOverlays
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
 from gui.classUI import ClassCreator, ClassificationUI
@@ -64,7 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disableWidgets()
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
-        graphView: 'GraphView' = sampleView.getGraphView()
+        graphView: 'GraphOverlays' = sampleView.getGraphOverlayObj()
         graphView.SelectionChanged.connect(self._preprocSelector.updatePreviewSpectra)
 
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
