@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from gui.classUI import ClassInterpretationParams
 
 
-class SampleView(QtWidgets.QGraphicsObject):
+class SampleView(QtWidgets.QGraphicsWidget):
     """
     Grphical element for displaying a sample.
     """
@@ -51,9 +51,6 @@ class SampleView(QtWidgets.QGraphicsObject):
 
     def __init__(self):
         super(SampleView, self).__init__()
-
-        # self.setFlags(QtWidgets.QGraphicsItem.ItemIsMovable | QtWidgets.QGraphicsItem.ItemIsSelectable)
-        # self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
         self._sampleData: Sample = Sample()
         self._isActive: bool = False
 
@@ -64,8 +61,15 @@ class SampleView(QtWidgets.QGraphicsObject):
         self._dbWin: Union[None, DBUploadWin] = None
         self._logger: 'Logger' = getLogger('SampleView')
 
-        # self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        # self.setCentralWidget(self._group)
+        self._toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
+        self._sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample")
+        self._dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database")
+        self._particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles")
+
+        self._layout: QtWidgets.QGraphicsLinearLayout = QtWidgets.QGraphicsLinearLayout()
+        self._layout.setOrientation(QtCore.Qt.Vertical)
+        self.setLayout(self._layout)
 
         self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
         self._imgAdjustWidget: ImageAdjustWidget = ImageAdjustWidget()
@@ -85,14 +89,10 @@ class SampleView(QtWidgets.QGraphicsObject):
 
         self._pixmap: Optional[QtGui.QPixmap] = None
 
-        # self._toolbar = QtWidgets.QToolBar()
-        # self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
-
         self._establish_connections()
         self._configureWidgets()
-        # self._createLayout()
-        # self._createToolbar()
-        # self._createMenuBar()
+        self._createContextMenu()
+        self._createToolbar()
 
         self._setupWidgetsFromSampleData()
 
@@ -137,17 +137,25 @@ class SampleView(QtWidgets.QGraphicsObject):
     def mousePressEvent(self, event) -> None:
         if event.modifiers() == QtCore.Qt.ControlModifier:
             self.activate()
+        elif event.button() == QtCore.Qt.RightButton:
+            screenpos: QtCore.QPointF = event.screenPos()
+            screenpos: QtCore.QPoint = QtCore.QPoint(int(screenpos.x()), int(screenpos.y()))
+            self._contextMenu.exec_(screenpos)
 
     def mouseMoveEvent(self, event) -> None:
-        pos: QtCore.QPointF = event.pos()
+        pos: QtCore.QPointF = self.mapToItem(self, event.pos())
         x, y = int(round(pos.x())), int(round(pos.y()))
         cube: np.ndarray = self.getSpecObj().getCube()
-        if 0 <= x < cube.shape[2] and 0 <= y < cube.shape[1]:
-            cursorSpec: np.ndarray = cube[:, y, x][np.newaxis, :]
-            for proc in self._mainWindow.getPreprocessorsForSpecPreview():
-                cursorSpec = proc.applyToSpectra(cursorSpec)
+        if cube is not None:
+            if 0 <= x < cube.shape[2] and 0 <= y < cube.shape[1]:
+                cursorSpec: np.ndarray = cube[:, y, x][np.newaxis, :]
+                for proc in self._mainWindow.getPreprocessorsForSpecPreview():
+                    cursorSpec = proc.applyToSpectra(cursorSpec)
 
-            self._mainWindow.getresultPlots().updateCursorSpectrum(cursorSpec[0])
+                self._mainWindow.getresultPlots().updateCursorSpectrum(cursorSpec[0])
+
+    def toggleToolarVisibility(self) -> None:
+        self._toolGroup.setHidden(self._toolGroup.isVisible())
 
     def setupFromSampleData(self) -> None:
         cube, wavelengths = loadCube(self._sampleData.filePath)
@@ -294,51 +302,43 @@ class SampleView(QtWidgets.QGraphicsObject):
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
 
-    # def _createLayout(self) -> None:
-    #     self._layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
-    #     self._group.setLayout(self._layout)
-    #     self._layout.addWidget(self._graphOverlays)
-    #
-    # def _createToolbar(self):
-    #     nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
-    #     nameGroup.setLayout(QtWidgets.QHBoxLayout())
-    #     nameGroup.layout().addWidget(self._editNameBtn)
-    #     nameGroup.layout().addWidget(self._nameLabel)
-    #
-    #     clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Usage in classification:")
-    #     clsGroup.setLayout(QtWidgets.QHBoxLayout())
-    #     clsGroup.layout().addWidget(self._trainCheckBox)
-    #     clsGroup.layout().addWidget(self._inferenceCheckBox)
-    #
-    #     toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-    #     toolGroup.setFlat(True)
-    #     toolGroup.setLayout(QtWidgets.QHBoxLayout())
-    #     # toolGroup.layout().addWidget(self._activeBtn)  # Can be re-included if considered necessary...
-    #     # toolGroup.layout().addStretch()
-    #     toolGroup.layout().addWidget(nameGroup)
-    #     toolGroup.layout().addStretch()
-    #     toolGroup.layout().addWidget(clsGroup)
-    #     toolGroup.layout().addStretch()
-    #     toolGroup.layout().addWidget(self._toggleParticleCheckbox)
-    #
-    #     self._toolbar.addWidget(toolGroup)
-    #
-    # def _createMenuBar(self) -> None:
-    #     sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample", self)
-    #     sampleMenu.addAction(self._adjustBrightnessAct)
-    #     sampleMenu.addSeparator()
-    #     sampleMenu.addAction(self._closeAct)
-    #
-    #     dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database", self)
-    #     dbMenu.addAction(self._uploadAct)
-    #     dbMenu.addAction(self._downloadAct)
-    #
-    #     particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles", self)
-    #     particlesMenu.addAction(self._selectBrightnessAct)
-    #
-    #     self.menuBar().addMenu(sampleMenu)
-    #     self.menuBar().addMenu(dbMenu)
-    #     self.menuBar().addMenu(particlesMenu)
+    def _createToolbar(self):
+        nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
+        nameGroup.setLayout(QtWidgets.QHBoxLayout())
+        nameGroup.layout().addWidget(self._editNameBtn)
+        nameGroup.layout().addWidget(self._nameLabel)
+
+        clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Usage in classification:")
+        clsGroup.setLayout(QtWidgets.QHBoxLayout())
+        clsGroup.layout().addWidget(self._trainCheckBox)
+        clsGroup.layout().addWidget(self._inferenceCheckBox)
+
+        self._toolGroup.setFlat(True)
+        self._toolGroup.setLayout(QtWidgets.QHBoxLayout())
+        self._toolGroup.layout().addWidget(nameGroup)
+        self._toolGroup.layout().addStretch()
+        self._toolGroup.layout().addWidget(clsGroup)
+        self._toolGroup.layout().addStretch()
+        self._toolGroup.layout().addWidget(self._toggleParticleCheckbox)
+
+    def addToolsGroup(self) -> None:
+        graphWidget: QtWidgets.QGraphicsProxyWidget = self.scene().addWidget(self._toolGroup)
+        graphWidget.setZValue(10)
+        self._layout.addItem(graphWidget)
+
+    def _createContextMenu(self) -> None:
+        self._sampleMenu.addAction(self._adjustBrightnessAct)
+        self._sampleMenu.addSeparator()
+        self._sampleMenu.addAction(self._closeAct)
+
+        self._dbMenu.addAction(self._uploadAct)
+        self._dbMenu.addAction(self._downloadAct)
+
+        self._particlesMenu.addAction(self._selectBrightnessAct)
+
+        self._contextMenu.addMenu(self._sampleMenu)
+        self._contextMenu.addMenu(self._dbMenu)
+        self._contextMenu.addMenu(self._particlesMenu)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
         for subwin in [self._dbWin, self._threshSelector, self._imgAdjustWidget]:
@@ -376,10 +376,6 @@ class SampleView(QtWidgets.QGraphicsObject):
             self._nameLabel.setText(newName)
             self.Renamed.emit()
 
-    # def _checkActivation(self) -> None:
-    #     if self._activeBtn.isChecked():
-    #         self.Activated.emit(self._name)
-
     def _configureWidgets(self) -> None:
         self._toggleParticleCheckbox.setChecked(True)
         self._toggleParticleCheckbox.stateChanged.connect(self._toggleParticleVisibility)
@@ -410,7 +406,6 @@ class SampleView(QtWidgets.QGraphicsObject):
         self._adjustBrightnessAct.triggered.connect(self._adjustBrightness)
 
     def _establish_connections(self) -> None:
-        # self._activeBtn.toggled.connect(self._checkActivation)
         self._graphOverlays.NewSelection.connect(self._addNewSelection)
 
     @QtCore.pyqtSlot(str, set)

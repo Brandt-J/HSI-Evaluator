@@ -76,6 +76,8 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         self._sampleviews.append(newView)
         self._addElementsFromSample(newView)
         newView.setPos(newPos)
+        newView.addToolsGroup()
+        
         self.ensureVisible(newView.boundingRect())
         self._logger.debug("New Sampleview added")
         return newView
@@ -84,6 +86,11 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         for sampleView in self._sampleviews:
             sampleView.updateClassImageInGraphView()
             sampleView.updateParticlesInGraphUI()
+
+    @QtCore.pyqtSlot()
+    def toggleSampleToolbars(self) -> None:
+        for sample in self._sampleviews:
+            sample.toggleToolarVisibility()
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
@@ -95,6 +102,8 @@ class MultiSampleView(QtWidgets.QGraphicsView):
                 self._draggedView.activate()
                 self._startDrag = self.mapToScene(event.pos())
         else:
+            for view in self._sampleviews:
+                view.mousePressEvent(event)
             super(MultiSampleView, self).mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -111,11 +120,10 @@ class MultiSampleView(QtWidgets.QGraphicsView):
                 self._draggedView.setY(self._draggedView.y() - move.y())
             self._startDrag = p0
         else:
+            for view in self._sampleviews:
+                view.mouseMoveEvent(event)
             super(MultiSampleView, self).mouseMoveEvent(event)
-        #
-        # elif self._mainWin is not None and self._origCube is not None:
-        #     self._sendCursorSpectrum(self.mapToScene(event.pos()))
-
+            
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
         if self._startDrag is not None:
             self._startDrag = None

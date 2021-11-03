@@ -207,11 +207,12 @@ class MainWindow(QtWidgets.QMainWindow):
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)
 
-    def _newView(self) -> None:
+    def _newSampleView(self) -> None:
         """
-        Opens a new view that can be used for database queries.
+        Opens a new sample view that can be used for database queries.
         """
-        self._multiSampleView.addSampleView()
+        newView: 'SampleView' = self._multiSampleView.addSampleView()
+        newView.setUp("", np.zeros((10, 300, 300)), np.arange(10))  # some placeholder data
         self.enableWidgets()
 
     def _loadView(self, fname: str) -> None:
@@ -266,7 +267,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filemenu: QtWidgets.QMenu = QtWidgets.QMenu("&File", self)
         newAct: QtWidgets.QAction = QtWidgets.QAction("&New Sample", self)
         newAct.setShortcut("Ctrl+N")
-        newAct.triggered.connect(self._newView)
+        newAct.triggered.connect(self._newSampleView)
 
         openAct: QtWidgets.QAction = QtWidgets.QAction("&Open Sample(s)", self)
         openAct.setShortcut("Ctrl+O")
@@ -294,7 +295,14 @@ class MainWindow(QtWidgets.QMainWindow):
         filemenu.addSeparator()
         filemenu.addAction(closeAct)
 
+        toolsMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Tools", self)
+        toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("&Toggle Sample Info", self)
+        toggleToolBarsAct.triggered.connect(self._multiSampleView.toggleSampleToolbars)
+        toggleToolBarsAct.setShortcut("H")
+        toolsMenu.addAction(toggleToolBarsAct)
+
         self.menuBar().addMenu(filemenu)
+        self.menuBar().addMenu(toolsMenu)
 
     def _createLayout(self) -> None:
         """

@@ -19,7 +19,6 @@ If not, see <https://www.gnu.org/licenses/>.
 import sys
 from unittest import TestCase
 from typing import Set
-from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QPoint
 import numpy as np
 
@@ -28,7 +27,7 @@ from gui.graphOverlays import SelectionOverlay, getBrightOrDarkIndices, GraphOve
 
 class TestSelectionView(TestCase):
     def test_newSelection(self):
-        selectionOverlay: SelectionOverlay = SelectionOverlay()
+        selectionOverlay: SelectionOverlay = SelectionOverlay(GraphOverlays())
         x0, y0 = 2, 3
         endPoint: QPoint = QPoint(4, 4)
 

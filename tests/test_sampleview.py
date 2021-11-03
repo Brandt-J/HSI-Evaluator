@@ -107,8 +107,8 @@ class TestSampleView(TestCase):
                                     "class3": set(np.arange(9))}
 
         # only get spectra of first sample
-        sample1._activeBtn.setChecked(True)
-        sample2._activeBtn.setChecked(False)
+        sample1._isActive = True
+        sample2._isActive = False
 
         spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
 
@@ -118,8 +118,8 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(spectraSample1["class2"].shape, np.array([7, 3])))
 
         # only get spectra of second sample
-        sample1._activeBtn.setChecked(False)
-        sample2._activeBtn.setChecked(True)
+        sample1._isActive = False
+        sample2._isActive = True
 
         spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
         self.assertEqual(len(spectraSample2), 3)

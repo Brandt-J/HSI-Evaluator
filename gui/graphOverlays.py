@@ -114,7 +114,6 @@ class GraphOverlays(QtCore.QObject):
             assignment: str = particleHandler.getAssigmentOfParticleOfID(particleItem.getParticleID(), interpretationParams)
             color: Tuple[int, int, int] = self._mainWin.getColorOfClass(assignment)
             particleItem.setColor(color)
-        self.scene().update()
 
     def updateClassImage(self, classImage: np.ndarray) -> None:
         """
@@ -185,8 +184,7 @@ class GraphOverlays(QtCore.QObject):
         self.deselectAll()
         indices: Set[int] = getBrightOrDarkIndices(self._origCube, self._sampleView.getSelectedMaxBrightness(),
                                                    threshold, bright=bright)
-        self._emitNewSelection(indices)
-        self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor())
+        self._selectionOverlay.addPixelsToSelection(indices, self._mainWin.getCurrentColor(), emitnewSelection=True)
 
 
 class SelectionOverlay(QtWidgets.QGraphicsObject):
@@ -267,9 +265,12 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
     def deselectAll(self) -> None:
         self.initOverlay(self._overlayArr.shape)
 
-    def addPixelsToSelection(self, pixelIndices: Set[int], rgb: Tuple[int, int, int]) -> None:
+    def addPixelsToSelection(self, pixelIndices: Set[int], rgb: Tuple[int, int, int], emitNewSelection: bool = False) -> None:
         """
         Adds the given pixel indices to the currently selected class.
+        :param pixelIndices: The pixel indices to add
+        :param rgb: The color to use
+        :param emitNewSelection: If True, a new selection is emitted
         """
         for ind in pixelIndices:
             y: int = ind // self._overlayArr.shape[1]
@@ -277,6 +278,9 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
             self._overlayArr[y, x, :3] = rgb
             self._overlayArr[y, x, 3] = 255
         self._updatePixmap()
+
+        if emitNewSelection:
+            self._emitNewSelection(pixelIndices)
 
     def getPixelsOfColor(self, rgb: Tuple[int, int, int]) -> Tuple[np.ndarray, np.ndarray]:
         """
