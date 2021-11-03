@@ -16,9 +16,10 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
+import time
 from typing import List
 
-from tensorflow.keras.layers import Dense, Dropout, InputLayer
+from tensorflow.keras.layers import Dense, Dropout, InputLayer, Conv1D, MaxPool1D, Flatten, BatchNormalization
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.metrics import Precision, Recall
 
@@ -31,7 +32,8 @@ def loadModelFromFile(fname: str) -> 'NeuralNetClf':
 
 
 class NeuralNetClf(Sequential):
-    def __init__(self, numFeatures: int, numClasses: int, numNeuronsPerHiddenLayer: List[int] = [200, 100, 50], dropout: float = 0.1):
+    def __init__(self, numFeatures: int, numClasses: int, numNeuronsPerHiddenLayer: List[int] = [200, 100, 50],
+                 dropout: float = 0.1):
         super(NeuralNetClf, self).__init__()
         self.add(InputLayer(input_shape=(numFeatures)))
         for numNeurons in numNeuronsPerHiddenLayer:
@@ -42,4 +44,27 @@ class NeuralNetClf(Sequential):
         self.summary()
 
 
-
+class ConvNeuralNetCLF(Sequential):
+    def __init__(self, numFeatures: int, numClasses: int):
+        super(ConvNeuralNetCLF, self).__init__()
+        self.add(InputLayer(input_shape=(numFeatures, 1)))
+        self.add(Conv1D(16, 3, padding="same", activation="relu"))
+        # self.add(Dropout(0.1))
+        self.add(MaxPool1D(2, padding="same"))
+        self.add(BatchNormalization())
+        self.add(Conv1D(32, 3, padding="same", activation="relu"))
+        # self.add(Dropout(0.1))
+        self.add(MaxPool1D(2, padding="same"))
+        self.add(BatchNormalization())
+        self.add(Conv1D(64, 3, padding="same", activation="relu"))
+        self.add(Dropout(0.1))
+        self.add(MaxPool1D(2, padding="same"))
+        self.add(Conv1D(128, 3, padding="same", activation="relu"))
+        self.add(Dropout(0.1))
+        self.add(Flatten())
+        self.add(Dense(100, activation="relu"))
+        self.add(Dropout(0.3))
+        self.add(Dense(50, activation="relu"))
+        self.add(Dense(numClasses, activation="softmax"))
+        self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision(), Recall()])
+        self.summary()
