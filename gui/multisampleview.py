@@ -40,8 +40,6 @@ class MultiSampleView(QtWidgets.QGraphicsView):
     """
     Container class for showing multiple sampleviews in a ScrollArea.
     """
-    SampleClosed: QtCore.pyqtSignal = QtCore.pyqtSignal()
-
     def __init__(self, mainWinParent: 'MainWindow'):
         super(MultiSampleView, self).__init__()
         self._setUpScene()
@@ -65,7 +63,7 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         newView: 'SampleView' = SampleView()
         newView.setMainWindowReferences(self._mainWinParent)
         newView.Activated.connect(self._viewActivated)
-        newView.Closed.connect(self._viewClosed)
+        newView.Closed.connect(self._closeSample)
         newView.WavelenghtsChanged.connect(self._assertIdenticalWavelengths)
         newView.activate()
 
@@ -339,12 +337,12 @@ class MultiSampleView(QtWidgets.QGraphicsView):
             self.scene().removeItem(item)
 
     @QtCore.pyqtSlot(str)
-    def _viewClosed(self, samplename: str) -> None:
-        for view in self._sampleviews:
-            if view.getName() == samplename:
-                self._sampleviews.remove(view)
+    def _closeSample(self, samplename: str) -> None:
+        for sampleview in self._sampleviews:
+            if sampleview.getName() == samplename:
+                self._removeElementsFromSample(sampleview)
+                self._sampleviews.remove(sampleview)
                 self._logger.info(f"Closed Sample {samplename}")
-                self.SampleClosed.emit()
                 break
 
     def _saveSampleView(self, sampleview: 'SampleView') -> None:
