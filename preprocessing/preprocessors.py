@@ -138,4 +138,4 @@ class SavGolProc(Preprocessor):
     def updatePreprocessor(self, winSize: int, degree: int, deriv: int) -> None:
         self._savGolFunc = functools.partial(deriv_smooth, polydegree=degree,
                                                               derivative=deriv, windowSize=winSize)
-        self.label = f"Smooth {winSize} + Derivative {deriv}"
+        self.label = f"Smooth {winSize} + Derivative {deriv} + Polyorder {degree}"
