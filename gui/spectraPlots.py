@@ -308,7 +308,11 @@ class SpecPlot(QtWidgets.QWidget):
         """
         if self._cursorSpec is not None and self._cursorCheckBox.isChecked():
             cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
-            self._cursorSpec = self._specAx.plot(self._mainWin.getWavelengths(), cursorSpec, color='gray')[0]
+            wavelengths: np.ndarray = self._mainWin.getWavelengths(), cursorSpec
+            if len(cursorSpec) == len(wavelengths):  # can be false when cube dimensions change (i.e., downloading spectra from database)
+                self._cursorSpec = self._specAx.plot(wavelengths, color='gray')[0]
+            else:
+                self._cursorSpec = None
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")
