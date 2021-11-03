@@ -21,7 +21,7 @@ import json
 from PyQt5 import QtWidgets, QtGui, QtCore
 import pickle
 import os
-from typing import List, TYPE_CHECKING, Dict, Set, Union, Optional
+from typing import List, TYPE_CHECKING, Dict, Set, Union, Optional, Tuple
 import numpy as np
 
 from gui.sampleview import SampleView
@@ -196,13 +196,9 @@ class MultiSampleView(QtWidgets.QGraphicsView):
 
     def loadSampleViewFromFile(self, fpath: str) -> None:
         """Loads the sample configuration from the file and creates a sampleview accordingly"""
-        newSampleData: 'Sample' = Sample()
         with open(fpath, "rb") as fp:
             loadedSampleData: 'Sample' = pickle.load(fp)
-
-        loadedSampleData = assertUpToDateSample(loadedSampleData)
-        newSampleData.__dict__.update(loadedSampleData.__dict__)
-        self._createNewSampleFromSampleData(newSampleData)
+        self._createNewSampleFromSampleData(loadedSampleData)
         
     def createListOfSamples(self, sampleList: List['Sample']) -> None:
         """Creates a list of given samples and replaces the currently opened with that."""
@@ -215,14 +211,29 @@ class MultiSampleView(QtWidgets.QGraphicsView):
             self._createNewSampleFromSampleData(sample)
             self._logger.info(f"Creating sample {sample.name}")
 
+    def positonSampleViewsAsSaved(self) -> None:
+        """
+        Called when loading a view. The loaded samples are positioned in the viewport as they where when the view
+        was saved.
+        """
+        for sample in self._sampleviews:
+            pos: Union[None, Tuple[float, float]] = sample.getSampleData().viewCoordinates
+            if pos is not None:
+                sample.setPos(QtCore.QPointF(pos[0], pos[1]))
+
     def _createNewSampleFromSampleData(self, sampleData: Sample) -> None:
         """
-        Creates a new sample and configures it according to the provided sample data object
+        Creates a new sample and configures it according to the provided sample data object.
+        Also handles legacy conversion.
         """
-        newView: SampleView = self.addSampleView()
-        newView.setSampleData(sampleData)
-        newView.setupFromSampleData()
+        newSampleData: 'Sample' = Sample()
+        loadedSampleData = assertUpToDateSample(sampleData)
+        newSampleData.__dict__.update(loadedSampleData.__dict__)
 
+        newView: SampleView = self.addSampleView()
+        newView.setSampleData(newSampleData)
+
+        newView.setupFromSampleData()
         self._mainWinParent.updateClassCreatorClasses()
 
     def saveSamples(self) -> None:
@@ -342,9 +353,10 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         """
         directory: str = self.getSampleSaveDirectory()
         savePath: str = os.path.join(directory, sampleview.getSaveFileName())
+        sampleview.saveCoordinatesToSampleData()
         sampleData: 'Sample' = sampleview.getSampleDataToSave()
-        # with open(savePath, "wb") as fp:
-        #     pickle.dump(sampleData, fp)
+        with open(savePath, "wb") as fp:
+            pickle.dump(sampleData, fp)
 
         self._logger.info(f"Saved sampleview {sampleview.getName()} at {savePath}")
 

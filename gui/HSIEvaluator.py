@@ -201,7 +201,10 @@ class MainWindow(QtWidgets.QMainWindow):
         :param savePath: the full path to where to save the view
         """
         viewObj: View = View()
-        viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
+        for sample in self._multiSampleView.getSampleViews():
+            sample.saveCoordinatesToSampleData()
+            viewObj.samples.append(sample.getSampleDataToSave())
+
         viewObj.processingGraph = self._preprocSelector.getProcessingGraph()
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
@@ -231,6 +234,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
         self._clsCreator.deleteAllClasses()
         self._multiSampleView.createListOfSamples(view.samples)
+        self._multiSampleView.positonSampleViewsAsSaved()
         self._preprocSelector.applyPreprocessingConfig(view.processingGraph)
         self._preprocSelector.updatePreviewSpectra()
         self.enableWidgets()

@@ -165,6 +165,9 @@ class SampleView(QtWidgets.QGraphicsWidget):
         self._setupWidgetsFromSampleData()
         self._mainWindow.updateClassCreatorClasses()
 
+    def saveCoordinatesToSampleData(self) -> None:
+        self._sampleData.viewCoordinates = self.pos().x(), self.pos().y()
+
     def _setupWidgetsFromSampleData(self) -> None:
         self._nameLabel.setText(self._sampleData.name)
 
