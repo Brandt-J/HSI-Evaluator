@@ -293,7 +293,7 @@ class ColorHandler:
                 """
         colorCycle = rcParams['axes.prop_cycle'].by_key()['color']
         newIndex: int = len(self._name2color)
-        if newIndex > len(colorCycle) - 1:
+        if newIndex >= len(colorCycle) - 1:
             newIndex -= len(colorCycle)
 
         color = colorCycle[newIndex]

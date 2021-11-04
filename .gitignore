@@ -12,3 +12,7 @@ config.cfg
 classification/logs/
 
 classification/spectra.txt
+
+classification/labels_new.npy
+
+classification/spectra_new.npy
