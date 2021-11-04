@@ -338,7 +338,6 @@ class DownloadedSpectrum:
         self.className = self.className.replace("Acrylonitrile butadiene styrene", "ABS")
         self.className = self.className.replace("Polypropylene", "PP")
 
-
     def getConcatenatedName(self) -> str:
         """
         Returns a name concatenating different properties

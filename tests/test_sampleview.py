@@ -27,8 +27,9 @@ import numpy as np
 import pickle
 
 from gui.HSIEvaluator import MainWindow
-from gui.sampleview import MultiSampleView, SampleView, Sample
-from gui.graphOverlays import GraphView, ThresholdSelector
+from gui.multisampleview import MultiSampleView, Sample
+from gui.sampleview import SampleView
+from gui.graphOverlays import GraphOverlays, ThresholdSelector
 from spectraObject import SpectraObject, getSpectraFromIndices, WavelengthsNotSetError
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ class TestSampleView(TestCase):
         sampleViews: List['SampleView'] = multiView.getSampleViews()
         self.assertEqual(len(sampleViews), 1)
 
-        graphView: GraphView = newView.getGraphView()
+        graphView: GraphOverlays = newView.getGraphOverlayObj()
         self.assertTrue(graphView._mainWin, imgClf)
 
         _: SampleView = multiView.addSampleView()
@@ -83,7 +84,7 @@ class TestSampleView(TestCase):
         sampleView.setUp(fname, cube, wavelenghts)
 
         self.assertEqual(sampleView._name, fname.split('.npy')[0])
-        self.assertTrue(sampleView.getGraphView()._origCube is cube)
+        self.assertTrue(sampleView.getGraphOverlayObj()._origCube is cube)
         self.assertTrue(np.array_equal(sampleView.getWavelengths(), np.arange(3)))
 
     def testGetSpectra(self) -> None:
@@ -106,8 +107,8 @@ class TestSampleView(TestCase):
                                     "class3": set(np.arange(9))}
 
         # only get spectra of first sample
-        sample1._activeBtn.setChecked(True)
-        sample2._activeBtn.setChecked(False)
+        sample1._isActive = True
+        sample2._isActive = False
 
         spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
 
@@ -117,8 +118,8 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(spectraSample1["class2"].shape, np.array([7, 3])))
 
         # only get spectra of second sample
-        sample1._activeBtn.setChecked(False)
-        sample2._activeBtn.setChecked(True)
+        sample1._isActive = False
+        sample2._isActive = True
 
         spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
         self.assertEqual(len(spectraSample2), 3)
@@ -255,7 +256,7 @@ class TestSampleView(TestCase):
 
         self.assertTrue(len(multiView._sampleviews) == 1)
         createdSample: SampleView = multiView._sampleviews[0]
-        self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
+        self.assertTrue(np.array_equal(createdSample._graphOverlays._origCube, testCube))
 
         # make sure that these objects are identical
         self.assertTrue(createdSample._sampleData.specObj == sample.specObj)

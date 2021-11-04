@@ -16,13 +16,12 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import random
-from typing import List, Dict
+import time
+from typing import List
 
-from tensorflow.keras.layers import Dense, Dropout, InputLayer
+from tensorflow.keras.layers import Dense, Dropout, InputLayer, Conv1D, MaxPool1D, Flatten, BatchNormalization
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.metrics import Precision, Recall
-from tensorflow.keras.callbacks import TensorBoard
 
 
 def loadModelFromFile(fname: str) -> 'NeuralNetClf':
@@ -33,7 +32,8 @@ def loadModelFromFile(fname: str) -> 'NeuralNetClf':
 
 
 class NeuralNetClf(Sequential):
-    def __init__(self, numFeatures: int, numClasses: int, numNeuronsPerHiddenLayer: List[int] = [200, 100, 50], dropout: float = 0.1):
+    def __init__(self, numFeatures: int, numClasses: int, numNeuronsPerHiddenLayer: List[int] = [200, 100, 50],
+                 dropout: float = 0.1):
         super(NeuralNetClf, self).__init__()
         self.add(InputLayer(input_shape=(numFeatures)))
         for numNeurons in numNeuronsPerHiddenLayer:
@@ -44,85 +44,27 @@ class NeuralNetClf(Sequential):
         self.summary()
 
 
-if __name__ == '__main__':
-    import numpy as np
-    from tensorflow.keras.utils import to_categorical
-    from sklearn.preprocessing import LabelEncoder
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import classification_report
-    from collections import Counter
-    import time
-    import matplotlib.pyplot as plt
-    import sys
-    from PyQt5 import QtWidgets
-    app = QtWidgets.QApplication(sys.argv)
-
-    from preprocessing.routines import deriv_smooth, normalizeIntensities
-    from preprocessing.preprocessors import NormMode, MSCProc
-
-    specs: np.ndarray = np.load("spectra.npy")
-
-    assignments: np.ndarray = np.load("labels.npy")
-    assignments[assignments == "sediment A"] = "Sediment"
-    assignments[assignments == "sediment B"] = "Sediment"
-    assignments[assignments == "sediment C"] = "Sediment"
-    assignments[assignments == "Sediment R"] = "Sediment"
-    assignments[assignments == "eppi blue"] = "Eppi"
-    assignments[assignments == "eppi green"] = "Eppi"
-    print(Counter(assignments))
-
-    indices: Dict[str, np.ndarray] = {}
-    # for lbl in np.unique(assignments):
-    for lbl in ["PA", "PS", "PET"]:
-        indices[lbl] = np.where(assignments == lbl)[0]
-        if len(indices[lbl]) > 50:
-            indices[lbl] = np.array(random.sample(list(indices[lbl]), 50))
-
-    # specs = specs[indices["PA"], :]
-    np.savetxt("spectra.txt", specs)
-    specs = deriv_smooth(specs, windowSize=5, polydegree=1, derivative=1)
-    # specs = normalizeIntensities(specs, NormMode.Length)
-
-    line_colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'b', 'g', 'r']
-    plt.subplot(121)
-    for i, (name, ind) in enumerate(indices.items()):
-        plt.plot(specs[ind, :].transpose() + i * 0.1, color=line_colors[i], label=name)
-    # plt.ylim(-1, 1)
-    specs = MSCProc().applyToSpectra(specs, labels=assignments)
-
-    plt.subplot(122)
-    for i, (name, ind) in enumerate(indices.items()):
-        plt.plot(specs[ind, :].transpose() + i * 0.1, color=line_colors[i], label=name)
-    # plt.ylim(-1, 1)
-    # plt.legend()
-
-    # encoder: LabelEncoder = LabelEncoder().fit(assignments)
-    # y: np.ndarray = encoder.transform(assignments)
-
-    # X_train, X_test, y_train, y_test = train_test_split(specs, y, test_size=0.2)
-    # numNeuronsLists: List[List[int]] = [[100, 50, 50],
-    #                                     [20, 20, 10],
-    #                                     [200, 100, 50],
-    #                                     [100, 100, 50, 20, 10]
-    #                                     ]
-    # dropout = 0.1
-    # numNeurons = [200, 100, 50]
-    # # for numNeurons in numNeuronsLists:
-    # modelName: str = f"Dense {'_'.join([str(i) for i in numNeurons])}_dropout_{dropout}_500epochs"
-    # print(modelName)
-    # nn: NeuralNetClf = NeuralNetClf(specs.shape[1], len(np.unique(assignments)),
-    #                                 numNeuronsPerHiddenLayer=numNeurons, dropout=dropout)
-    # tensboard: TensorBoard = TensorBoard(log_dir=f"logs/{modelName}")
-    # t0 = time.time()
-    # history = nn.fit(X_train, to_categorical(y_train),
-    #                  validation_data=(X_test, to_categorical(y_test)),
-    #                  batch_size=64,
-    #                  epochs=500, verbose=1,
-    #                  callbacks=[tensboard])
-    # print(f"training NN took {time.time()-t0} seconds")
-    # t0 = time.time()
-    # pred: np.ndarray = nn.predict(X_test)
-    # pred = np.array([pred[i, :].argmax() for i in range(pred.shape[0])])
-    # print(f"Pred NN: {time.time()-t0} seconds\n", classification_report(encoder.inverse_transform(y_test),
-    #                                                                     encoder.inverse_transform(pred),
-    #                                                                     zero_division=0))
+class ConvNeuralNetCLF(Sequential):
+    def __init__(self, numFeatures: int, numClasses: int):
+        super(ConvNeuralNetCLF, self).__init__()
+        self.add(InputLayer(input_shape=(numFeatures, 1)))
+        self.add(Conv1D(16, 3, padding="same", activation="relu"))
+        # self.add(Dropout(0.1))
+        self.add(MaxPool1D(2, padding="same"))
+        self.add(BatchNormalization())
+        self.add(Conv1D(32, 3, padding="same", activation="relu"))
+        # self.add(Dropout(0.1))
+        self.add(MaxPool1D(2, padding="same"))
+        self.add(BatchNormalization())
+        self.add(Conv1D(64, 3, padding="same", activation="relu"))
+        self.add(Dropout(0.1))
+        self.add(MaxPool1D(2, padding="same"))
+        self.add(Conv1D(128, 3, padding="same", activation="relu"))
+        self.add(Dropout(0.1))
+        self.add(Flatten())
+        self.add(Dense(100, activation="relu"))
+        self.add(Dropout(0.3))
+        self.add(Dense(50, activation="relu"))
+        self.add(Dense(numClasses, activation="softmax"))
+        self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision(), Recall()])
+        self.summary()
