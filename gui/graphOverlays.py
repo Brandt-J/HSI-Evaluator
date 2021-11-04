@@ -86,23 +86,27 @@ class GraphOverlays(QtCore.QObject):
         """
         self._selectionOverlay.deselectAll()
 
-    def setParticles(self, particles: List['Particle']) -> None:
+    def setParticles(self, particles: List['Particle'], graphScene: QtWidgets.QGraphicsScene) -> None:
         """
         Takes a list of particles and creates visual objects accordingly. Previously present particles are removed.
         """
+        # remove old particles
+        for particle in self._particleItems:
+            graphScene.removeItem(particle)
+
         self._particleItems = []
         for particle in particles:
             newContour: 'ParticleContour' = getContourItemForParticle(particle)
             newContour.setParentItem(self._sampleView)
+            graphScene.addItem(newContour)
             self._particleItems.append(newContour)
-        self.ParticlesChanged.emit(self._sampleView.getName())
 
-    def setParticleVisibility(self, visible: bool) -> None:
+    def toggleParticleVisibility(self) -> None:
         """
         Sets visibility of the particle contour items.
         """
         for item in self._particleItems:
-            item.setVisible(visible)
+            item.setVisible(not item.isVisible())
 
     def updateParticleColors(self, particleHandler: 'ParticleHandler', interpretationParams: 'ClassInterpretationParams'):
         """
@@ -202,7 +206,7 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
     def boundingRect(self) -> QtCore.QRectF:
         brect: QtCore.QRectF = QtCore.QRectF(0, 0, 1, 1)
         if self._overlayArr is not None:
-            brect = QtCore.QRectF(0, 0, self._overlayArr.shape[0], self._overlayArr.shape[1])
+            brect = QtCore.QRectF(0, 0, self._overlayArr.shape[1], self._overlayArr.shape[0])
         return brect
 
     def setMainWinRef(self, mainWinRef: 'MainWindow') -> None:
@@ -399,7 +403,7 @@ class ClassificationOverlay(QtWidgets.QGraphicsObject):
     def boundingRect(self) -> QtCore.QRectF:
         brect: QtCore.QRectF = QtCore.QRectF(0, 0, 1, 1)
         if self._overlayArr is not None:
-            brect = QtCore.QRectF(0, 0, self._overlayArr.shape[0], self._overlayArr.shape[1])
+            brect = QtCore.QRectF(0, 0, self._overlayArr.shape[1], self._overlayArr.shape[0])
         return brect
 
     def resetOverlay(self) -> None:

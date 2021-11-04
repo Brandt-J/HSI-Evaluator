@@ -27,6 +27,7 @@ from dataObjects import Sample
 from gui.dbQueryWin import DatabaseQueryWindow
 from gui.dbWin import DBUploadWin
 from gui.graphOverlays import GraphOverlays, ThresholdSelector, cube2RGB, getThresholdedImage
+from gui.sampleInfo import SampleInfo
 from loadCube import loadCube
 from logger import getLogger
 from spectraObject import SpectraObject, getSpectraFromIndices
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
     from gui.classUI import ClassInterpretationParams
 
 
-class SampleView(QtWidgets.QGraphicsWidget):
+class SampleView(QtWidgets.QGraphicsObject):
     """
     Grphical element for displaying a sample.
     """
@@ -48,9 +49,12 @@ class SampleView(QtWidgets.QGraphicsWidget):
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     BackgroundSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     WavelenghtsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    NewClassificationResult: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         super(SampleView, self).__init__()
+        self.setAcceptHoverEvents(True)
+
         self._sampleData: Sample = Sample()
         self._isActive: bool = False
 
@@ -61,21 +65,15 @@ class SampleView(QtWidgets.QGraphicsWidget):
         self._dbWin: Union[None, DBUploadWin] = None
         self._logger: 'Logger' = getLogger('SampleView')
 
-        self._toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
+        self._sampleInfo: SampleInfo = SampleInfo(self._sampleData.name)
+
         self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
         self._sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample")
         self._dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database")
         self._particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles")
 
-        self._layout: QtWidgets.QGraphicsLinearLayout = QtWidgets.QGraphicsLinearLayout()
-        self._layout.setOrientation(QtCore.Qt.Vertical)
-        self.setLayout(self._layout)
-
-        self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
         self._imgAdjustWidget: ImageAdjustWidget = ImageAdjustWidget()
         self._imgAdjustWidget.ValuesChanged.connect(self.updateImage)
-
-        self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
 
         self._closeAct: QtWidgets.QAction = QtWidgets.QAction("Close")
         self._uploadAct: QtWidgets.QAction = QtWidgets.QAction("Upload to Database")
@@ -83,16 +81,11 @@ class SampleView(QtWidgets.QGraphicsWidget):
         self._selectBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Brightness Select/\nParticleDetection")
         self._adjustBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Adjust Brightness/Contrast")
 
-        self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Training")
-        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Inference")
-        self._toggleParticleCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Show Particles")
-
         self._pixmap: Optional[QtGui.QPixmap] = None
 
         self._establish_connections()
         self._configureWidgets()
         self._createContextMenu()
-        self._createToolbar()
 
         self._setupWidgetsFromSampleData()
 
@@ -142,7 +135,7 @@ class SampleView(QtWidgets.QGraphicsWidget):
             screenpos: QtCore.QPoint = QtCore.QPoint(int(screenpos.x()), int(screenpos.y()))
             self._contextMenu.exec_(screenpos)
 
-    def mouseMoveEvent(self, event) -> None:
+    def hoverMoveEvent(self, event) -> None:
         pos: QtCore.QPointF = self.mapToItem(self, event.pos())
         x, y = int(round(pos.x())), int(round(pos.y()))
         cube: np.ndarray = self.getSpecObj().getCube()
@@ -155,13 +148,13 @@ class SampleView(QtWidgets.QGraphicsWidget):
                 self._mainWindow.getresultPlots().updateCursorSpectrum(cursorSpec[0])
 
     def toggleToolarVisibility(self) -> None:
-        self._toolGroup.setHidden(self._toolGroup.isVisible())
+        self._sampleInfo.setVisible(not self._sampleInfo.isVisible())
 
     def setupFromSampleData(self) -> None:
         cube, wavelengths = loadCube(self._sampleData.filePath)
         self.setCube(cube, wavelengths)
         self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
-        self._graphOverlays.setParticles(self._sampleData.getAllParticles())
+        self._graphOverlays.setParticles(self._sampleData.getAllParticles(), self.scene())
         self._setupWidgetsFromSampleData()
         self._mainWindow.updateClassCreatorClasses()
 
@@ -169,7 +162,7 @@ class SampleView(QtWidgets.QGraphicsWidget):
         self._sampleData.viewCoordinates = self.pos().x(), self.pos().y()
 
     def _setupWidgetsFromSampleData(self) -> None:
-        self._nameLabel.setText(self._sampleData.name)
+        self._sampleInfo.setName(self._sampleData.name)
 
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray) -> None:
         """
@@ -252,18 +245,13 @@ class SampleView(QtWidgets.QGraphicsWidget):
     def getSaveFileName(self) -> str:
         return self._sampleData.getFileHash() + '.pkl'
 
-    def resetClassificationOverlay(self) -> None:
-        """
-        Resets the current classification overlay.
-        """
-        self._graphOverlays.resetClassImage()
-
     def updateParticlesInGraphUI(self) -> None:
         """
         Forces an update of particles in the graph ui from the currently set sample data.
         """
         interpretationParams: 'ClassInterpretationParams' = self._mainWindow.getClassInterprationParams()
         self._graphOverlays.updateParticleColors(self._sampleData.getParticleHandler(), interpretationParams)
+        self.NewClassificationResult.emit()
 
     def updateClassImageInGraphView(self) -> None:
         """
@@ -278,15 +266,16 @@ class SampleView(QtWidgets.QGraphicsWidget):
 
             clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
             self._graphOverlays.updateClassImage(clfImg)
+        self.NewClassificationResult.emit()
 
     def isActive(self) -> bool:
         return self._isActive
 
     def isSelectedForTraining(self) -> bool:
-        return self._trainCheckBox.isChecked()
+        return self._sampleInfo.isCheckedForTraining()
 
     def isSelectedForInference(self) -> bool:
-        return self._inferenceCheckBox.isChecked()
+        return self._sampleInfo.isCheckedForInference()
 
     def activate(self) -> None:
         self._isActive = True
@@ -304,30 +293,6 @@ class SampleView(QtWidgets.QGraphicsWidget):
         else:
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
-
-    def _createToolbar(self):
-        nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
-        nameGroup.setLayout(QtWidgets.QHBoxLayout())
-        nameGroup.layout().addWidget(self._editNameBtn)
-        nameGroup.layout().addWidget(self._nameLabel)
-
-        clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Usage in classification:")
-        clsGroup.setLayout(QtWidgets.QHBoxLayout())
-        clsGroup.layout().addWidget(self._trainCheckBox)
-        clsGroup.layout().addWidget(self._inferenceCheckBox)
-
-        self._toolGroup.setFlat(True)
-        self._toolGroup.setLayout(QtWidgets.QHBoxLayout())
-        self._toolGroup.layout().addWidget(nameGroup)
-        self._toolGroup.layout().addStretch()
-        self._toolGroup.layout().addWidget(clsGroup)
-        self._toolGroup.layout().addStretch()
-        self._toolGroup.layout().addWidget(self._toggleParticleCheckbox)
-
-    def addToolsGroup(self) -> None:
-        graphWidget: QtWidgets.QGraphicsProxyWidget = self.scene().addWidget(self._toolGroup)
-        graphWidget.setZValue(10)
-        self._layout.addItem(graphWidget)
 
     def _createContextMenu(self) -> None:
         self._sampleMenu.addAction(self._adjustBrightnessAct)
@@ -358,40 +323,30 @@ class SampleView(QtWidgets.QGraphicsWidget):
         :param newContrast: float factor for contrast adjustment (1.0 = unchanged)
         :return:
         """
-        newImg: np.ndarray = cube2RGB(self._origCube, maxBrightness)
-        if newZero != 0:
-            newImg = newImg.astype(np.float)
-            newImg = np.clip(newImg + newZero, 0, 255)
-            newImg = newImg.astype(np.uint8)
-
-        if newContrast != 1.0:
-            img: Image = Image.fromarray(newImg)
-            contrastObj = ImageEnhance.Contrast(img)
-            newImg = np.array(contrastObj.enhance(newContrast))
-
-        raise NotImplementedError  # Needs to be properly implemented!!!
+        QtWidgets.QMessageBox.warning(self, "Sorry", "At the moment not yet reimplemented...")
+        # newImg: np.ndarray = cube2RGB(self._sampleData.getSpecCube(), maxBrightness)
+        # if newZero != 0:
+        #     newImg = newImg.astype(np.float)
+        #     newImg = np.clip(newImg + newZero, 0, 255)
+        #     newImg = newImg.astype(np.uint8)
+        #
+        # if newContrast != 1.0:
+        #     img: Image = Image.fromarray(newImg)
+        #     contrastObj = ImageEnhance.Contrast(img)
+        #     newImg = np.array(contrastObj.enhance(newContrast))
+        #
+        # raise NotImplementedError  # Needs to be properly implemented!!!
 
     def _renameSample(self) -> None:
-        newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
+        newName, ok = QtWidgets.QInputDialog.getText(self._mainWindow, "Please enter a new name", "", text=self._name)
         if ok and newName != '':
             self._logger.info(f"Renaming {self._name} into {newName}")
             self._name = newName
-            self._nameLabel.setText(newName)
+            self._sampleInfo.setName(newName)
             self.Renamed.emit()
 
     def _configureWidgets(self) -> None:
-        self._toggleParticleCheckbox.setChecked(True)
-        self._toggleParticleCheckbox.stateChanged.connect(self._toggleParticleVisibility)
-
-        newFont: QtGui.QFont = QtGui.QFont()
-        newFont.setBold(True)
-        newFont.setPixelSize(18)
-        self._nameLabel.setFont(newFont)
-
-        style = QtWidgets.QWidget().style()
-        self._editNameBtn.setIcon(style.standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogResetButton')))
-        self._editNameBtn.released.connect(self._renameSample)
-        self._editNameBtn.setToolTip("Rename Sample.")
+        self._sampleInfo.getChangeNameBtn().ButtonClicked.connect(self._renameSample)
 
         self._closeAct.triggered.connect(lambda: self.Closed.emit(self._name))
         self._closeAct.setToolTip("Close Sample.")
@@ -402,11 +357,12 @@ class SampleView(QtWidgets.QGraphicsWidget):
         self._downloadAct.triggered.connect(self._downloadFromSQL)
         self._downloadAct.setToolTip("Download Spectra from SQL Database.")
 
-        self._trainCheckBox.setChecked(True)
-        self._inferenceCheckBox.setChecked(True)
-
         self._selectBrightnessAct.triggered.connect(self._selectByBrightness)
         self._adjustBrightnessAct.triggered.connect(self._adjustBrightness)
+
+        self._sampleInfo.setParentItem(self)
+        infoHeight: int = self._sampleInfo.boundingRect().height()
+        self._sampleInfo.setPos(-(infoHeight + 5), -50)
 
     def _establish_connections(self) -> None:
         self._graphOverlays.NewSelection.connect(self._addNewSelection)
@@ -525,12 +481,6 @@ class SampleView(QtWidgets.QGraphicsWidget):
         self._dbQueryWin = None
         self._mainWindow.updateClassCreatorClasses()
 
-    def _toggleParticleVisibility(self) -> None:
-        """
-        Toggles visibility of particle contour items in the graph view.
-        """
-        self._graphOverlays.setParticleVisibility(self._toggleParticleCheckbox.isChecked())
-
     @QtCore.pyqtSlot(int, bool)
     def _runParticleDetection(self, threshold: int, selectBright: bool) -> None:
         """
@@ -544,7 +494,7 @@ class SampleView(QtWidgets.QGraphicsWidget):
                                                  threshold, selectBright)
         particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
         particleHandler.getParticlesFromImage(binImg)
-        self._graphOverlays.setParticles(particleHandler.getParticles())
+        self._graphOverlays.setParticles(particleHandler.getParticles(), self.scene())
         self._closeThresholdSelector()
 
     def paint(self, painter: QtGui.QPainter, option, widget) -> None:

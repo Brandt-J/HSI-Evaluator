@@ -65,17 +65,16 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         newView.Activated.connect(self._viewActivated)
         newView.Closed.connect(self._closeSample)
         newView.WavelenghtsChanged.connect(self._assertIdenticalWavelengths)
+        newView.NewClassificationResult.connect(lambda: self.scene().update())
         newView.activate()
 
-        newView.getGraphOverlayObj().ParticlesChanged.connect(self._updateElementsFromSample)
         self._mainWinParent.setupConnections(newView)
 
         newPos: QtCore.QPointF = self._getNewViewPosition()
         self._sampleviews.append(newView)
         self._addElementsFromSample(newView)
         newView.setPos(newPos)
-        newView.addToolsGroup()
-        
+
         self.ensureVisible(newView.boundingRect())
         self._logger.debug("New Sampleview added")
         return newView
@@ -90,6 +89,11 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         for sample in self._sampleviews:
             sample.toggleToolarVisibility()
 
+    @QtCore.pyqtSlot()
+    def toggleParticles(self) -> None:
+        for sample in self._sampleviews:
+            sample.getGraphOverlayObj().toggleParticleVisibility()
+
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
             self._startDrag = event.pos()
@@ -100,8 +104,6 @@ class MultiSampleView(QtWidgets.QGraphicsView):
                 self._draggedView.activate()
                 self._startDrag = self.mapToScene(event.pos())
         else:
-            for view in self._sampleviews:
-                view.mousePressEvent(event)
             super(MultiSampleView, self).mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -118,8 +120,6 @@ class MultiSampleView(QtWidgets.QGraphicsView):
                 self._draggedView.setY(self._draggedView.y() - move.y())
             self._startDrag = p0
         else:
-            for view in self._sampleviews:
-                view.mouseMoveEvent(event)
             super(MultiSampleView, self).mouseMoveEvent(event)
             
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:
@@ -314,14 +314,6 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         """
         for sample in self._sampleviews:
             self._removeElementsFromSample(sample)
-
-    @QtCore.pyqtSlot(str)
-    def _updateElementsFromSample(self, samplename: str) -> None:
-        for sample in self._sampleviews:
-            if sample.getName() == samplename:
-                self._removeElementsFromSample(sample)
-                self._addElementsFromSample(sample)
-                break
 
     def _addElementsFromSample(self, sample: 'SampleView') -> None:
         self.scene().addItem(sample)

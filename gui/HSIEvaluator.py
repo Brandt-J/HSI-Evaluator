@@ -215,7 +215,8 @@ class MainWindow(QtWidgets.QMainWindow):
         Opens a new sample view that can be used for database queries.
         """
         newView: 'SampleView' = self._multiSampleView.addSampleView()
-        newView.setUp("", np.zeros((10, 300, 300)), np.arange(10))  # some placeholder data
+        defaultCube: np.ndarray = np.zeros((1000, 300, 300))
+        newView.setUp("", defaultCube, np.arange(defaultCube.shape[0]))  # some placeholder data
         self.enableWidgets()
 
     def _loadView(self, fname: str) -> None:
@@ -299,14 +300,20 @@ class MainWindow(QtWidgets.QMainWindow):
         filemenu.addSeparator()
         filemenu.addAction(closeAct)
 
-        toolsMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Tools", self)
-        toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("&Toggle Sample Info", self)
+        visibilityMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Visibility", self)
+        toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("Toggle Sample &Info", self)
         toggleToolBarsAct.triggered.connect(self._multiSampleView.toggleSampleToolbars)
-        toggleToolBarsAct.setShortcut("H")
-        toolsMenu.addAction(toggleToolBarsAct)
+        toggleToolBarsAct.setShortcut("I")
+        
+        toggleParticlesAct: QtWidgets.QAction = QtWidgets.QAction("Toggle &Particles", self)
+        toggleParticlesAct.triggered.connect(self._multiSampleView.toggleParticles)
+        toggleParticlesAct.setShortcut("P")
+
+        visibilityMenu.addAction(toggleToolBarsAct)
+        visibilityMenu.addAction(toggleParticlesAct)
 
         self.menuBar().addMenu(filemenu)
-        self.menuBar().addMenu(toolsMenu)
+        self.menuBar().addMenu(visibilityMenu)
 
     def _createLayout(self) -> None:
         """
