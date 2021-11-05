@@ -28,8 +28,8 @@ from readConfig import sampleDirectory
 from dataObjects import View, getFilePathHash
 from loadCube import loadCube
 from legacyConvert import assertUpToDateView
-from gui.sampleview import MultiSampleView
-from gui.graphOverlays import GraphView
+from gui.multisampleview import MultiSampleView
+from gui.graphOverlays import GraphOverlays
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
 from gui.classUI import ClassCreator, ClassificationUI
@@ -64,7 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disableWidgets()
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
-        graphView: 'GraphView' = sampleView.getGraphView()
+        graphView: 'GraphOverlays' = sampleView.getGraphOverlayObj()
         graphView.SelectionChanged.connect(self._preprocSelector.updatePreviewSpectra)
 
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
@@ -201,17 +201,22 @@ class MainWindow(QtWidgets.QMainWindow):
         :param savePath: the full path to where to save the view
         """
         viewObj: View = View()
-        viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
+        for sample in self._multiSampleView.getSampleViews():
+            sample.saveCoordinatesToSampleData()
+            viewObj.samples.append(sample.getSampleDataToSave())
+
         viewObj.processingGraph = self._preprocSelector.getProcessingGraph()
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)
 
-    def _newView(self) -> None:
+    def _newSampleView(self) -> None:
         """
-        Opens a new view that can be used for database queries.
+        Opens a new sample view that can be used for database queries.
         """
-        self._multiSampleView.addSampleView()
+        newView: 'SampleView' = self._multiSampleView.addSampleView()
+        defaultCube: np.ndarray = np.zeros((1000, 300, 300))
+        newView.setUp("", defaultCube, np.arange(defaultCube.shape[0]))  # some placeholder data
         self.enableWidgets()
 
     def _loadView(self, fname: str) -> None:
@@ -230,6 +235,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
         self._clsCreator.deleteAllClasses()
         self._multiSampleView.createListOfSamples(view.samples)
+        self._multiSampleView.positonSampleViewsAsSaved()
         self._preprocSelector.applyPreprocessingConfig(view.processingGraph)
         self._preprocSelector.updatePreviewSpectra()
         self.enableWidgets()
@@ -266,7 +272,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filemenu: QtWidgets.QMenu = QtWidgets.QMenu("&File", self)
         newAct: QtWidgets.QAction = QtWidgets.QAction("&New Sample", self)
         newAct.setShortcut("Ctrl+N")
-        newAct.triggered.connect(self._newView)
+        newAct.triggered.connect(self._newSampleView)
 
         openAct: QtWidgets.QAction = QtWidgets.QAction("&Open Sample(s)", self)
         openAct.setShortcut("Ctrl+O")
@@ -294,7 +300,20 @@ class MainWindow(QtWidgets.QMainWindow):
         filemenu.addSeparator()
         filemenu.addAction(closeAct)
 
+        visibilityMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Visibility", self)
+        toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("Toggle Sample &Info", self)
+        toggleToolBarsAct.triggered.connect(self._multiSampleView.toggleSampleToolbars)
+        toggleToolBarsAct.setShortcut("I")
+        
+        toggleParticlesAct: QtWidgets.QAction = QtWidgets.QAction("Toggle &Particles", self)
+        toggleParticlesAct.triggered.connect(self._multiSampleView.toggleParticles)
+        toggleParticlesAct.setShortcut("P")
+
+        visibilityMenu.addAction(toggleToolBarsAct)
+        visibilityMenu.addAction(toggleParticlesAct)
+
         self.menuBar().addMenu(filemenu)
+        self.menuBar().addMenu(visibilityMenu)
 
     def _createLayout(self) -> None:
         """

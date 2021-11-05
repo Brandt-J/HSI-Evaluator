@@ -16,340 +16,64 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import random
-import json
-from PyQt5 import QtWidgets, QtGui, QtCore
-import pickle
-import os
-from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
-import numpy as np
 from copy import deepcopy
+from typing import *
+import numpy as np
+from PIL import Image, ImageEnhance
+from PyQt5 import QtWidgets, QtCore, QtGui
 
-from logger import getLogger
-from projectPaths import getAppFolder
-from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices, WavelengthsNotSetError
-from dataObjects import Sample
-from loadCube import loadCube
-from legacyConvert import assertUpToDateSample
-from gui.graphOverlays import GraphView, ThresholdSelector, getThresholdedImage
-from gui.dbWin import DBUploadWin
-from gui.dbQueryWin import DatabaseQueryWindow
-from gui.classUI import ClassInterpretationParams
 from classification.classifyProcedures import createClassImg
+from dataObjects import Sample
+from gui.dbQueryWin import DatabaseQueryWindow
+from gui.dbWin import DBUploadWin
+from gui.graphOverlays import GraphOverlays, ThresholdSelector, cube2RGB, getThresholdedImage
+from gui.sampleInfo import SampleInfo
+from loadCube import loadCube
+from logger import getLogger
+from spectraObject import SpectraObject, getSpectraFromIndices
 
 if TYPE_CHECKING:
-    from gui.HSIEvaluator import MainWindow
     from logging import Logger
     from particles import ParticleHandler
+    from gui.HSIEvaluator import MainWindow
+    from gui.classUI import ClassInterpretationParams
 
 
-class MultiSampleView(QtWidgets.QScrollArea):
+class SampleView(QtWidgets.QGraphicsObject):
     """
-    Container class for showing multiple sampleviews in a ScrollArea.
+    Grphical element for displaying a sample.
     """
-    SampleClosed: QtCore.pyqtSignal = QtCore.pyqtSignal()
-
-    def __init__(self, mainWinParent: 'MainWindow'):
-        super(MultiSampleView, self).__init__()
-
-        self._mainWinParent: 'MainWindow' = mainWinParent
-        self._sampleviews: List['SampleView'] = []
-        self._logger: 'Logger' = getLogger('MultiSampleView')
-        screenRes: QtCore.QSize = QtWidgets.QApplication.primaryScreen().size()
-        multiViewWidth: int = int(round(screenRes.width() * 0.5))
-        self.setMinimumWidth(multiViewWidth)
-
-    def addSampleView(self) -> 'SampleView':
-        """
-        Adds a new sampleview and sets up the graphView properly
-        :return: the new sampleview
-        """
-        newView: 'SampleView' = SampleView()
-        newView.setMainWindowReferences(self._mainWinParent)
-        newView.SizeChanged.connect(self._recreateLayout)
-        newView.Activated.connect(self._viewActivated)
-        newView.Closed.connect(self._viewClosed)
-        newView.WavelenghtsChanged.connect(self._assertIdenticalWavelengths)
-        newView.activate()
-        self._mainWinParent.setupConnections(newView)
-
-        self._sampleviews.append(newView)
-        self._logger.debug("New Sampleview added")
-        self._recreateLayout()
-        return newView
-
-    def updateClassificationResults(self):
-        for sampleView in self._sampleviews:
-            sampleView.updateClassImageInGraphView()
-            sampleView.updateParticlesInGraphUI()
-
-    def _assertIdenticalWavelengths(self) -> None:
-        """
-        Asserts that all samples have identical wavelenghts. If multiple wavelength axes are present, the shortest
-        axis is used.
-        """
-        shortestWavelenghts, shortestWavelengthsLength = None, np.inf
-        for sample in self._sampleviews:
-            try:
-                curWavelenghts: np.ndarray = sample.getWavelengths()
-            except WavelengthsNotSetError:
-                pass  # we just skip it here
-            else:
-                if len(curWavelenghts) < shortestWavelengthsLength:
-                    shortestWavelengthsLength = len(curWavelenghts)
-                    shortestWavelenghts = curWavelenghts
-
-        if shortestWavelenghts is not None:
-            for sample in self._sampleviews:
-                try:
-                    sample.getSpecObj().remapToWavelenghts(shortestWavelenghts)
-                except WavelengthsNotSetError:
-                    pass  # We can safely ignore that here.
-
-    def loadSampleViewFromFile(self, fpath: str) -> None:
-        """Loads the sample configuration from the file and creates a sampleview accordingly"""
-        newSampleData: 'Sample' = Sample()
-        with open(fpath, "rb") as fp:
-            loadedSampleData: 'Sample' = pickle.load(fp)
-
-        loadedSampleData = assertUpToDateSample(loadedSampleData)
-        newSampleData.__dict__.update(loadedSampleData.__dict__)
-        self._createNewSampleFromSampleData(newSampleData)
-        
-    def createListOfSamples(self, sampleList: List['Sample']) -> None:
-        """Creates a list of given samples and replaces the currently opened with that."""
-        self._logger.info("Closing all samples, opening the following new ones..")
-        for sample in self._sampleviews:
-            sample.close()
-        self._sampleviews = []
-        for sample in sampleList:
-            self._createNewSampleFromSampleData(sample)
-            self._logger.info(f"Creating sample {sample.name}")
-        self._recreateLayout()
-
-    def _createNewSampleFromSampleData(self, sampleData: Sample) -> None:
-        """
-        Creates a new sample and configures it according to the provided sample data object
-        """
-        newView: SampleView = self.addSampleView()
-        newView.setSampleData(sampleData)
-        newView.setupFromSampleData()
-
-        self._mainWinParent.updateClassCreatorClasses()
-
-    def saveSamples(self) -> None:
-        """
-        Saves all the loaded samples individually.
-        """
-        for sample in self._sampleviews:
-            self._saveSampleView(sample)
-
-    def getSampleViews(self) -> List['SampleView']:
-        """Returns a list of all samples"""
-        return self._sampleviews.copy()
-
-    def getActiveSample(self) -> 'SampleView':
-        """
-        Returns the currently active sample.
-        """
-        activeSample: Union[None, 'SampleView'] = None
-        for sample in self._sampleviews:
-            if sample.isActive():
-                activeSample = sample
-                break
-        assert activeSample is not None
-        return activeSample
-
-    def getWavelengths(self) -> np.ndarray:
-        """
-        Returns the wavelength axis.
-        """
-        wavelenghts: Union[None, np.ndarray] = None
-        for sample in self._sampleviews:
-            try:
-                sampleWavelengths: np.ndarray = sample.getWavelengths()
-            except WavelengthsNotSetError:
-                self._logger.warning(f"No wavelengths set in sample {sample.getName()}")
-            else:
-                if wavelenghts is None:
-                    wavelenghts = sampleWavelengths
-                else:
-                    assert np.array_equal(wavelenghts, sampleWavelengths)
-
-        assert wavelenghts is not None
-        return wavelenghts
-
-    def getClassNamesFromAllSamples(self) -> Set[str]:
-        """
-        Returns the class names that are used from all the samples that are currently loaded.
-        """
-        clsNames: List[str] = []
-        for sample in self._sampleviews:
-            clsNames += list(sample.getClassNames())
-        return set(clsNames)
-
-    def getLabelledSpectraFromActiveView(self) -> SpectraCollection:
-        """
-        Gets the labelled Spectra, in form of a dictionary, from the active sampleview
-        :return: SpectraCollection with all the daata
-        """
-        specColl: SpectraCollection = SpectraCollection()
-        for view in self._sampleviews:
-            if view.isActive():
-                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra()
-                specColl.addSpectraDict(spectra, view.getName())
-                break
-        return specColl
-
-    def getLabelledSpectraFromAllViews(self) -> SpectraCollection:
-        """
-        Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
-        :return: SpectraCollectionObject
-        """
-        specColl: SpectraCollection = SpectraCollection()
-        for view in self._sampleviews:
-            specColl.addSpectraDict(view.getVisibleLabelledSpectra(), view.getName())
-        return specColl
-
-    def closeAllSamples(self) -> None:
-        """
-        Closes all opened sample views.
-        """
-        for sample in self._sampleviews:
-            sample.close()
-        self._recreateLayout()
-
-    @QtCore.pyqtSlot(str)
-    def _viewClosed(self, samplename: str) -> None:
-        for view in self._sampleviews:
-            if view.getName() == samplename:
-                self._sampleviews.remove(view)
-                self._logger.info(f"Closed Sample {samplename}")
-                self.SampleClosed.emit()
-                self._recreateLayout()
-                break
-
-    def _saveSampleView(self, sampleview: 'SampleView') -> None:
-        """
-        Saves the given sampleview.
-        """
-        directory: str = self.getSampleSaveDirectory()
-        savePath: str = os.path.join(directory, sampleview.getSaveFileName())
-        sampleData: 'Sample' = sampleview.getSampleDataToSave()
-        with open(savePath, "wb") as fp:
-            pickle.dump(sampleData, fp)
-
-        self._logger.info(f"Saved sampleview {sampleview.getName()} at {savePath}")
-
-    @QtCore.pyqtSlot(str)
-    def _viewActivated(self, samplename: str) -> None:
-        """
-        Handles activation of a new sampleview, i.e., deactivates the previously active one.
-        :param samplename: The name of the sample
-        :return:
-        """
-        for view in self._sampleviews:
-            if view.getName() != samplename and view.isActive():
-                view.deactivate()
-
-    def _recreateLayout(self) -> None:
-        """
-        Recreates the groupbox and layout containing the sampleviews, whenever a new sample is loaded.
-        This ensures correct sizing of all child items.
-        :return:
-        """
-        group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        for sample in self._sampleviews:
-            layout.addWidget(sample)
-        group.setLayout(layout)
-        self.setWidget(group)
-
-    @staticmethod
-    def getSampleSaveDirectory() -> str:
-        """
-        Returns the path of a directory used for storing individual sample views.
-        """
-        path: str = os.path.join(getAppFolder(), "Samples")
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    @staticmethod
-    def getViewSaveDirectory() -> str:
-        """
-        Returns the path of a directoy used for storing the entirety of the current selection.
-        """
-        path: str = os.path.join(getAppFolder(), "Views")
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    def exportSpectra(self) -> None:
-        """
-        Exports the labelled spectra for use in other software.
-        """
-        specColl: SpectraCollection = self.getLabelledSpectraFromAllViews()
-        specArr, assignments = specColl.getXY()
-
-        folder: str = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory where to save to.")
-        numSpecs, ok = QtWidgets.QInputDialog.getInt(self, "Max. Number of Spectra to Export?",
-                                                     "Enter the max. number of spectra to export.",
-                                                          2000, 100, 10000, 500)
-        if folder and ok:
-            if len(assignments) > numSpecs:
-                randInd: np.ndarray = np.array(random.sample(list(np.arange(len(assignments))), numSpecs))
-                specArr = specArr[randInd, :]
-                assignments = assignments[randInd]
-
-            uniqueAssignments: List[str] = list(np.unique(assignments))
-            assignmentDict: Dict[str, int] = {cls: uniqueAssignments.index(cls)+1 for cls in assignments}  # class 0 get's ignored by PLS Toolbox, hence we have the +1 here.
-            numberAssignments: np.ndarray = np.array([assignmentDict[cls] for cls in assignments])
-
-            specPath: str = os.path.join(folder, f"Exported Spectra from {len(self._sampleviews)} samples.txt")
-            np.savetxt(specPath, specArr)
-            assignPath: str = os.path.join(folder, f"Exported Assignments from {len(self._sampleviews)} samples.txt")
-            np.savetxt(assignPath, numberAssignments)
-
-            codePath: str = os.path.join(folder, f"Exported Spectra Encoding from {len(self._sampleviews)} samples.txt")
-            with open(codePath, "w") as fp:
-                json.dump(assignmentDict, fp)
-
-            QtWidgets.QMessageBox.about(self, "Info", f"Spectra and Assignments saved to\n{folder}\n\n"
-                                                      f"Class encoding:\n"
-                                                      f"{assignmentDict}")
-
-
-class SampleView(QtWidgets.QMainWindow):
-    """
-    Subwindow for displaying a sample.
-    """
-    SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     Renamed: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Closed: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     BackgroundSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     WavelenghtsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    NewClassificationResult: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         super(SampleView, self).__init__()
+        self.setAcceptHoverEvents(True)
+
         self._sampleData: Sample = Sample()
+        self._isActive: bool = False
 
         self._mainWindow: Union[None, 'MainWindow'] = None
-        self._graphView: 'GraphView' = GraphView()
+        self._graphOverlays: 'GraphOverlays' = GraphOverlays()
         self._threshSelector: Union[None, ThresholdSelector] = None
         self._dbQueryWin: Union[None, DatabaseQueryWindow] = None
         self._dbWin: Union[None, DBUploadWin] = None
         self._logger: 'Logger' = getLogger('SampleView')
 
-        self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        self.setCentralWidget(self._group)
+        self._sampleInfo: SampleInfo = SampleInfo(self._sampleData.name)
 
-        self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
+        self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
+        self._sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample")
+        self._dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database")
+        self._particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles")
+
         self._imgAdjustWidget: ImageAdjustWidget = ImageAdjustWidget()
-        self._imgAdjustWidget.ValuesChanged.connect(self._graphView.updateImage)
-
-        self._activeBtn: ActivateToggleButton = ActivateToggleButton()
-        self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._imgAdjustWidget.ValuesChanged.connect(self.updateImage)
 
         self._closeAct: QtWidgets.QAction = QtWidgets.QAction("Close")
         self._uploadAct: QtWidgets.QAction = QtWidgets.QAction("Upload to Database")
@@ -357,20 +81,20 @@ class SampleView(QtWidgets.QMainWindow):
         self._selectBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Brightness Select/\nParticleDetection")
         self._adjustBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Adjust Brightness/Contrast")
 
-        self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Training")
-        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Inference")
-        self._toggleParticleCheckbox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Show Particles")
-
-        self._toolbar = QtWidgets.QToolBar()
-        self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
+        self._pixmap: Optional[QtGui.QPixmap] = None
 
         self._establish_connections()
         self._configureWidgets()
-        self._createLayout()
-        self._createToolbar()
-        self._createMenuBar()
+        self._createContextMenu()
 
         self._setupWidgetsFromSampleData()
+
+    def boundingRect(self) -> QtCore.QRectF:
+        rect: QtCore.QRectF = QtCore.QRectF()
+        if self._pixmap is not None:
+            rect.setWidth(float(self._pixmap.size().width()))
+            rect.setHeight(float(self._pixmap.size().height()))
+        return rect
 
     @property
     def _classes2Indices(self) -> Dict[str, Set[int]]:
@@ -393,7 +117,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._sampleData.name = newName
 
     def setMainWindowReferences(self, parent: 'MainWindow') -> None:
-        self._graphView.setParentReferences(self, parent)
+        self._graphOverlays.setParentReferences(self, parent)
         self._mainWindow = parent
 
     def setUp(self, filePath: str, cube: np.ndarray, wavelengths: np.ndarray) -> None:
@@ -403,17 +127,42 @@ class SampleView(QtWidgets.QMainWindow):
         self._setupWidgetsFromSampleData()
         self.WavelenghtsChanged.emit()
 
+    def mousePressEvent(self, event) -> None:
+        if event.modifiers() == QtCore.Qt.ControlModifier:
+            self.activate()
+        elif event.button() == QtCore.Qt.RightButton:
+            screenpos: QtCore.QPointF = event.screenPos()
+            screenpos: QtCore.QPoint = QtCore.QPoint(int(screenpos.x()), int(screenpos.y()))
+            self._contextMenu.exec_(screenpos)
+
+    def hoverMoveEvent(self, event) -> None:
+        pos: QtCore.QPointF = self.mapToItem(self, event.pos())
+        x, y = int(round(pos.x())), int(round(pos.y()))
+        cube: np.ndarray = self.getSpecObj().getCube()
+        if cube is not None:
+            if 0 <= x < cube.shape[2] and 0 <= y < cube.shape[1]:
+                cursorSpec: np.ndarray = cube[:, y, x][np.newaxis, :]
+                for proc in self._mainWindow.getPreprocessorsForSpecPreview():
+                    cursorSpec = proc.applyToSpectra(cursorSpec)
+
+                self._mainWindow.getresultPlots().updateCursorSpectrum(cursorSpec[0])
+
+    def toggleToolarVisibility(self) -> None:
+        self._sampleInfo.setVisible(not self._sampleInfo.isVisible())
+
     def setupFromSampleData(self) -> None:
         cube, wavelengths = loadCube(self._sampleData.filePath)
         self.setCube(cube, wavelengths)
-        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
-        self._graphView.setParticles(self._sampleData.getAllParticles())
+        self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
+        self._graphOverlays.setParticles(self._sampleData.getAllParticles(), self.scene())
         self._setupWidgetsFromSampleData()
         self._mainWindow.updateClassCreatorClasses()
 
+    def saveCoordinatesToSampleData(self) -> None:
+        self._sampleData.viewCoordinates = self.pos().x(), self.pos().y()
+
     def _setupWidgetsFromSampleData(self) -> None:
-        self._nameLabel.setText(self._sampleData.name)
-        self.SizeChanged.emit()
+        self._sampleInfo.setName(self._sampleData.name)
 
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray) -> None:
         """
@@ -422,7 +171,7 @@ class SampleView(QtWidgets.QMainWindow):
         :param wavelengths: The corresponding K wavelengths.
         """
         self._sampleData.specObj.setCube(cube, wavelengths)
-        self._graphView.setUpToCube(cube)
+        self._pixmap = self._graphOverlays.setUpToCube(cube)
 
     def getSpecObj(self) -> 'SpectraObject':
         """
@@ -433,8 +182,8 @@ class SampleView(QtWidgets.QMainWindow):
     def getName(self) -> str:
         return self._name
 
-    def getGraphView(self) -> 'GraphView':
-        return self._graphView
+    def getGraphOverlayObj(self) -> 'GraphOverlays':
+        return self._graphOverlays
 
     def getWavelengths(self) -> np.ndarray:
         return self._sampleData.specObj.getWavelengths()
@@ -496,18 +245,13 @@ class SampleView(QtWidgets.QMainWindow):
     def getSaveFileName(self) -> str:
         return self._sampleData.getFileHash() + '.pkl'
 
-    def resetClassificationOverlay(self) -> None:
-        """
-        Resets the current classification overlay.
-        """
-        self._graphView.resetClassImage()
-
     def updateParticlesInGraphUI(self) -> None:
         """
         Forces an update of particles in the graph ui from the currently set sample data.
         """
         interpretationParams: 'ClassInterpretationParams' = self._mainWindow.getClassInterprationParams()
-        self._graphView.updateParticleColors(self._sampleData.getParticleHandler(), interpretationParams)
+        self._graphOverlays.updateParticleColors(self._sampleData.getParticleHandler(), interpretationParams)
+        self.NewClassificationResult.emit()
 
     def updateClassImageInGraphView(self) -> None:
         """
@@ -521,25 +265,24 @@ class SampleView(QtWidgets.QMainWindow):
             colorDict: Dict[str, Tuple[int, int, int]] = self._mainWindow.getClassColorDict()
 
             clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
-            self._graphView.updateClassImage(clfImg)
+            self._graphOverlays.updateClassImage(clfImg)
+        self.NewClassificationResult.emit()
 
     def isActive(self) -> bool:
-        return self._activeBtn.isChecked()
+        return self._isActive
 
     def isSelectedForTraining(self) -> bool:
-        return self._trainCheckBox.isChecked()
+        return self._sampleInfo.isCheckedForTraining()
 
     def isSelectedForInference(self) -> bool:
-        return self._inferenceCheckBox.isChecked()
+        return self._sampleInfo.isCheckedForInference()
 
     def activate(self) -> None:
-        self._activeBtn.setChecked(True)
-        self._activeBtn.setEnabled(False)
+        self._isActive = True
         self.Activated.emit(self._name)
 
     def deactivate(self) -> None:
-        self._activeBtn.setChecked(False)
-        self._activeBtn.setEnabled(True)
+        self._isActive = False
 
     @QtCore.pyqtSlot(str)
     def removeClass(self, className: str) -> None:
@@ -551,51 +294,19 @@ class SampleView(QtWidgets.QMainWindow):
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
 
-    def _createLayout(self) -> None:
-        self._layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
-        self._group.setLayout(self._layout)
-        self._layout.addWidget(self._graphView)
+    def _createContextMenu(self) -> None:
+        self._sampleMenu.addAction(self._adjustBrightnessAct)
+        self._sampleMenu.addSeparator()
+        self._sampleMenu.addAction(self._closeAct)
 
-    def _createToolbar(self):
-        nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
-        nameGroup.setLayout(QtWidgets.QHBoxLayout())
-        nameGroup.layout().addWidget(self._editNameBtn)
-        nameGroup.layout().addWidget(self._nameLabel)
+        self._dbMenu.addAction(self._uploadAct)
+        self._dbMenu.addAction(self._downloadAct)
 
-        clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Usage in classification:")
-        clsGroup.setLayout(QtWidgets.QHBoxLayout())
-        clsGroup.layout().addWidget(self._trainCheckBox)
-        clsGroup.layout().addWidget(self._inferenceCheckBox)
+        self._particlesMenu.addAction(self._selectBrightnessAct)
 
-        toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        toolGroup.setFlat(True)
-        toolGroup.setLayout(QtWidgets.QHBoxLayout())
-        # toolGroup.layout().addWidget(self._activeBtn)  # Can be re-included if considered necessary...
-        # toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(nameGroup)
-        toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(clsGroup)
-        toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(self._toggleParticleCheckbox)
-
-        self._toolbar.addWidget(toolGroup)
-
-    def _createMenuBar(self) -> None:
-        sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample", self)
-        sampleMenu.addAction(self._adjustBrightnessAct)
-        sampleMenu.addSeparator()
-        sampleMenu.addAction(self._closeAct)
-
-        dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database", self)
-        dbMenu.addAction(self._uploadAct)
-        dbMenu.addAction(self._downloadAct)
-
-        particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles", self)
-        particlesMenu.addAction(self._selectBrightnessAct)
-
-        self.menuBar().addMenu(sampleMenu)
-        self.menuBar().addMenu(dbMenu)
-        self.menuBar().addMenu(particlesMenu)
+        self._contextMenu.addMenu(self._sampleMenu)
+        self._contextMenu.addMenu(self._dbMenu)
+        self._contextMenu.addMenu(self._particlesMenu)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
         for subwin in [self._dbWin, self._threshSelector, self._imgAdjustWidget]:
@@ -603,30 +314,39 @@ class SampleView(QtWidgets.QMainWindow):
                 subwin.close()
         a0.accept()
 
+    @QtCore.pyqtSlot(float, int, float)
+    def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
+        """
+        Updating the previewed image with new zero value and contrast factor
+        :param maxBrightness: Highest brightness to clip to
+        :param newZero: integer value of the new zero value
+        :param newContrast: float factor for contrast adjustment (1.0 = unchanged)
+        :return:
+        """
+        QtWidgets.QMessageBox.warning(self, "Sorry", "At the moment not yet reimplemented...")
+        # newImg: np.ndarray = cube2RGB(self._sampleData.getSpecCube(), maxBrightness)
+        # if newZero != 0:
+        #     newImg = newImg.astype(np.float)
+        #     newImg = np.clip(newImg + newZero, 0, 255)
+        #     newImg = newImg.astype(np.uint8)
+        #
+        # if newContrast != 1.0:
+        #     img: Image = Image.fromarray(newImg)
+        #     contrastObj = ImageEnhance.Contrast(img)
+        #     newImg = np.array(contrastObj.enhance(newContrast))
+        #
+        # raise NotImplementedError  # Needs to be properly implemented!!!
+
     def _renameSample(self) -> None:
-        newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
+        newName, ok = QtWidgets.QInputDialog.getText(self._mainWindow, "Please enter a new name", "", text=self._name)
         if ok and newName != '':
             self._logger.info(f"Renaming {self._name} into {newName}")
             self._name = newName
-            self._nameLabel.setText(newName)
+            self._sampleInfo.setName(newName)
             self.Renamed.emit()
 
-    def _checkActivation(self) -> None:
-        if self._activeBtn.isChecked():
-            self.Activated.emit(self._name)
-
     def _configureWidgets(self) -> None:
-        self._toggleParticleCheckbox.setChecked(True)
-        self._toggleParticleCheckbox.stateChanged.connect(self._toggleParticleVisibility)
-
-        newFont: QtGui.QFont = QtGui.QFont()
-        newFont.setBold(True)
-        newFont.setPixelSize(18)
-        self._nameLabel.setFont(newFont)
-
-        self._editNameBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogResetButton')))
-        self._editNameBtn.released.connect(self._renameSample)
-        self._editNameBtn.setToolTip("Rename Sample.")
+        self._sampleInfo.getChangeNameBtn().ButtonClicked.connect(self._renameSample)
 
         self._closeAct.triggered.connect(lambda: self.Closed.emit(self._name))
         self._closeAct.setToolTip("Close Sample.")
@@ -637,15 +357,15 @@ class SampleView(QtWidgets.QMainWindow):
         self._downloadAct.triggered.connect(self._downloadFromSQL)
         self._downloadAct.setToolTip("Download Spectra from SQL Database.")
 
-        self._trainCheckBox.setChecked(True)
-        self._inferenceCheckBox.setChecked(True)
-
         self._selectBrightnessAct.triggered.connect(self._selectByBrightness)
         self._adjustBrightnessAct.triggered.connect(self._adjustBrightness)
 
+        self._sampleInfo.setParentItem(self)
+        infoHeight: int = self._sampleInfo.boundingRect().height()
+        self._sampleInfo.setPos(-(infoHeight + 5), -50)
+
     def _establish_connections(self) -> None:
-        self._activeBtn.toggled.connect(self._checkActivation)
-        self._graphView.NewSelection.connect(self._addNewSelection)
+        self._graphOverlays.NewSelection.connect(self._addNewSelection)
 
     @QtCore.pyqtSlot(str, set)
     def _addNewSelection(self, selectedClass: str,  selectedIndices: Set[int]) -> None:
@@ -661,8 +381,8 @@ class SampleView(QtWidgets.QMainWindow):
         Opens the Threshold Selector to select bright or dark areas of the image.
         """
         self._mainWindow.disableWidgets()
-        self._threshSelector = ThresholdSelector(self._graphView.getAveragedImage())
-        self._threshSelector.ThresholdChanged.connect(self._graphView.previewPixelsAccordingThreshold)
+        self._threshSelector = ThresholdSelector(self._graphOverlays.getAveragedImage())
+        self._threshSelector.ThresholdChanged.connect(self._graphOverlays.previewPixelsAccordingThreshold)
         self._threshSelector.ThresholdSelected.connect(self._finishThresholdSelection)
         self._threshSelector.SelectionCancelled.connect(self._cancelThresholdSelection)
         self._threshSelector.ParticleDetectionRequired.connect(self._runParticleDetection)
@@ -682,7 +402,7 @@ class SampleView(QtWidgets.QMainWindow):
         :param thresh: Int Threshold (0...255)
         :param bright: If True, the pixels brighter than the threshold are selected, otherwise the darker ones.
         """
-        self._graphView.selectPixelsAccordingThreshold(thresh, bright)
+        self._graphOverlays.selectPixelsAccordingThreshold(thresh, bright)
         self._closeThresholdSelector()
 
     @QtCore.pyqtSlot()
@@ -690,7 +410,7 @@ class SampleView(QtWidgets.QMainWindow):
         """
         Triggered when the Threshold Selector is closed or the cancel btn is pressed.
         """
-        self._graphView.hideSelections()
+        self._graphOverlays.hideSelections()
         self._closeThresholdSelector()
 
     def _closeThresholdSelector(self):
@@ -703,7 +423,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._threshSelector.SelectionCancelled.disconnect()
         self._threshSelector.close()
         self._threshSelector = None
-        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+        self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
         self._mainWindow.enableWidgets()
 
     def _uploadToSQL(self) -> None:
@@ -749,7 +469,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._setupWidgetsFromSampleData()
         self.WavelenghtsChanged.emit()
 
-        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+        self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
 
     def _finishSQLDownload(self) -> None:
         """
@@ -760,12 +480,6 @@ class SampleView(QtWidgets.QMainWindow):
         self._dbQueryWin.AcceptResult.disconnect()
         self._dbQueryWin = None
         self._mainWindow.updateClassCreatorClasses()
-
-    def _toggleParticleVisibility(self) -> None:
-        """
-        Toggles visibility of particle contour items in the graph view.
-        """
-        self._graphView.setParticleVisibility(self._toggleParticleCheckbox.isChecked())
 
     @QtCore.pyqtSlot(int, bool)
     def _runParticleDetection(self, threshold: int, selectBright: bool) -> None:
@@ -780,8 +494,15 @@ class SampleView(QtWidgets.QMainWindow):
                                                  threshold, selectBright)
         particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
         particleHandler.getParticlesFromImage(binImg)
-        self._graphView.setParticles(particleHandler.getParticles())
+        self._graphOverlays.setParticles(particleHandler.getParticles(), self.scene())
         self._closeThresholdSelector()
+
+    def paint(self, painter: QtGui.QPainter, option, widget) -> None:
+        if self._pixmap is not None:
+            painter.drawPixmap(0, 0, self._pixmap)
+            if self._isActive:
+                painter.setPen(QtCore.Qt.white)
+                painter.drawRect(self.boundingRect())
 
 
 class ImageAdjustWidget(QtWidgets.QWidget):

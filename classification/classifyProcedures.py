@@ -121,20 +121,22 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
 
 
 def classifySamples(inferenceSampleList: List['SampleView'], classifier: 'BaseClassifier', mode: 'ClassifyMode',
-                    preprocessors: List['Preprocessor'], stopEvent: Event, iterationCallback: Callable) -> None:
+                    preprocessors: List['Preprocessor'], perParticleBinning: int, stopEvent: Event,
+                    iterationCallback: Callable) -> None:
     """
     Method for training the classifier and applying it to the samples. It currently also does the preprocessing.
     :param inferenceSampleList: List of Samples on which we want to run classification.
     :param classifier: The Classifier to use
     :param mode: The classification mode to do.
     :param preprocessors: Preprocessors to use.
+    :param perParticleBinning: Binning of spectra, if classification in particle mode.
     :param stopEvent: Event that is Set if the process should be cancelled
     :param iterationCallback: Function that is called after finishing each sample
     """
     for sample in inferenceSampleList:
         if stopEvent.is_set():
             return
-        classifySample(sample.getSampleData(), classifier, mode, preprocessors)
+        classifySample(sample.getSampleData(), classifier, mode, preprocessors, perParticleBinning)
 
         if mode == ClassifyMode.WholeImage:
             sample.updateClassImageInGraphView()
@@ -144,13 +146,15 @@ def classifySamples(inferenceSampleList: List['SampleView'], classifier: 'BaseCl
         iterationCallback()
 
 
-def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode, preprocessors: List['Preprocessor']) -> None:
+def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: ClassifyMode, preprocessors: List['Preprocessor'],
+                   perparticleBinning: int) -> None:
     """
     Estimates the classes for each spectrum
     :param sample: The Sample to classifiy
     :param classifier: The Classifier object to use.
     :param mode: The classification mode to apply.
-    :param preprocessors: The preprocessors to apply.
+    :param preprocessors: The preprocessor to apply.
+    :param perparticleBinning: If mode is particle mode, the number of spectra to bin per particle
     """
     logger: 'Logger' = getLogger("Classifier Inference")
 
@@ -172,7 +176,7 @@ def classifySample(sample: 'Sample', classifier: 'BaseClassifier', mode: Classif
         if len(particles) == 0:
             logger.warning(f"No particles found in sample {sample.name}, cannot classify them..")
         for particle in particles:
-            specArr: np.ndarray = particle.getSpectraArray(cube)
+            specArr: np.ndarray = particle.getSpectraArray(cube, binning=perparticleBinning)
             specArr = preprocessSpectra(specArr, preprocessors, background)
             try:
                 batchRes: 'BatchClassificationResult' = classifier.predict(specArr)

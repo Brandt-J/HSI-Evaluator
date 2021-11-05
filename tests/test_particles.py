@@ -1,5 +1,6 @@
 from unittest import TestCase
 
+import numpy as np
 from sklearn.preprocessing import LabelEncoder
 
 from particles import ParticleHandler, Particle
@@ -49,7 +50,8 @@ class TestParticleHandler(TestCase):
         specVals1: np.ndarray = np.unique(specArr1)
         specVals2: np.ndarray = np.unique(specArr2)
 
-        self.assertEqual(specArr1.shape[0], 25)  # the 5x5 px Particle. If that ever fails and shows 100 px, maybe the algorithms where changed and now first the 10x10 px particle is returned??
+        self.assertEqual(specArr1.shape[0],
+                         25)  # the 5x5 px Particle. If that ever fails and shows 100 px, maybe the algorithms where changed and now first the 10x10 px particle is returned??
         self.assertEqual(specArr1.shape[1], cube.shape[0])
         self.assertEqual(len(specVals1), 1)
         self.assertEqual(specVals1[0], valPart2)
@@ -62,7 +64,7 @@ class TestParticleHandler(TestCase):
     def test_getAssignment(self) -> None:
         encoder: LabelEncoder = LabelEncoder().fit(np.array(["class1", "class2", "class3"]))
         highProb, lowProb = 0.8, 0.6
-        highOtherProb, lowOtherProb = (1-highProb) / 2, (1-lowProb) / 2
+        highOtherProb, lowOtherProb = (1 - highProb) / 2, (1 - lowProb) / 2
 
         numClass1HighProb, numClass1LowProb = 5, 3
         numClass2HighProb, numClass2LowProb = 2, 2
@@ -97,3 +99,26 @@ class TestParticleHandler(TestCase):
                 for partthresh in [0.5, 0.75]:  # class1 abundancy is enough, class1 abundancy is NOT enough
                     params = ClassInterpretationParams(specConfCutoff, partthresh, ignoreUnknown)
                     particle.getAssignment(params)  # make sure all go through nicely.
+
+
+class TestParticle(TestCase):
+    def test_get_spectra_array(self):
+        img: np.ndarray = np.zeros((50, 50), dtype=np.uint8)
+        img[10:40, 10:40] = 1
+        contours, _ = cv2.findContours(img, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+        particle: Particle = Particle(0, contours[0])
+
+        cube: np.ndarray = np.random.rand(10, 50, 50)
+        specArrNoBinning: np.ndarray = particle.getSpectraArray(cube, 1)
+        numSpecsNoBinning: int = specArrNoBinning.shape[0]
+        for binning in [3, 5, 10, 17, numSpecsNoBinning, int(numSpecsNoBinning*1.5)]:
+            specArrBinned: np.ndarray = particle.getSpectraArray(cube, binning)
+            numSpecsBinned: int = specArrBinned.shape[0]
+            if binning < numSpecsNoBinning:
+                if numSpecsNoBinning % binning == 0:
+                    expectedNum: int = numSpecsNoBinning // binning
+                else:
+                    expectedNum = numSpecsNoBinning // binning + 1
+            else:
+                expectedNum = 1
+            self.assertEqual(numSpecsBinned, expectedNum)

@@ -41,6 +41,7 @@ class Sample:
         self.specObj: SpectraObject = SpectraObject()  # Spectra Object
         self.batchResult: Union[None, 'BatchClassificationResult'] = None
         self.particleHandler: ParticleHandler = ParticleHandler()
+        self.viewCoordinates: Optional[Tuple[float, float]] = None  # x, y coordinates of the sampleview
 
     def setDefaultName(self) -> None:
         if len(self.filePath) > 0:

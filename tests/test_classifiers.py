@@ -39,7 +39,7 @@ from gui.sampleview import SampleView
 if TYPE_CHECKING:
     from gui.classUI import TrainClfTab, LoadClfTab
     from collections import Counter
-    from gui.graphOverlays import GraphView
+    from gui.graphOverlays import GraphOverlays
     from preprocessing.preprocessors import Preprocessor
 
 
@@ -172,7 +172,7 @@ class TestClassifiers(TestCase):
         allCorrect: bool = True
         for sample in mainWin.getAllSamples():
             sampleCorrect: bool = False
-            graphView: 'GraphView' = sample.getGraphView()
+            graphView: 'GraphOverlays' = sample.getGraphOverlayObj()
             self.assertTrue(graphView._classOverlay._overlayArr is not None)
             sampleCorrect = True
 
@@ -193,8 +193,8 @@ class MockMainWin(MainWindow):
         data1.classes2Indices = {"class1": set(np.arange(20) + 20),
                                  "class2": set(np.arange(20) + 60)}
         sample1: SampleView = SampleView()
-        sample1._trainCheckBox.setChecked(True)
-        sample1._inferenceCheckBox.setChecked(True)
+        sample1._sampleInfo._checkTrain._isChecked = True
+        sample1._sampleInfo._checkTest._isChecked = True
         sample1.setSampleData(data1)
         sample1.setMainWindowReferences(self)
 
@@ -207,8 +207,8 @@ class MockMainWin(MainWindow):
         data2.classes2Indices = {"class1": set(np.arange(20) + 20),
                                  "class2": set(np.arange(20) + 60)}
         sample2: SampleView = SampleView()
-        sample2._trainCheckBox.setChecked(True)
-        sample2._inferenceCheckBox.setChecked(True)
+        sample2._sampleInfo._checkTrain._isChecked = True
+        sample2._sampleInfo._checkTest._isChecked = True
         sample2.setSampleData(data2)
         sample2.setMainWindowReferences(self)
         cube2: np.ndarray = createRandomCubeToClassLabels(self.cubeShape, data2.classes2Indices)
