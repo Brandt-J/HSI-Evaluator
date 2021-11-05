@@ -161,7 +161,7 @@ class TestSampleView(TestCase):
             newView._name = getSampleName(i)
 
         for i in reversed(range(numSamplesOrig)):
-            multiView._viewClosed(getSampleName(i))
+            multiView._closeSample(getSampleName(i))
             self.assertEqual(len(multiView.getSampleViews()), i)
             remainingSampleNames = [view.getName() for view in multiView.getSampleViews()]
             self.assertTrue(getSampleName(i) not in remainingSampleNames)

@@ -333,6 +333,7 @@ class ClassificationUI(QtWidgets.QGroupBox):
         self._timer: QtCore.QTimer = QtCore.QTimer()
         self._samplesFinished: int = 0  # Counter for tracking classifcation process
 
+        self._spinParticleBinning: QtWidgets.QSpinBox = QtWidgets.QSpinBox()
         self._spinSpecConf: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._spinPartConf: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._checkIgnoreUnknowns: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Ignore 'Unknown'")
@@ -371,11 +372,13 @@ class ClassificationUI(QtWidgets.QGroupBox):
             self._progressbar = QtWidgets.QProgressDialog(f"Inference on {len(inferenceSamples)} samples.", "Abort",
                                                           0, len(inferenceSamples), parent=self)
             self._progressbar.setFixedWidth(300)
+            self._progressbar.setMinimumDuration(0)
             self._progressbar.canceled.connect(self._cancelClassification)
             self._stopEvent = Event()
             self._samplesFinished = 0
             self._thread = Thread(target=cp.classifySamples, args=(inferenceSamples, activeClf, clfMode,
                                                                    self._mainWin.getPreprocessorsForClassification(),
+                                                                   self._spinParticleBinning.value(),
                                                                    self._stopEvent, self._incrementClassificationCounter))
             self._timer.start(100)
             self._thread.start()
@@ -415,6 +418,12 @@ class ClassificationUI(QtWidgets.QGroupBox):
 
         self._applyBtn.released.connect(self._runClassification)
 
+        self._spinParticleBinning.setMinimum(1)
+        self._spinParticleBinning.setMaximum(100000)
+        self._spinParticleBinning.setValue(1)
+        self._spinParticleBinning.setToolTip("Binning during particle inference.\n"
+                                             "Within the spectra of a particle, n of the particle spectra are averaged.")
+
         self._radioParticles.setChecked(True)
         
         for spinbox in [self._spinSpecConf, self._spinPartConf]:
@@ -443,10 +452,12 @@ class ClassificationUI(QtWidgets.QGroupBox):
         layout = self._layout
 
         infOptnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Run classification on")
-        infOptnLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        infOptnLayout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
         infOptnGroup.setLayout(infOptnLayout)
-        infOptnLayout.addWidget(self._radioImage)
-        infOptnLayout.addWidget(self._radioParticles)
+        infOptnLayout.addWidget(self._radioImage, 0, 0)
+        infOptnLayout.addWidget(self._radioParticles, 0, 1)
+        infOptnLayout.addWidget(QtWidgets.QLabel("Particle Binning"), 1, 0)
+        infOptnLayout.addWidget(self._spinParticleBinning, 1, 1)
 
         confidenceGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Classifcation Options")
         confidenceLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
@@ -711,6 +722,7 @@ class TrainClfTab(QtWidgets.QWidget):
                                                                    self._receiveTrainResult))
 
             self._progressBar = QtWidgets.QProgressDialog(f"Training on {len(trainSamples)} Samples", "Abort", 0, 0, parent=self)
+            self._progressBar.setMinimumDuration(0)
             self._progressBar.canceled.connect(self._cancelTraining)
             self._progressBar.setFixedWidth(300)
             self._timer.start(100)

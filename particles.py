@@ -112,10 +112,11 @@ class Particle:
         """
         return self._contour
 
-    def getSpectraArray(self, cube: np.ndarray) -> np.ndarray:
+    def getSpectraArray(self, cube: np.ndarray, binning: int = 1) -> np.ndarray:
         """
         Takes the spectrum cube and extracts the spectra according the particle's contour.
         :param cube: 3D spec cube
+        :param binning: number of spectra to average. If binning=1, no binning is performed.
         :return: MxN array of M specs with N wavelenghts
         """
         specs: List[np.ndarray] = []
@@ -124,7 +125,31 @@ class Particle:
         indY, indX = np.where(mask == 1)
         for y, x in zip(indY, indX):
             specs.append(cube[:, y, x])
-        return np.array(specs)
+
+        specs: np.ndarray = np.array(specs)
+
+        if binning > 1:
+            numSpecs: int = specs.shape[0]
+            if binning >= numSpecs:
+                binnedSpecs: np.ndarray = np.mean(specs, axis=0)[np.newaxis, :]
+            else:
+                binnedSpecs: List[np.ndarray] = []
+                ind: np.ndarray = np.arange(binning)
+                for i in range(numSpecs // binning):
+                    if i > 0:
+                        ind += binning
+                    binnedSpecs.append(np.mean(specs[ind, :], axis=0))
+                lastIndex: int = ind[-1]
+                if lastIndex < numSpecs - 1:  # one or more spectra are left
+                    if lastIndex == numSpecs-2:  # exactly one spec is left
+                        binnedSpecs.append(specs[-1, :])
+                    else:  # more specs are left
+                        binnedSpecs.append(np.mean(specs[lastIndex:, :], axis=0))
+                binnedSpecs: np.ndarray = np.array(binnedSpecs)
+
+            specs = binnedSpecs
+
+        return specs
 
     def setBatchResult(self, batchRes: 'BatchClassificationResult') -> None:
         """
