@@ -41,7 +41,7 @@ class NeuralNetClf(Sequential):
             self.add(Dropout(dropout))
         self.add(Dense(numClasses, activation="softmax"))
         self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision(), Recall()])
-        self.summary()
+        # self.summary()
 
 
 class ConvNeuralNetCLF(Sequential):
