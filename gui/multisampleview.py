@@ -224,15 +224,18 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         Creates a new sample and configures it according to the provided sample data object.
         Also handles legacy conversion.
         """
-        newSampleData: 'Sample' = Sample()
-        loadedSampleData = assertUpToDateSample(sampleData)
-        newSampleData.__dict__.update(loadedSampleData.__dict__)
+        if os.path.exists(sampleData.filePath):
+            newSampleData: 'Sample' = Sample()
+            loadedSampleData = assertUpToDateSample(sampleData)
+            newSampleData.__dict__.update(loadedSampleData.__dict__)
 
-        newView: SampleView = self.addSampleView()
-        newView.setSampleData(newSampleData)
+            newView: SampleView = self.addSampleView()
+            newView.setSampleData(newSampleData)
 
-        newView.setupFromSampleData()
-        self._mainWinParent.updateClassCreatorClasses()
+            newView.setupFromSampleData()
+            self._mainWinParent.updateClassCreatorClasses()
+        else:
+            self._logger.info(f"Not loading sample {sampleData.name}, cube does not exist at {sampleData.filePath}")
 
     def saveSamples(self) -> None:
         """
