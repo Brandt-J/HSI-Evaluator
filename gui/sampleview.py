@@ -385,7 +385,7 @@ class SampleView(QtWidgets.QGraphicsObject):
         self._threshSelector.ThresholdChanged.connect(self._graphOverlays.previewPixelsAccordingThreshold)
         self._threshSelector.ThresholdSelected.connect(self._finishThresholdSelection)
         self._threshSelector.SelectionCancelled.connect(self._cancelThresholdSelection)
-        self._threshSelector.ParticleDetectionRequired.connect(self._runParticleDetection)
+        self._threshSelector.ParticleDetectionRequired.connect(self.runParticleDetection)
 
         self._threshSelector.show()
 
@@ -403,7 +403,7 @@ class SampleView(QtWidgets.QGraphicsObject):
         :param bright: If True, the pixels brighter than the threshold are selected, otherwise the darker ones.
         """
         self._graphOverlays.selectPixelsAccordingThreshold(thresh, bright)
-        self._closeThresholdSelector()
+        self._finishParticleDetection()
 
     @QtCore.pyqtSlot()
     def _cancelThresholdSelection(self) -> None:
@@ -411,18 +411,20 @@ class SampleView(QtWidgets.QGraphicsObject):
         Triggered when the Threshold Selector is closed or the cancel btn is pressed.
         """
         self._graphOverlays.hideSelections()
-        self._closeThresholdSelector()
+        self._finishParticleDetection()
 
-    def _closeThresholdSelector(self):
+    def _finishParticleDetection(self):
         """
         Closes and disconnects the threshold selector, re-enables widgets in main window and reset the selection
         widget to the actual selected classes.
         """
-        self._threshSelector.ThresholdSelected.disconnect()
-        self._threshSelector.ThresholdChanged.disconnect()
-        self._threshSelector.SelectionCancelled.disconnect()
-        self._threshSelector.close()
-        self._threshSelector = None
+        if self._threshSelector is not None:
+            self._threshSelector.ThresholdSelected.disconnect()
+            self._threshSelector.ThresholdChanged.disconnect()
+            self._threshSelector.SelectionCancelled.disconnect()
+            self._threshSelector.close()
+            self._threshSelector = None
+            
         self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
         self._mainWindow.enableWidgets()
 
@@ -482,20 +484,25 @@ class SampleView(QtWidgets.QGraphicsObject):
         self._mainWindow.updateClassCreatorClasses()
 
     @QtCore.pyqtSlot(int, bool)
-    def _runParticleDetection(self, threshold: int, selectBright: bool) -> None:
+    def runParticleDetection(self, threshold: Union[int, None], selectBright: bool) -> None:
         """
         Takes a threshold and a brightness bool for creating a thresholded image that is used for creating a new
         list of particles. The particle handler stores this list and the graph view creates the according gui elements.
-        :param threshold: The threshold to use (int, 0...255)
+        :param threshold: The threshold to use (int, 0...255). If None, Otsu's method is used to determine the threshold.
         :param selectBright: If True, the bright areas are selected, otherwise the darker ones.
         """
         cube: np.ndarray = self._sampleData.specObj.getCube()
-        binImg: np.ndarray = getThresholdedImage(cube, self._imgAdjustWidget.getSelectedMaxBrightness(),
-                                                 threshold, selectBright)
-        particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
-        particleHandler.getParticlesFromImage(binImg)
-        self._graphOverlays.setParticles(particleHandler.getParticles(), self.scene())
-        self._closeThresholdSelector()
+        try:
+            binImg: np.ndarray = getThresholdedImage(cube, self._imgAdjustWidget.getSelectedMaxBrightness(),
+                                                     threshold, selectBright)
+        except TypeError:
+            QtWidgets.QMessageBox.warning(self, "Error", "TypeError in getting thresholded image for particle detection.")
+
+        else:
+            particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
+            particleHandler.getParticlesFromImage(binImg)
+            self._graphOverlays.setParticles(particleHandler.getParticles(), self.scene())
+        self._finishParticleDetection()
 
     def paint(self, painter: QtGui.QPainter, option, widget) -> None:
         if self._pixmap is not None:

@@ -375,20 +375,28 @@ def getBrightOrDarkIndices(cube: np.ndarray, maxBrightness: float, threshold: in
     return set(np.where(binImg.flatten())[0])
 
 
-def getThresholdedImage(cube: np.ndarray, maxBrightness: float, threshold: int, bright: bool = True) -> np.ndarray:
+def getThresholdedImage(cube: np.ndarray, maxBrightness: float, threshold: Union[int, None], bright: bool = True) -> np.ndarray:
     """
     Returns a thresholded image of the given spec cube.
     :param cube: shape (K, M, N) cube of MxN spectra with K wavelenghts
     :param maxBrightness: Max brightness value to use for clipping the cube while converting to grayscale image
-    :param threshold: The threshold value (0 - 255) to use for thresholding
+    :param threshold: The threshold value (0 - 255) to use for thresholding. If None, OTSU's method is applied to find a threshold
     :param bright: If True, the bright pixel indices are returned, otherwise the dark ones
     :return Set of Pixel Indices
     """
-    avgImg: np.ndarray = np.mean(cube2RGB(cube, maxBrightness), axis=2)
-    if bright:
-        thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY)
+    avgImg: np.ndarray = np.mean(cube2RGB(cube, maxBrightness), axis=2).astype(np.uint8)
+    if type(threshold) == int:
+        if bright:
+            thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY)
+        else:
+            thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY_INV)
+    elif threshold is None:
+        if bright:
+            thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+        else:
+            thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
     else:
-        thresh, binImg = cv2.threshold(avgImg, threshold, 255, cv2.THRESH_BINARY_INV)
+        raise TypeError
     return binImg
 
 

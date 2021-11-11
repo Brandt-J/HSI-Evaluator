@@ -34,7 +34,7 @@ class TestDatabase(TestCase):
         conn: DBConnection = DBConnection()
         self.assertTrue(conn._connection is None)
         conn.connect()
-        self.assertEqual(type(conn._connection), mysql.connector.connection.MySQLConnection)
+        self.assertEqual(type(conn._connection), mysql.connector.connection_cext.CMySQLConnection)
         conn.disconnect()
         self.assertTrue(conn._connection is None)
 

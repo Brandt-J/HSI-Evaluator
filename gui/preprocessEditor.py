@@ -22,8 +22,11 @@ from PyQt5 import QtWidgets, QtCore
 from typing import List, TYPE_CHECKING, Union
 import numpy as np
 from collections import Counter
+
+from logger import getLogger
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
+    from logging import Logger
     from spectraObject import SpectraCollection
     from gui.HSIEvaluator import MainWindow
     from gui.spectraPlots import ResultPlots
@@ -40,6 +43,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         self._nodeGraph: NodeGraph = NodeGraph()
         self._nodeGraph.ClassificationPathHasChanged.connect(lambda: self.ProcessorStackUpdated.emit())
 
+        self._logger: 'Logger' = getLogger("PreprocSelector")
         self._mainWin: 'MainWindow' = mainWinParent
         self._plots: 'ResultPlots' = resultPlots
         self._nodeGraph.NewSpecsForScatterPlot.connect(self._plots.updateScatterPlot)
@@ -79,7 +83,7 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
             self._nodeGraph.setInputSpectra(spectra)
             self._nodeGraph.updatePlotNodes()
         else:
-            self._showNoSpectraWarning()
+            self._logger.info("No selected spectra, cannot update plot.")
 
     def getPreprocessorsForClassification(self) -> List['Preprocessor']:
         """
@@ -111,10 +115,6 @@ class PreprocessingSelector(QtWidgets.QGroupBox):
         :param processConfig: List of Node Configurations (nodeDicts)
         """
         self._nodeGraph.applyGraphConfig(processConfig)
-
-    def _showNoSpectraWarning(self) -> None:
-        QtWidgets.QMessageBox.about(self, "Info", "Spectra Preprocessing cannot be previewed.\n"
-                                                  "There are now spectra currently labelled.")
 
     def _limitToMaxNumber(self, spectra: np.ndarray, labels: np.ndarray, sampleNames: np.ndarray):
         """

@@ -94,6 +94,11 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         for sample in self._sampleviews:
             sample.getGraphOverlayObj().toggleParticleVisibility()
 
+    @QtCore.pyqtSlot()
+    def runParticleDetectionInAllSamples(self) -> None:
+        for sampleview in self._sampleviews:
+            sampleview.runParticleDetection(threshold=None, selectBright=True)  # run OTSU thresholding
+
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
         if event.button() == QtCore.Qt.MiddleButton:
             self._startDrag = event.pos()

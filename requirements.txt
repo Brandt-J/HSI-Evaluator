@@ -9,6 +9,6 @@ scikit-learn==1.0.1
 scipy==1.6.3
 scikit-image~=0.18.1
 mysql-connector-python~=8.0.26
-dataclasses~=0.8
+dataclasses
 opencv
 tensorflow~=2.6.0

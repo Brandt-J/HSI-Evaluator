@@ -57,6 +57,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
         self._exportSpecAct: QtWidgets.QAction = QtWidgets.QAction("&Export Spectra to ASCII")
+        self._detectParticlesAct: QtWidgets.QAction = QtWidgets.QAction("&Detect Particles")
 
         self._configureWidgets()
         self._createMenuBar()
@@ -288,6 +289,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._exportSpecAct.triggered.connect(self._multiSampleView.exportSpectra)
         self._exportSpecAct.setShortcut("Ctrl+E")
 
+        self._detectParticlesAct.triggered.connect(self._multiSampleView.runParticleDetectionInAllSamples)
+
         closeAct: QtWidgets.QAction = QtWidgets.QAction("Close &Program", self)
         closeAct.triggered.connect(self.close)
 
@@ -296,9 +299,12 @@ class MainWindow(QtWidgets.QMainWindow):
         filemenu.addSeparator()
         filemenu.addAction(loadViewAct)
         filemenu.addAction(self._saveViewAct)
-        filemenu.addAction(self._exportSpecAct)
         filemenu.addSeparator()
         filemenu.addAction(closeAct)
+
+        toolsmenu: QtWidgets.QMenu = QtWidgets.QMenu("&Tools", self)
+        toolsmenu.addAction(self._exportSpecAct)
+        toolsmenu.addAction(self._detectParticlesAct)
 
         visibilityMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Visibility", self)
         toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("Toggle Sample &Info", self)
@@ -313,6 +319,7 @@ class MainWindow(QtWidgets.QMainWindow):
         visibilityMenu.addAction(toggleParticlesAct)
 
         self.menuBar().addMenu(filemenu)
+        self.menuBar().addMenu(toolsmenu)
         self.menuBar().addMenu(visibilityMenu)
 
     def _createLayout(self) -> None:

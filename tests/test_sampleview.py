@@ -235,7 +235,6 @@ class TestSampleView(TestCase):
 
     def test_loadFromSample(self) -> None:
         imgClf: MainWindow = MainWindow()
-        imgClf._preprocSelector._showNoSpectraWarning = lambda: print('no spectra, no preprocessed spectra preview..')
         sample: Sample = Sample()
         sample.name = 'Sample1'
         sample.classes2Indices = {'Background': {1, 2, 3, 4},
