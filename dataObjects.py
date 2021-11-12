@@ -42,6 +42,8 @@ class Sample:
         self.batchResult: Union[None, 'BatchClassificationResult'] = None
         self.particleHandler: ParticleHandler = ParticleHandler()
         self.viewCoordinates: Optional[Tuple[float, float]] = None  # x, y coordinates of the sampleview
+        self.flippedHorizontally: bool = False
+        self.flippedVertically: bool = False
 
     def setDefaultName(self) -> None:
         if len(self.filePath) > 0:

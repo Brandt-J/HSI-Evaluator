@@ -164,12 +164,35 @@ class SampleView(QtWidgets.QGraphicsObject):
     def _setupWidgetsFromSampleData(self) -> None:
         self._sampleInfo.setName(self._sampleData.name)
 
+    def flipHorizontally(self) -> None:
+        targetFlipped: bool = not self._sampleData.flippedHorizontally
+        self._sampleData.flippedHorizontally = True
+        cube: np.ndarray = self._sampleData.getSpecCube()
+        wavelengths = self.getWavelengths()
+        self.setCube(cube, wavelengths)
+        self._sampleData.flippedHorizontally = targetFlipped
+        print("is flipped horizontally", self._sampleData.flippedHorizontally)
+
+    def flipVertically(self) -> None:
+        targetFlipped: bool = not self._sampleData.flippedVertically
+        self._sampleData.flippedVertically = True
+        cube: np.ndarray = self._sampleData.getSpecCube()
+        wavelengths = self.getWavelengths()
+        self.setCube(cube, wavelengths)
+        self._sampleData.flippedVertically = targetFlipped
+        print("is flipped vertically", self._sampleData.flippedVertically)
+
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray) -> None:
         """
         Sets references to the spec cube.
         :param cube: Shape (KxMxN) cube with MxN spectra of K wavelenghts
         :param wavelengths: The corresponding K wavelengths.
         """
+        if self._sampleData.flippedHorizontally:
+            cube = np.flip(cube, axis=2)
+        if self._sampleData.flippedVertically:
+            cube = np.flip(cube, axis=1)
+
         self._sampleData.specObj.setCube(cube, wavelengths)
         self._pixmap = self._graphOverlays.setUpToCube(cube)
 

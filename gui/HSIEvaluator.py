@@ -58,6 +58,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
         self._exportSpecAct: QtWidgets.QAction = QtWidgets.QAction("&Export Spectra to ASCII")
         self._detectParticlesAct: QtWidgets.QAction = QtWidgets.QAction("&Detect Particles")
+        self._flipVerticalAct: QtWidgets.QAction = QtWidgets.QAction("Flip vertically")
+        self._flipHorizontalAct: QtWidgets.QAction = QtWidgets.QAction("Flip horizontally")
 
         self._configureWidgets()
         self._createMenuBar()
@@ -290,7 +292,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._exportSpecAct.setShortcut("Ctrl+E")
 
         self._detectParticlesAct.triggered.connect(self._multiSampleView.runParticleDetectionInAllSamples)
-
+        self._flipHorizontalAct.triggered.connect(self._multiSampleView.flipSamplesHorizontally)
+        self._flipVerticalAct.triggered.connect(self._multiSampleView.flipSamplesVertically)
         closeAct: QtWidgets.QAction = QtWidgets.QAction("Close &Program", self)
         closeAct.triggered.connect(self.close)
 
@@ -305,6 +308,9 @@ class MainWindow(QtWidgets.QMainWindow):
         toolsmenu: QtWidgets.QMenu = QtWidgets.QMenu("&Tools", self)
         toolsmenu.addAction(self._exportSpecAct)
         toolsmenu.addAction(self._detectParticlesAct)
+        toolsmenu.addSeparator()
+        toolsmenu.addAction(self._flipVerticalAct)
+        toolsmenu.addAction(self._flipHorizontalAct)
 
         visibilityMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Visibility", self)
         toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("Toggle Sample &Info", self)
