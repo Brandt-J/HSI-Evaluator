@@ -217,8 +217,13 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
             pos: QtCore.QPoint = self.mapToItem(self, event.pos())
             cubeShape = self._graphParent.getCube().shape
             if pos.x() < cubeShape[2] and pos.y() < cubeShape[1]:
-                self.startNewSelection(pos, self._mainWin.getCurrentColor())
-                self._selecting = True
+                try:
+                    color: Tuple[int, int, int] = self._mainWin.getCurrentColor()
+                except AssertionError:
+                    QtWidgets.QMessageBox.about(self._mainWin, "Info", "Cannot start selection, no class selected")
+                else:
+                    self.startNewSelection(pos, color)
+                    self._selecting = True
         else:
             super(SelectionOverlay, self).mousePressEvent(event)
 
