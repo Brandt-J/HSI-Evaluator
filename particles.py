@@ -75,6 +75,18 @@ class ParticleHandler:
         for particle in self._particles.values():
             particle.resetResult()
 
+    def flipParticlesVertically(self, cubeShape: tuple) -> None:
+        cubeHeight: int = cubeShape[1]
+        for particle in self._particles.values():
+            cnt: np.ndarray = particle.getContour()
+            cnt[:, 0, 1] = cubeHeight - cnt[:, 0, 1]
+
+    def flipParticlesHorizontally(self, cubeShape: tuple) -> None:
+        cubeWidth: int = cubeShape[2]
+        for particle in self._particles.values():
+            cnt: np.ndarray = particle.getContour()
+            cnt[:, 0, 0] = cubeWidth - cnt[:, 0, 0]
+
 
 @dataclass
 class Particle:

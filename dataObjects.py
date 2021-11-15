@@ -16,10 +16,11 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-from copy import copy
 from typing import *
 import hashlib
 import os
+
+import numba
 import numpy as np
 
 from spectraObject import SpectraObject, getSpectraFromIndices
@@ -66,6 +67,24 @@ class Sample:
                 indices = self.classes2Indices[cls_name]
                 break
         return indices
+
+    def flipHorizontally(self) -> None:
+        cube: np.ndarray = np.flip(self.specObj.getCube(), axis=2)
+        self.specObj.setCube(cube)
+        self.particleHandler.flipParticlesHorizontally(cube.shape)
+        for cls, indices in self.classes2Indices.items():
+            self.classes2Indices[cls] = flipIndicesHorizontally(indices, cube.shape)
+
+        self.flippedHorizontally = not self.flippedHorizontally
+
+    def flipVertically(self) -> None:
+        cube: np.ndarray = np.flip(self.specObj.getCube(), axis=1)
+        self.specObj.setCube(cube)
+        self.particleHandler.flipParticlesVertically(cube.shape)
+        for cls, indices in self.classes2Indices.items():
+            self.classes2Indices[cls] = flipIndicesVertically(indices, cube.shape)
+
+        self.flippedVertically = not self.flippedVertically
 
     def getAllParticles(self) -> List['Particle']:
         """
@@ -146,3 +165,32 @@ def getFilePathHash(fpath: str) -> str:
     before actually creating them..
     """
     return hashlib.sha1(fpath.encode()).hexdigest()
+
+
+def flipIndicesVertically(indices: Set[int], cubeShape: np.ndarray) -> Set[int]:
+    """
+    Flips pixel indices vertically, according to the given spectra cube shape.
+    """
+    width: int = cubeShape[2]
+    height: int = cubeShape[1]
+    newIndices = np.zeros(len(indices), dtype=np.int64)
+    for i, ind in enumerate(indices):
+        y_orig = ind // width
+        y_new = height - y_orig - 1
+        x = ind % width
+        newIndices[i] = y_new * cubeShape[2] + x
+    return set(newIndices)
+
+
+def flipIndicesHorizontally(indices: Set[int], cubeShape: np.ndarray) -> Set[int]:
+    """
+    Flips pixel indices horizontally, according to the given spectra cube shape.
+    """
+    width: int = cubeShape[2]
+    newIndices = np.zeros(len(indices), dtype=np.int64)
+    for i, ind in enumerate(indices):
+        y = ind // width
+        x_orig = ind % width
+        x_new = width - x_orig - 1
+        newIndices[i] = y * width + x_new
+    return set(newIndices)

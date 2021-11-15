@@ -96,16 +96,22 @@ class MultiSampleView(QtWidgets.QGraphicsView):
 
     @QtCore.pyqtSlot()
     def flipSamplesHorizontally(self) -> None:
-        for sample in self._sampleviews:
-            sample.setX(-1 * sample.pos().x())
-            sample.flipHorizontally()
+        for sampleview in self._sampleviews:
+            sampleview.setX(-1 * sampleview.pos().x())
+
+            sampleview.getSampleData().flipHorizontally()
+            sampleview.setupFromSampleData()
+
         self.scene().update()
 
     @QtCore.pyqtSlot()
     def flipSamplesVertically(self) -> None:
-        for sample in self._sampleviews:
-            sample.setY(-1 * sample.pos().y())
-            sample.flipVertically()
+        for sampleview in self._sampleviews:
+            sampleview.setY(-1 * sampleview.pos().y())
+
+            sampleview.getSampleData().flipVertically()
+            sampleview.setupFromSampleData()
+
         self.scene().update()
 
     @QtCore.pyqtSlot()
@@ -236,12 +242,6 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         for sample in self._sampleviews:
             pos: Union[None, Tuple[float, float]] = sample.getSampleData().viewCoordinates
             if pos is not None:
-                pos: List[float] = list(pos)  # to enable item assignment...
-                if sample.getSampleData().flippedVertically:
-                    pos[1] = -1 * pos[1]
-                if sample.getSampleData().flippedHorizontally:
-                    pos[0] = -1 * pos[0]
-
                 sample.setPos(QtCore.QPointF(pos[0], pos[1]))
 
     def _createNewSampleFromSampleData(self, sampleData: Sample) -> None:

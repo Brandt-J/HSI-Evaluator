@@ -206,7 +206,8 @@ class MainWindow(QtWidgets.QMainWindow):
         viewObj: View = View()
         for sample in self._multiSampleView.getSampleViews():
             sample.saveCoordinatesToSampleData()
-            viewObj.samples.append(sample.getSampleDataToSave())
+            sampleData = sample.getSampleDataToSave()
+            viewObj.samples.append(sampleData)
 
         viewObj.processingGraph = self._preprocSelector.getProcessingGraph()
         viewObj.title = os.path.basename(savePath.split(".")[0])

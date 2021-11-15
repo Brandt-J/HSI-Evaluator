@@ -334,7 +334,7 @@ class SelectionOverlay(QtWidgets.QGraphicsObject):
         return set(indices)
 
 
-@numba.njit()
+@numba.njit
 def getIndices(x0: int, x1: int, y0: int, y1: int, shape: np.ndarray) -> List[int]:
     """
     Numba optimized function to get indices in selected rectangle.
