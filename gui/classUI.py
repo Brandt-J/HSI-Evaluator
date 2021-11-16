@@ -20,7 +20,7 @@ import os.path
 import pickle
 from dataclasses import dataclass
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast, Set, Optional
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -79,7 +79,7 @@ class ClassCreator(QtWidgets.QGroupBox):
     """
     UI Element for creating and deleting classes, and for toggling their visibility.
     """
-    ClassCreated: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    ClassRenamed: QtCore.pyqtSignal = QtCore.pyqtSignal(str, str)  # oldName, newName
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassActivated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassVisibilityChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
@@ -101,7 +101,36 @@ class ClassCreator(QtWidgets.QGroupBox):
         if clsName in self._classes:
             self._activeCls = clsName
             self.ClassActivated.emit(clsName)
-            
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.MouseButton.RightButton:
+            contextMenu: QtWidgets.QMenu = QtWidgets.QMenu("Class Tools", self)
+            contextMenu.addAction("Rename Active class")
+            screenpos: QtCore.QPointF = event.screenPos()
+            screenpos: QtCore.QPoint = QtCore.QPoint(int(screenpos.x()), int(screenpos.y()))
+            choice = contextMenu.exec_(screenpos)
+            if choice:
+                if choice.text() == "Rename Active class":
+                    self._renameActiveClass()
+
+    def _renameActiveClass(self) -> None:
+        oldClsName: str = self.getCurrentClass()
+        newName, ok = QtWidgets.QInputDialog.getText(self, "Renaming Class", f"Rename {oldClsName} into:", text="")
+        if ok and newName:
+            if newName in [cls.name for cls in self._classes]:
+                QtWidgets.QMessageBox.warning(self, "Warning", f"The class {newName} already exists.\n"
+                                                               f"Please try again.")
+                self._renameActiveClass()
+
+            for cls in self._classes:
+                if cls.name == oldClsName:
+                    cls.name = newName
+                    self._colorHandler.renameClass(oldClsName, newName)
+                    cls.recreateWidgets()
+                    self.ClassRenamed.emit(oldClsName, newName)
+                    self._recreateLayout()
+                    break
+
     def setupToClasses(self, classes: Set[str]) -> None:
         """
         Creates classes that are needed if they aren't yet present
@@ -278,6 +307,10 @@ class ColorHandler:
 
     def deleteAllClasses(self) -> None:
         self._name2color = {}
+
+    def renameClass(self, oldClsName: str, newClsName: str) -> None:
+        self._name2color[newClsName] = self._name2color[oldClsName]
+        del self._name2color[oldClsName]
 
     def getColorOfClassName(self, className: str) -> Tuple[int, int, int]:
         if className not in self._name2color:

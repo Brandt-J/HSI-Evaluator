@@ -301,9 +301,12 @@ class SampleView(QtWidgets.QGraphicsObject):
             del self._sampleData.classes2Indices[className]
             self._logger.info(f"Sample {self._name}: Deleted Selecion of class {className}")
             self.ClassDeleted.emit(className)
-        else:
-            self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
-                                 f"dict.. Available keys: {self._classes2Indices.keys()}")
+
+    @QtCore.pyqtSlot(str, str)
+    def renameClass(self, oldName: str, newName: str) -> None:
+        if oldName in self._classes2Indices.keys():
+            self._classes2Indices[newName] = self._classes2Indices[oldName]
+            del self._sampleData.classes2Indices[oldName]
 
     def _createContextMenu(self) -> None:
         self._sampleMenu.addAction(self._adjustBrightnessAct)

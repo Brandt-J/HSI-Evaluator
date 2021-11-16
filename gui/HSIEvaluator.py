@@ -76,6 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
         self._clsCreator.ClassDeleted.connect(sampleView.removeClass)
+        self._clsCreator.ClassRenamed.connect(sampleView.renameClass)
         sampleView.ClassDeleted.connect(graphView.removeColorOfClass)
 
     def classIsVisible(self, className: str) -> bool:
