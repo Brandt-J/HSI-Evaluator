@@ -282,6 +282,12 @@ class SampleView(QtWidgets.QGraphicsObject):
     def isSelectedForInference(self) -> bool:
         return self._sampleInfo.isCheckedForInference()
 
+    def setSelectedForInference(self, selected: bool) -> None:
+        self._sampleInfo.setCheckedForInference(selected)
+
+    def setSelectedForTraining(self, selected: bool) -> None:
+        self._sampleInfo.setCheckedForTraining(selected)
+
     def activate(self) -> None:
         self._isActive = True
         self.Activated.emit(self._name)

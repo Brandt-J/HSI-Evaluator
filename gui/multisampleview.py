@@ -115,6 +115,30 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         self.scene().update()
 
     @QtCore.pyqtSlot()
+    def selectAllForInference(self) -> None:
+        for sample in self._sampleviews:
+            sample.setSelectedForInference(True)
+        self.scene().update()
+
+    @QtCore.pyqtSlot()
+    def selectNoneForInference(self) -> None:
+        for sample in self._sampleviews:
+            sample.setSelectedForInference(False)
+        self.scene().update()
+
+    @QtCore.pyqtSlot()
+    def selectAllForTraining(self) -> None:
+        for sample in self._sampleviews:
+            sample.setSelectedForTraining(True)
+        self.scene().update()
+
+    @QtCore.pyqtSlot()
+    def selectNoneForTraining(self) -> None:
+        for sample in self._sampleviews:
+            sample.setSelectedForTraining(False)
+        self.scene().update()
+
+    @QtCore.pyqtSlot()
     def runParticleDetectionInAllSamples(self) -> None:
         for sampleview in self._sampleviews:
             sampleview.runParticleDetection(threshold=None, selectBright=True)  # run OTSU thresholding

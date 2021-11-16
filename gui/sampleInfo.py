@@ -38,12 +38,19 @@ class SampleInfo(QtWidgets.QGraphicsItem):
         self._checkTest: CheckBoxElement = CheckBoxElement("Inference")
 
         self._postitionElements()
+        self.setZValue(10)
 
     def isCheckedForTraining(self) -> bool:
         return self._checkTrain.isChecked()
 
     def isCheckedForInference(self) -> bool:
         return self._checkTest.isChecked()
+
+    def setCheckedForInference(self, checked: bool) -> None:
+        self._checkTest.setChecked(checked)
+
+    def setCheckedForTraining(self, checked: bool) -> None:
+        self._checkTrain.setChecked(checked)
 
     def getChangeNameBtn(self) -> 'EditNameButton':
         return self._editBtn
@@ -210,6 +217,10 @@ class CheckBoxElement(SampleInfoElement):
 
     def isChecked(self) -> bool:
         return self._isChecked
+
+    def setChecked(self, checked: bool) -> None:
+        self._isChecked = checked
+        self.update()
 
     def mousePressEvent(self, event) -> None:
         self._isChecked = not self._isChecked

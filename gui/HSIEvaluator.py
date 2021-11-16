@@ -60,6 +60,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._detectParticlesAct: QtWidgets.QAction = QtWidgets.QAction("&Detect Particles")
         self._flipVerticalAct: QtWidgets.QAction = QtWidgets.QAction("Flip vertically")
         self._flipHorizontalAct: QtWidgets.QAction = QtWidgets.QAction("Flip horizontally")
+        self._allTrainingAct: QtWidgets.QAction = QtWidgets.QAction("Select all for Training")
+        self._noneTrainingAct: QtWidgets.QAction = QtWidgets.QAction("Select none for Training")
+        self._allInferenceAct: QtWidgets.QAction = QtWidgets.QAction("Select all for Inference")
+        self._noneInferenceAct: QtWidgets.QAction = QtWidgets.QAction("Select none for Inference")
 
         self._configureWidgets()
         self._createMenuBar()
@@ -295,6 +299,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._detectParticlesAct.triggered.connect(self._multiSampleView.runParticleDetectionInAllSamples)
         self._flipHorizontalAct.triggered.connect(self._multiSampleView.flipSamplesHorizontally)
         self._flipVerticalAct.triggered.connect(self._multiSampleView.flipSamplesVertically)
+        self._allInferenceAct.triggered.connect(self._multiSampleView.selectAllForInference)
+        self._noneInferenceAct.triggered.connect(self._multiSampleView.selectNoneForInference)
+        self._allTrainingAct.triggered.connect(self._multiSampleView.selectAllForTraining)
+        self._noneTrainingAct.triggered.connect(self._multiSampleView.selectNoneForTraining)
+
         closeAct: QtWidgets.QAction = QtWidgets.QAction("Close &Program", self)
         closeAct.triggered.connect(self.close)
 
@@ -312,6 +321,12 @@ class MainWindow(QtWidgets.QMainWindow):
         toolsmenu.addSeparator()
         toolsmenu.addAction(self._flipVerticalAct)
         toolsmenu.addAction(self._flipHorizontalAct)
+        toolsmenu.addSeparator()
+        toolsmenu.addAction(self._allTrainingAct)
+        toolsmenu.addAction(self._noneTrainingAct)
+        toolsmenu.addSeparator()
+        toolsmenu.addAction(self._allInferenceAct)
+        toolsmenu.addAction(self._noneInferenceAct)
 
         visibilityMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Visibility", self)
         toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("Toggle Sample &Info", self)
