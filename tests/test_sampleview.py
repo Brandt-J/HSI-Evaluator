@@ -27,14 +27,14 @@ import numpy as np
 import pickle
 
 from gui.HSIEvaluator import MainWindow
-from gui.sampleview import MultiSampleView, SampleView, Sample
-from gui.graphOverlays import GraphView
-from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
+from gui.multisampleview import MultiSampleView, Sample
+from gui.sampleview import SampleView
+from gui.graphOverlays import GraphOverlays, ThresholdSelector
+from spectraObject import SpectraObject, getSpectraFromIndices, WavelengthsNotSetError
 
 if TYPE_CHECKING:
     from gui.classUI import ClassCreator
     from dataObjects import View
-    from gui.preprocessEditor import PreprocessingSelector
 
 
 def specDictEqual(dict1: Dict[str, np.ndarray], dict2: Dict[str, np.ndarray]) -> bool:
@@ -72,10 +72,10 @@ class TestSampleView(TestCase):
         sampleViews: List['SampleView'] = multiView.getSampleViews()
         self.assertEqual(len(sampleViews), 1)
 
-        graphView: GraphView = newView.getGraphView()
+        graphView: GraphOverlays = newView.getGraphOverlayObj()
         self.assertTrue(graphView._mainWin, imgClf)
 
-        sample2: SampleView = multiView.addSampleView()
+        _: SampleView = multiView.addSampleView()
         self.assertEqual(len(multiView.getSampleViews()), 2)
 
     def testSetupSampleView(self) -> None:
@@ -84,8 +84,7 @@ class TestSampleView(TestCase):
         sampleView.setUp(fname, cube, wavelenghts)
 
         self.assertEqual(sampleView._name, fname.split('.npy')[0])
-        self.assertTrue(sampleView.getGraphView()._origCube is cube)
-        self.assertTrue(sampleView.getSampleData().specObj.getCube() is cube)
+        self.assertTrue(sampleView.getGraphOverlayObj()._origCube is cube)
         self.assertTrue(np.array_equal(sampleView.getWavelengths(), np.arange(3)))
 
     def testGetSpectra(self) -> None:
@@ -108,8 +107,8 @@ class TestSampleView(TestCase):
                                     "class3": set(np.arange(9))}
 
         # only get spectra of first sample
-        sample1._activeBtn.setChecked(True)
-        sample2._activeBtn.setChecked(False)
+        sample1._isActive = True
+        sample2._isActive = False
 
         spectraSample1: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
 
@@ -119,8 +118,8 @@ class TestSampleView(TestCase):
         self.assertTrue(np.array_equal(spectraSample1["class2"].shape, np.array([7, 3])))
 
         # only get spectra of second sample
-        sample1._activeBtn.setChecked(False)
-        sample2._activeBtn.setChecked(True)
+        sample1._isActive = False
+        sample2._isActive = True
 
         spectraSample2: Dict[str, np.ndarray] = multiView.getLabelledSpectraFromActiveView().getDictionary()
         self.assertEqual(len(spectraSample2), 3)
@@ -162,14 +161,13 @@ class TestSampleView(TestCase):
             newView._name = getSampleName(i)
 
         for i in reversed(range(numSamplesOrig)):
-            multiView._viewClosed(getSampleName(i))
+            multiView._closeSample(getSampleName(i))
             self.assertEqual(len(multiView.getSampleViews()), i)
             remainingSampleNames = [view.getName() for view in multiView.getSampleViews()]
             self.assertTrue(getSampleName(i) not in remainingSampleNames)
 
     def test_saveSample(self) -> None:
         imgClf: MainWindow = MainWindow()
-        imgClf._resultPlots.updatePlots = lambda: print("Fake updating plots")
         classesSample1: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4},
                                                'class2': {5, 6, 7, 8}}
         classesSample2: Dict[str, Set[int]] = {'class1': {0, 1, 2, 3, 4, 5, 7},
@@ -235,30 +233,16 @@ class TestSampleView(TestCase):
             self.assertEqual(savedView.samples[0], sample1._sampleData)
             self.assertEqual(savedView.samples[1], sample2._sampleData)
 
-            # TODO: REIMPLEMENT
-            # self.assertEqual(len(savedView.processStack), len(preprocSelector._selected))
-            # for i in range(len(savedView.processStack)):
-            #     processorName: str = savedView.processStack[i]
-            #     self.assertEqual(processorName, preprocSelector._selected[i].text())
-
-            # reset preprocessing selector and multiview, then load the view
-            # multiView._sampleviews = []
-            # imgClf._loadView(viewPath)
-            # self.assertEqual(len(multiView._sampleviews), 2)
-            # self.assertEqual(multiView._sampleviews[0].getSampleData(), savedView.samples[0])
-            # self.assertEqual(multiView._sampleviews[1].getSampleData(), savedView.samples[1])
-            # self.assertEqual([lbl.text() for lbl in preprocSelector._selected], selectedNames)
-
     def test_loadFromSample(self) -> None:
         imgClf: MainWindow = MainWindow()
-        imgClf._preprocSelector._showNoSpectraWarning = lambda: print('no spectra, no preprocessed spectra preview..')
         sample: Sample = Sample()
         sample.name = 'Sample1'
         sample.classes2Indices = {'Background': {1, 2, 3, 4},
                                   'class2': {5, 6, 7, 8}}
-        testCube: np.ndarray = np.random.rand(3, 10, 10)
+        testCube: np.ndarray = np.random.rand(10, 5, 5)
+        sample.specObj.setCube(testCube)
 
-        multiView: MultiSampleView = MultiSampleView(imgClf)
+        multiView: MultiSampleView = imgClf._multiSampleView
         self.assertTrue(len(multiView._sampleviews) == 0)
 
         with tempfile.TemporaryDirectory() as tmpdirname:
@@ -271,16 +255,78 @@ class TestSampleView(TestCase):
 
         self.assertTrue(len(multiView._sampleviews) == 1)
         createdSample: SampleView = multiView._sampleviews[0]
-        self.assertTrue(np.array_equal(createdSample._sampleData.specObj.getCube(), testCube))
-        self.assertTrue(np.array_equal(createdSample._graphView._origCube, testCube))
+        self.assertTrue(np.array_equal(createdSample._graphOverlays._origCube, testCube))
 
-        createdSample._sampleData.specObj = None  # We now se these specObjs to None. These are at different memory locations...
+        # make sure that these objects are identical
+        self.assertTrue(createdSample._sampleData.specObj == sample.specObj)
+        self.assertDictEqual(createdSample._sampleData.particleHandler.__dict__, sample.particleHandler.__dict__)
+        # We now set them specObjs to None. These are at different memory locations and would make the assertDictEqual fail
+        createdSample._sampleData.specObj = None
         sample.specObj = None
+        createdSample._sampleData.particleHandler = None
+        sample.particleHandler = None
         self.assertDictEqual(sample.__dict__, createdSample.getSampleData().__dict__)
         classCreator: ClassCreator = imgClf._clsCreator
         presentClasses: List[str] = [cls.name for cls in classCreator._classes]
         for cls in sample.classes2Indices.keys():
             self.assertTrue(cls in presentClasses)
 
+    def test_thresholdSelector(self) -> None:
+        avgImg: np.ndarray = np.random.rand(10, 10)
+        avgImg = avgImg*255
+        avgImg = avgImg.astype(np.uint8)
+        threshSelector: ThresholdSelector = ThresholdSelector(avgImg)  # just make sure nothing fails
+
+    def test_getWavelenghts(self) -> None:
+        class MockSampleGood1:
+            def getWavelengths(self) -> np.ndarray:
+                return np.zeros(10)
+
+            def getName(self) -> str:
+                return "good sample"
 
 
+        class MockSampleGood2:
+            def getWavelengths(self) -> np.ndarray:
+                return np.zeros(12)
+
+            def getName(self) -> str:
+                return "good sample"
+
+        class MockSampleBad:
+            def getWavelengths(self) -> np.ndarray:
+                raise WavelengthsNotSetError
+
+            def getName(self) -> str:
+                return "bad sample"
+
+        multiView: MultiSampleView = MultiSampleView(None)
+        multiView._sampleviews = [MockSampleGood1(), MockSampleBad()]
+        self.assertTrue(np.array_equal(multiView.getWavelengths(), MockSampleGood1().getWavelengths()))
+
+        multiView._sampleviews = [MockSampleBad()]
+        self.assertRaises(AssertionError, multiView.getWavelengths)  # raise because no wavelengths set
+
+        multiView._sampleviews = [MockSampleGood1(), MockSampleGood2()]
+        self.assertRaises(AssertionError, multiView.getWavelengths)  # raise because inconsistent wavelengths
+
+    def test_adjustWavelenghts(self) -> None:
+        class MockMainWin:
+            def setupConnections(self, sampleView: 'SampleView') -> None:
+                pass
+
+        numWavelengthsShort, numWavelengthsLong = 10, 12
+
+        multiView: MultiSampleView = MultiSampleView(MockMainWin())
+        sampleShort: SampleView = multiView.addSampleView()
+        sampleLong: SampleView = multiView.addSampleView()
+        wavelenghtsShort: np.ndarray = np.arange(numWavelengthsShort)
+
+        sampleLong.setCube(np.random.rand(numWavelengthsLong, 10, 10), np.arange(numWavelengthsLong))
+        # now we add setup a cube that has a shorter wavelength axis
+        sampleShort.setCube(np.random.rand(numWavelengthsShort, 10, 10), wavelenghtsShort)
+
+        # we have to call that here manually, signals don't work here.
+        multiView._assertIdenticalWavelengths()
+        self.assertTrue(np.array_equal(wavelenghtsShort, sampleShort.getWavelengths()))
+        self.assertTrue(np.array_equal(wavelenghtsShort, sampleLong.getWavelengths()))

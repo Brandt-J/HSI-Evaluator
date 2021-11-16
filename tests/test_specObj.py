@@ -18,14 +18,13 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 
 from unittest import TestCase
-from unittest.mock import Mock
 from typing import *
 import numpy as np
 from PyQt5 import QtWidgets
 import sys
 
-from spectraObject import SpectraObject, SpectraCollection
-from preprocessing.preprocessors import splitUpArray
+from spectraObject import SpectraObject, SpectraCollection, WavelengthsNotSetError
+from classification.classifyProcedures import splitUpArray
 from gui.nodegraph.nodes import nodeTypes
 from gui.nodegraph.nodegraph import NodeGraph
 if TYPE_CHECKING:
@@ -55,23 +54,6 @@ def fakeSpecProcess(spectra: np.ndarray) -> np.ndarray:
 
 
 class TestSpecObject(TestCase):
-    def test_Preprocessing(self):
-        preprocessors: List['Preprocessor'] = getPreprocessors()
-        specObj: SpectraObject = SpectraObject()
-
-        for preproc in preprocessors:
-            preproc.applyToSpectra = fakeSpecProcess
-
-        cubeShape: Tuple[int, int, int] = (100, 3, 3)
-        randomCube: np.ndarray = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
-        specObj.setCube(randomCube)
-        backroundIndices: Set[int] = {0, 1, 2, 3, 4}
-        specObj.doPreprocessing(preprocessors, backroundIndices)
-
-        preprocCube: np.ndarray = specObj._preprocessedCube
-        expectedCube: np.ndarray = randomCube + len(preprocessors)  # each preprocessor adds 1 to the cube.
-        self.assertTrue(np.allclose(preprocCube, expectedCube))
-
     def test_SplitSpecArr(self):
         specArr: np.ndarray = np.random.rand(100, 30)
         for num in range(1, 10):
@@ -80,35 +62,48 @@ class TestSpecObject(TestCase):
             self.assertTrue(np.array_equal(specArr[0, :], arrList[0][0, :]))  # first entry is identical
             self.assertTrue(np.array_equal(specArr[-1, :], arrList[-1][-1, :]))  # last entry is identical
 
-    def test_IgnoreBackground(self):
+    def test_remapToWavelengths(self) -> None:
         specObj: SpectraObject = SpectraObject()
-        cubeShape: Tuple[int, int, int] = (100, 20, 20)
-        testCube: np.ndarray = np.random.rand(cubeShape[0], cubeShape[1], cubeShape[2])
+        wavelengths: np.ndarray = np.arange(10)
+        origcube: np.ndarray = np.zeros((len(wavelengths), 5, 5))
+        for i in range(origcube.shape[0]):
+            origcube[i, :, :] = i
 
-        numPixels: int = cubeShape[1] * cubeShape[2]
-        backgroundIndices: Set[int] = set(np.random.randint(0, 100, 15))
-        for ind in backgroundIndices:
-            y, x = np.unravel_index(ind, cubeShape[1:])
-            testCube[:, y, x] = 100.0  # This value is not present in the cube before (np.random procudes values between 0 and 1)
+        self.assertRaises(WavelengthsNotSetError, specObj.remapToWavelenghts, (wavelengths))  # Wavelengths were not yet set
 
-        specObj.setCube(testCube)
-        numBackgroundIndices: int = len(backgroundIndices)
-        specObj._backgroundIndices = backgroundIndices
+        specObj.setCube(origcube.copy(), wavelengths)
 
-        specArr: np.ndarray = specObj._cube2SpecArr(ignoreBackground=False)
-        numHundreds = len(np.where(specArr == 100)[0])
-        self.assertEqual(len(specArr), numPixels)
-        self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
+        # shorter Wavelenghts
+        shorterWavelenghts: np.ndarray = np.arange(8)
+        specObj.remapToWavelenghts(shorterWavelenghts)
+        shorterCube: np.ndarray = specObj._cube
+        self.assertEqual(shorterCube.shape[0], len(shorterWavelenghts))
+        for i in range(len(shorterWavelenghts)):
+            uniqueInLayer: np.ndarray = np.unique(shorterCube[i, :, :])
+            self.assertEqual(len(uniqueInLayer), 1)
+            self.assertEqual(uniqueInLayer[0], i)
 
-        specArr = specObj._cube2SpecArr(ignoreBackground=True)
-        self.assertEqual(len(specArr), numPixels-numBackgroundIndices)
-        numHundreds = len(np.where(specArr == 100)[0])
-        self.assertEqual(numHundreds, 0)
+        self.assertTrue(np.array_equal(specObj._wavelengths, shorterWavelenghts))
 
-        reconstructedCube: np.ndarray = specObj._specArr2cube(specArr, ignoreBackground=True)
-        numHundreds = len(np.where(reconstructedCube == 100)[0])
-        self.assertEqual(numHundreds, numBackgroundIndices*cubeShape[0])
-        self.assertTrue(np.array_equal(reconstructedCube, testCube))
+        # reset cube
+        specObj.setCube(origcube, wavelengths)
+
+        # longer Wavelenghts
+        longerWavelengths: np.ndarray = np.arange(15)
+        specObj.remapToWavelenghts(longerWavelengths)
+        longerCube: np.ndarray = specObj._cube
+        self.assertEqual(longerCube.shape[0], len(longerWavelengths))
+        origLen: int = origcube.shape[0]
+        for i in range(len(longerWavelengths)):
+            uniqueInLayer: np.ndarray = np.unique(longerCube[i, :, :])
+            self.assertEqual(len(uniqueInLayer), 1)
+
+            if i < origLen:
+                self.assertEqual(uniqueInLayer[0], i)
+            else:
+                self.assertEqual(uniqueInLayer[0], origLen-1)
+
+        self.assertTrue(np.array_equal(specObj._wavelengths, longerWavelengths))
 
 
 class TestSpecCollection(TestCase):

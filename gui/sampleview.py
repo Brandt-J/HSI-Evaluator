@@ -16,311 +16,85 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import random
-import json
-from PyQt5 import QtWidgets, QtGui, QtCore
-import pickle
-import os
-from typing import List, Tuple, TYPE_CHECKING, Dict, Set, Union
-import numpy as np
 from copy import deepcopy
+from typing import *
+import numpy as np
+from PIL import Image, ImageEnhance
+from PyQt5 import QtWidgets, QtCore, QtGui
 
-from logger import getLogger
-from projectPaths import getAppFolder
-from spectraObject import SpectraObject, SpectraCollection, getSpectraFromIndices
+from classification.classifyProcedures import createClassImg
 from dataObjects import Sample
-from loadCube import loadCube
-from legacyConvert import assertUpToDateSample
-from gui.graphOverlays import GraphView
+from gui.dbQueryWin import DatabaseQueryWindow
 from gui.dbWin import DBUploadWin
+from gui.graphOverlays import GraphOverlays, ThresholdSelector, cube2RGB, getThresholdedImage
+from gui.sampleInfo import SampleInfo
+from loadCube import loadCube
+from logger import getLogger
+from spectraObject import SpectraObject, getSpectraFromIndices
 
 if TYPE_CHECKING:
-    from gui.HSIEvaluator import MainWindow
     from logging import Logger
+    from particles import ParticleHandler
+    from gui.HSIEvaluator import MainWindow
+    from gui.classUI import ClassInterpretationParams
 
 
-class MultiSampleView(QtWidgets.QScrollArea):
+class SampleView(QtWidgets.QGraphicsObject):
     """
-    Container class for showing multiple sampleviews in a ScrollArea.
+    Grphical element for displaying a sample.
     """
-    SampleClosed: QtCore.pyqtSignal = QtCore.pyqtSignal()
-
-    def __init__(self, mainWinParent: 'MainWindow'):
-        super(MultiSampleView, self).__init__()
-
-        self._mainWinParent: 'MainWindow' = mainWinParent
-        self._sampleviews: List['SampleView'] = []
-        self._logger: 'Logger' = getLogger('MultiSampleView')
-        self.setMinimumWidth(850)
-
-    def addSampleView(self) -> 'SampleView':
-        """
-        Adds a new sampleview and sets up the graphView properly
-        :return: the new sampleview
-        """
-        newView: 'SampleView' = SampleView()
-        newView.setMainWindowReferences(self._mainWinParent)
-        newView.SizeChanged.connect(self._recreateLayout)
-        newView.Activated.connect(self._viewActivated)
-        newView.Closed.connect(self._viewClosed)
-        newView.activate()
-        self._mainWinParent.setupConnections(newView)
-
-        self._sampleviews.append(newView)
-        self._logger.debug("New Sampleview added")
-        return newView
-
-    def loadSampleViewFromFile(self, fpath: str) -> None:
-        """Loads the sample configuration from the file and creates a sampleview accordingly"""
-        newSampleData: 'Sample' = Sample()
-        with open(fpath, "rb") as fp:
-            loadedSampleData: 'Sample' = pickle.load(fp)
-
-        loadedSampleData = assertUpToDateSample(loadedSampleData)
-        newSampleData.__dict__.update(loadedSampleData.__dict__)
-        self._createNewSampleFromSampleData(newSampleData)
-        
-    def createListOfSamples(self, sampleList: List['Sample']) -> None:
-        """Creates a list of given samples and replaces the currently opened with that."""
-        self._logger.info("Closing all samples, opening the following new ones..")
-        for sample in self._sampleviews:
-            sample.close()
-        for sample in sampleList:
-            self._createNewSampleFromSampleData(sample)
-            self._logger.info(f"Creating sample {sample.name}")
-        self._recreateLayout()
-
-    def _createNewSampleFromSampleData(self, sampleData: Sample) -> None:
-        """
-        Creates a new sample and configures it according to the provided sample data object
-        """
-        newView: SampleView = self.addSampleView()
-        newView.setSampleData(sampleData)
-        newView.setupFromSampleData()
-
-        classes: List[str] = list(sampleData.classes2Indices.keys())
-        self._mainWinParent.checkForRequiredClasses(classes)
-
-    def saveSamples(self) -> None:
-        """
-        Saves all the loaded samples individually.
-        """
-        for sample in self._sampleviews:
-            self._saveSampleView(sample)
-
-    def getSampleViews(self) -> List['SampleView']:
-        """Returns a list of all samples"""
-        return self._sampleviews.copy()
-
-    def getActiveSample(self) -> 'SampleView':
-        """
-        Returns the currently active sample.
-        """
-        activeSample: Union[None, 'SampleView'] = None
-        for sample in self._sampleviews:
-            if sample.isActive():
-                activeSample = sample
-                break
-        assert activeSample is not None
-        return activeSample
-
-    def getWavelengths(self) -> np.ndarray:
-        return self._sampleviews[0].getWavelengths()
-
-    def getLabelledSpectraFromActiveView(self) -> SpectraCollection:
-        """
-        Gets the labelled Spectra, in form of a dictionary, from the active sampleview
-        :return: SpectraCollection with all the daata
-        """
-        specColl: SpectraCollection = SpectraCollection()
-        for view in self._sampleviews:
-            if view.isActive():
-                spectra: Dict[str, np.ndarray] = view.getVisibleLabelledSpectra()
-                specColl.addSpectraDict(spectra, view.getName())
-                break
-        return specColl
-
-    def getLabelledSpectraFromAllViews(self) -> SpectraCollection:
-        """
-        Gets the labelled Spectra, in form of a dictionary, from the all sampleviews
-        :return: SpectraCollectionObject
-        """
-        specColl: SpectraCollection = SpectraCollection()
-        for view in self._sampleviews:
-            specColl.addSpectraDict(view.getVisibleLabelledSpectra(), view.getName())
-        return specColl
-
-    def getBackgroundOfActiveSample(self) -> np.ndarray:
-        """
-        Returns the averaged background spectrum of the active sample.
-        """
-        background: Union[None, np.ndarray] = None
-        for sample in self._sampleviews:
-            if sample.isActive():
-                background = sample.getAveragedBackground()
-                break
-        assert background is not None
-        return background
-
-    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
-        """
-        Returns the averaged backgounds of all samples.
-        """
-        backgrounds: Dict[str, np.ndarray] = {}
-        for view in self._sampleviews:
-            backgrounds[view.getName()] = view.getAveragedBackground()
-        return backgrounds
-
-    def closeAllSamples(self) -> None:
-        """
-        Closes all opened sample views.
-        """
-        for sample in self._sampleviews:
-            sample.close()
-        self._recreateLayout()
-
-    @QtCore.pyqtSlot(str)
-    def _viewClosed(self, samplename: str) -> None:
-        for view in self._sampleviews:
-            if view.getName() == samplename:
-                self._sampleviews.remove(view)
-                self._logger.info(f"Closed Sample {samplename}")
-                self.SampleClosed.emit()
-                self._recreateLayout()
-                break
-
-    def _saveSampleView(self, sampleview: 'SampleView') -> None:
-        """
-        Saves the given sampleview.
-        """
-        directory: str = self.getSampleSaveDirectory()
-        savePath: str = os.path.join(directory, sampleview.getSaveFileName())
-        sampleData: 'Sample' = sampleview.getSampleDataToSave()
-        with open(savePath, "wb") as fp:
-            pickle.dump(sampleData, fp)
-
-        self._logger.info(f"Saved sampleview {sampleview.getName()} at {savePath}")
-
-    @QtCore.pyqtSlot(str)
-    def _viewActivated(self, samplename: str) -> None:
-        """
-        Handles activation of a new sampleview, i.e., deactivates the previously active one.
-        :param samplename: The name of the sample
-        :return:
-        """
-        for view in self._sampleviews:
-            if view.getName() != samplename and view.isActive():
-                view.deactivate()
-
-    def _recreateLayout(self) -> None:
-        """
-        Recreates the groupbox and layout containing the sampleviews, whenever a new sample is loaded.
-        This ensures correct sizing of all child items.
-        :return:
-        """
-        group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        for sample in self._sampleviews:
-            layout.addWidget(sample)
-        group.setLayout(layout)
-        self.setWidget(group)
-
-    @staticmethod
-    def getSampleSaveDirectory() -> str:
-        """
-        Returns the path of a directory used for storing individual sample views.
-        """
-        path: str = os.path.join(getAppFolder(), "Samples")
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    @staticmethod
-    def getViewSaveDirectory() -> str:
-        """
-        Returns the path of a directoy used for storing the entirety of the current selection.
-        """
-        path: str = os.path.join(getAppFolder(), "Views")
-        os.makedirs(path, exist_ok=True)
-        return path
-
-    def exportSpectra(self) -> None:
-        """
-        Exports the labelled spectra for use in other software.
-        """
-        specColl: SpectraCollection = self.getLabelledSpectraFromAllViews()
-        specArr, assignments = specColl.getXY()
-
-        folder: str = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Directory where to save to.")
-        numSpecs, ok = QtWidgets.QInputDialog.getInt(self, "Max. Number of Spectra to Export?",
-                                                     "Enter the max. number of spectra to export.",
-                                                          2000, 100, 10000, 500)
-        if folder and ok:
-            if len(assignments) > numSpecs:
-                randInd: np.ndarray = np.array(random.sample(list(np.arange(len(assignments))), numSpecs))
-                specArr = specArr[randInd, :]
-                assignments = assignments[randInd]
-
-            uniqueAssignments: List[str] = list(np.unique(assignments))
-            assignmentDict: Dict[str, int] = {cls: uniqueAssignments.index(cls)+1 for cls in assignments}  # class 0 get's ignored by PLS Toolbox, hence we have the +1 here.
-            numberAssignments: np.ndarray = np.array([assignmentDict[cls] for cls in assignments])
-
-            specPath: str = os.path.join(folder, f"Exported Spectra from {len(self._sampleviews)} samples.txt")
-            np.savetxt(specPath, specArr)
-            assignPath: str = os.path.join(folder, f"Exported Assignments from {len(self._sampleviews)} samples.txt")
-            np.savetxt(assignPath, numberAssignments)
-
-            codePath: str = os.path.join(folder, f"Exported Spectra Encoding from {len(self._sampleviews)} samples.txt")
-            with open(codePath, "w") as fp:
-                json.dump(assignmentDict, fp)
-
-            QtWidgets.QMessageBox.about(self, "Info", f"Spectra and Assignments saved to\n{folder}\n\n"
-                                                      f"Class encoding:\n"
-                                                      f"{assignmentDict}")
-
-
-class SampleView(QtWidgets.QMainWindow):
-    SizeChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Activated: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     Renamed: QtCore.pyqtSignal = QtCore.pyqtSignal()
     Closed: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     ClassDeleted: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
     BackgroundSelectionChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    WavelenghtsChanged: QtCore.pyqtSignal = QtCore.pyqtSignal()
+    NewClassificationResult: QtCore.pyqtSignal = QtCore.pyqtSignal()
 
     def __init__(self):
         super(SampleView, self).__init__()
+        self.setAcceptHoverEvents(True)
+
         self._sampleData: Sample = Sample()
+        self._isActive: bool = False
 
         self._mainWindow: Union[None, 'MainWindow'] = None
-        self._graphView: 'GraphView' = GraphView()
-        self._dbWin: DBUploadWin = DBUploadWin()
+        self._graphOverlays: 'GraphOverlays' = GraphOverlays()
+        self._threshSelector: Union[None, ThresholdSelector] = None
+        self._dbQueryWin: Union[None, DatabaseQueryWindow] = None
+        self._dbWin: Union[None, DBUploadWin] = None
         self._logger: 'Logger' = getLogger('SampleView')
 
-        self._group: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        self._layout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
-        self._group.setLayout(self._layout)
-        self.setCentralWidget(self._group)
+        self._sampleInfo: SampleInfo = SampleInfo(self._sampleData.name)
 
-        self._nameLabel: QtWidgets.QLabel = QtWidgets.QLabel()
-        self._brightnessSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Vertical)
-        self._contrastSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Vertical)
-        self._maxContrast: float = 5
-        self._maxBrightnessSpinbox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+        self._contextMenu: QtWidgets.QMenu = QtWidgets.QMenu()
+        self._sampleMenu: QtWidgets.QMenu = QtWidgets.QMenu("Sample")
+        self._dbMenu: QtWidgets.QMenu = QtWidgets.QMenu("Database")
+        self._particlesMenu: QtWidgets.QMenu = QtWidgets.QMenu("Particles")
 
-        self._activeBtn: ActivateToggleButton = ActivateToggleButton()
-        self._editNameBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._closeBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
-        self._uploadBtn: QtWidgets.QPushButton = QtWidgets.QPushButton()
+        self._imgAdjustWidget: ImageAdjustWidget = ImageAdjustWidget()
+        self._imgAdjustWidget.ValuesChanged.connect(self.updateImage)
 
-        self._trainCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for training")
-        self._inferenceCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox("Use for validation")
-        self._selectBrightBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Bright")
-        self._selectDarkBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select Dark")
-        self._selectNoneBtn: QtWidgets.QPushButton = QtWidgets.QPushButton("Select None")
+        self._closeAct: QtWidgets.QAction = QtWidgets.QAction("Close")
+        self._uploadAct: QtWidgets.QAction = QtWidgets.QAction("Upload to Database")
+        self._downloadAct: QtWidgets.QAction = QtWidgets.QAction("Download from Database")
+        self._selectBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Brightness Select/\nParticleDetection")
+        self._adjustBrightnessAct: QtWidgets.QAction = QtWidgets.QAction("Adjust Brightness/Contrast")
 
-        self._toolbar = QtWidgets.QToolBar()
-        self.addToolBar(QtCore.Qt.ToolBarArea.TopToolBarArea, self._toolbar)
-        self._configureWidgets()
+        self._pixmap: Optional[QtGui.QPixmap] = None
+
         self._establish_connections()
+        self._configureWidgets()
+        self._createContextMenu()
+
+        self._setupWidgetsFromSampleData()
+
+    def boundingRect(self) -> QtCore.QRectF:
+        rect: QtCore.QRectF = QtCore.QRectF()
+        if self._pixmap is not None:
+            rect.setWidth(float(self._pixmap.size().width()))
+            rect.setHeight(float(self._pixmap.size().height()))
+        return rect
 
     @property
     def _classes2Indices(self) -> Dict[str, Set[int]]:
@@ -343,7 +117,7 @@ class SampleView(QtWidgets.QMainWindow):
         self._sampleData.name = newName
 
     def setMainWindowReferences(self, parent: 'MainWindow') -> None:
-        self._graphView.setParentReferences(self, parent)
+        self._graphOverlays.setParentReferences(self, parent)
         self._mainWindow = parent
 
     def setUp(self, filePath: str, cube: np.ndarray, wavelengths: np.ndarray) -> None:
@@ -351,17 +125,44 @@ class SampleView(QtWidgets.QMainWindow):
         self._sampleData.setDefaultName()
         self.setCube(cube, wavelengths)
         self._setupWidgetsFromSampleData()
+        self.WavelenghtsChanged.emit()
+
+    def mousePressEvent(self, event) -> None:
+        if event.modifiers() == QtCore.Qt.ControlModifier:
+            self.activate()
+        elif event.button() == QtCore.Qt.RightButton:
+            screenpos: QtCore.QPointF = event.screenPos()
+            screenpos: QtCore.QPoint = QtCore.QPoint(int(screenpos.x()), int(screenpos.y()))
+            self._contextMenu.exec_(screenpos)
+
+    def hoverMoveEvent(self, event) -> None:
+        pos: QtCore.QPointF = self.mapToItem(self, event.pos())
+        x, y = int(round(pos.x())), int(round(pos.y()))
+        cube: np.ndarray = self.getSpecObj().getCube()
+        if cube is not None:
+            if 0 <= x < cube.shape[2] and 0 <= y < cube.shape[1]:
+                cursorSpec: np.ndarray = cube[:, y, x][np.newaxis, :]
+                for proc in self._mainWindow.getPreprocessorsForSpecPreview():
+                    cursorSpec = proc.applyToSpectra(cursorSpec)
+
+                self._mainWindow.getresultPlots().updateCursorSpectrum(cursorSpec[0])
+
+    def toggleToolarVisibility(self) -> None:
+        self._sampleInfo.setVisible(not self._sampleInfo.isVisible())
 
     def setupFromSampleData(self) -> None:
         cube, wavelengths = loadCube(self._sampleData.filePath)
         self.setCube(cube, wavelengths)
-        self._graphView.setCurrentlyPresentSelection(self._classes2Indices)
+        self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
+        self._graphOverlays.setParticles(self._sampleData.getAllParticles(), self.scene())
         self._setupWidgetsFromSampleData()
+        self._mainWindow.updateClassCreatorClasses()
+
+    def saveCoordinatesToSampleData(self) -> None:
+        self._sampleData.viewCoordinates = self.pos().x(), self.pos().y()
 
     def _setupWidgetsFromSampleData(self) -> None:
-        self._nameLabel.setText(self._sampleData.name)
-        self.createLayout()
-        self.SizeChanged.emit()
+        self._sampleInfo.setName(self._sampleData.name)
 
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray) -> None:
         """
@@ -369,8 +170,13 @@ class SampleView(QtWidgets.QMainWindow):
         :param cube: Shape (KxMxN) cube with MxN spectra of K wavelenghts
         :param wavelengths: The corresponding K wavelengths.
         """
+        if self._sampleData.flippedHorizontally:
+            cube = np.flip(cube, axis=2)
+        if self._sampleData.flippedVertically:
+            cube = np.flip(cube, axis=1)
+
         self._sampleData.specObj.setCube(cube, wavelengths)
-        self._graphView.setUpToCube(cube)
+        self._pixmap = self._graphOverlays.setUpToCube(cube)
 
     def getSpecObj(self) -> 'SpectraObject':
         """
@@ -381,41 +187,11 @@ class SampleView(QtWidgets.QMainWindow):
     def getName(self) -> str:
         return self._name
 
-    def getGraphView(self) -> 'GraphView':
-        return self._graphView
+    def getGraphOverlayObj(self) -> 'GraphOverlays':
+        return self._graphOverlays
 
     def getWavelengths(self) -> np.ndarray:
         return self._sampleData.specObj.getWavelengths()
-
-    def getAveragedBackground(self, classes2Ind: Dict[str, Set[int]]) -> np.ndarray:
-        """
-        Returns the averaged background spectrum of the sample. If no background was selected, a np.zeros array is returned.
-        :return: np.ndarray of background spectrum
-        """
-        cube: np.ndarray = self.getNotPreprocessedCube()
-        background: np.ndarray = np.zeros(cube.shape[0])
-        backgrounIndices: Set[int] = self._sampleData.getBackroundIndices()
-        if len(backgrounIndices) > 0:
-            indices: np.ndarray = np.array(list(backgrounIndices))
-            background = np.mean(getSpectraFromIndices(indices, cube), axis=0)
-
-        else:
-            self._logger.warning(
-                f'Sample: {self._name}: No Background found, although it was requested.. '
-                f'Present Classes are: {list(self._classes2Indices.keys())}. Returning a np.zeros Background')
-
-        return background
-
-    def getBackgroundPixelIndices(self) -> Set[int]:
-        """
-        Returns a list of pixels in the background class
-        """
-        backgroundIndices: Set[int] = set()
-        for cls, pixelIndices in self._classes2Indices.items():
-            if cls.lower() == "background":
-                backgroundIndices = pixelIndices
-                break
-        return backgroundIndices
 
     def getSampleData(self) -> 'Sample':
         return self._sampleData
@@ -427,6 +203,8 @@ class SampleView(QtWidgets.QMainWindow):
         saveSample: Sample = deepcopy(self._sampleData)
         saveSample.specObj = SpectraObject()
         saveSample.classOverlay = None
+        saveSample.batchResult = None
+        saveSample.particleHandler.resetParticleResults()
         return saveSample
 
     def getVisibleLabelledSpectra(self) -> Dict[str, np.ndarray]:
@@ -437,55 +215,79 @@ class SampleView(QtWidgets.QMainWindow):
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
             if self._mainWindow.classIsVisible(name):
-                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.specObj.getCube())
+                spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.getSpecCube())
+
         return spectra
+
+    def getClassNames(self) -> List[str]:
+        """
+        Returns the used class names.
+        """
+        return list(self._classes2Indices.keys())
 
     def getAllLabelledSpectra(self) -> Dict[str, np.ndarray]:
         """
-        Gets all the labelled spectra in form of a dictionary.
+        Gets all the labelled spectra in form of a dictionary. The spectra are NOT preprocessed
         :return: Dictionary [className, NxM array of N spectra with M wavelengths]
         """
         spectra: Dict[str, np.ndarray] = {}
         for name, indices in self._classes2Indices.items():
-            spectra[name] = getSpectraFromIndices(np.array(list(indices)),
-                                                  self._sampleData.specObj.getCube())
+            spectra[name] = getSpectraFromIndices(np.array(list(indices)), self._sampleData.getSpecCube())
         return spectra
 
     def getSelectedMaxBrightness(self) -> float:
         """
         Get's the user selected max brightness value.
         """
-        return self._maxBrightnessSpinbox.value()
+        return self._imgAdjustWidget.getSelectedMaxBrightness()
 
     def setSampleData(self, data: 'Sample') -> None:
+        """
+        Sets the sample data.
+        """
         self._sampleData = data
 
     def getSaveFileName(self) -> str:
         return self._sampleData.getFileHash() + '.pkl'
 
-    def resetClassificationOverlay(self) -> None:
+    def updateParticlesInGraphUI(self) -> None:
         """
-        Resets the current classification overlay.
+        Forces an update of particles in the graph ui from the currently set sample data.
         """
-        self._graphView.resetClassImage()
+        interpretationParams: 'ClassInterpretationParams' = self._mainWindow.getClassInterprationParams()
+        self._graphOverlays.updateParticleColors(self._sampleData.getParticleHandler(), interpretationParams)
+        self.NewClassificationResult.emit()
+
+    def updateClassImageInGraphView(self) -> None:
+        """
+        Called after updating sample data. Creates a new class image and sets the graph display accordingly.
+        """
+        specConfCutoff: float = self._mainWindow.getClassInterprationParams().specConfThreshold
+        if self._sampleData.batchResult is not None:
+            specObj: 'SpectraObject' = self.getSpecObj()
+            cubeShape = specObj.getCube().shape
+            assignments: np.ndarray = self._sampleData.getBatchResults(specConfCutoff)
+            colorDict: Dict[str, Tuple[int, int, int]] = self._mainWindow.getClassColorDict()
+
+            clfImg: np.ndarray = createClassImg(cubeShape, assignments, colorDict)
+            self._graphOverlays.updateClassImage(clfImg)
+        self.NewClassificationResult.emit()
 
     def isActive(self) -> bool:
-        return self._activeBtn.isChecked()
+        return self._isActive
 
     def isSelectedForTraining(self) -> bool:
-        return self._trainCheckBox.isChecked()
+        return self._sampleInfo.isCheckedForTraining()
 
     def isSelectedForInference(self) -> bool:
-        return self._inferenceCheckBox.isChecked()
+        return self._sampleInfo.isCheckedForInference()
 
     def activate(self) -> None:
-        self._activeBtn.setChecked(True)
-        self._activeBtn.setEnabled(False)
+        self._isActive = True
         self.Activated.emit(self._name)
 
     def deactivate(self) -> None:
-        self._activeBtn.setChecked(False)
-        self._activeBtn.setEnabled(True)
+        self._isActive = False
 
     @QtCore.pyqtSlot(str)
     def removeClass(self, className: str) -> None:
@@ -497,123 +299,78 @@ class SampleView(QtWidgets.QMainWindow):
             self._logger.warning(f"Sample {self._name}: Requested deleting class {className}, but it was not in"
                                  f"dict.. Available keys: {self._classes2Indices.keys()}")
 
-    def createLayout(self) -> None:
-        adjustLayout: QtWidgets.QGridLayout = QtWidgets.QGridLayout()
-        adjustLayout.addWidget(VerticalLabel("Brightness"), 0, 0)
-        adjustLayout.addWidget(self._brightnessSlider, 0, 1)
-        adjustLayout.addWidget(VerticalLabel("Contrast"), 1, 0)
-        adjustLayout.addWidget(self._contrastSlider, 1, 1)
-        adjustLayout.addWidget(VerticalLabel("Max Refl."), 2, 0)
-        adjustLayout.addWidget(self._maxBrightnessSpinbox, 2, 1)
-        adjustLayout.addWidget(self._selectBrightBtn, 3, 0, 1, 2)
-        adjustLayout.addWidget(self._selectDarkBtn, 4, 0, 1, 2)
-        adjustLayout.addWidget(self._selectNoneBtn, 5, 0, 1, 2)
-        self._layout.addLayout(adjustLayout)
-        self._layout.addWidget(self._graphView)
+    def _createContextMenu(self) -> None:
+        self._sampleMenu.addAction(self._adjustBrightnessAct)
+        self._sampleMenu.addSeparator()
+        self._sampleMenu.addAction(self._closeAct)
 
-        nameGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Sample Name")
-        nameGroup.setLayout(QtWidgets.QHBoxLayout())
-        nameGroup.layout().addWidget(self._editNameBtn)
-        nameGroup.layout().addWidget(self._nameLabel)
+        self._dbMenu.addAction(self._uploadAct)
+        self._dbMenu.addAction(self._downloadAct)
 
-        clsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Usage in classification:")
-        clsGroup.setLayout(QtWidgets.QHBoxLayout())
-        clsGroup.layout().addWidget(self._trainCheckBox)
-        clsGroup.layout().addWidget(self._inferenceCheckBox)
+        self._particlesMenu.addAction(self._selectBrightnessAct)
 
-        actionsGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Actions")
-        actionsGroup.setLayout(QtWidgets.QHBoxLayout())
-        actionsGroup.layout().addWidget(self._uploadBtn)
-        actionsGroup.layout().addWidget(self._closeBtn)
-
-        toolGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox()
-        toolGroup.setFlat(True)
-        toolGroup.setLayout(QtWidgets.QHBoxLayout())
-        toolGroup.layout().addWidget(self._activeBtn)
-        toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(nameGroup)
-        toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(clsGroup)
-        toolGroup.layout().addStretch()
-        toolGroup.layout().addWidget(actionsGroup)
-
-        self._toolbar.addWidget(toolGroup)
+        self._contextMenu.addMenu(self._sampleMenu)
+        self._contextMenu.addMenu(self._dbMenu)
+        self._contextMenu.addMenu(self._particlesMenu)
 
     def closeEvent(self, a0: QtGui.QCloseEvent) -> None:
-        self._dbWin.close()
+        for subwin in [self._dbWin, self._threshSelector, self._imgAdjustWidget]:
+            if subwin is not None:
+                subwin.close()
         a0.accept()
 
+    @QtCore.pyqtSlot(float, int, float)
+    def updateImage(self, maxBrightness: float, newZero: int, newContrast: float) -> None:
+        """
+        Updating the previewed image with new zero value and contrast factor
+        :param maxBrightness: Highest brightness to clip to
+        :param newZero: integer value of the new zero value
+        :param newContrast: float factor for contrast adjustment (1.0 = unchanged)
+        :return:
+        """
+        QtWidgets.QMessageBox.warning(self, "Sorry", "At the moment not yet reimplemented...")
+        # newImg: np.ndarray = cube2RGB(self._sampleData.getSpecCube(), maxBrightness)
+        # if newZero != 0:
+        #     newImg = newImg.astype(np.float)
+        #     newImg = np.clip(newImg + newZero, 0, 255)
+        #     newImg = newImg.astype(np.uint8)
+        #
+        # if newContrast != 1.0:
+        #     img: Image = Image.fromarray(newImg)
+        #     contrastObj = ImageEnhance.Contrast(img)
+        #     newImg = np.array(contrastObj.enhance(newContrast))
+        #
+        # raise NotImplementedError  # Needs to be properly implemented!!!
+
     def _renameSample(self) -> None:
-        newName, ok = QtWidgets.QInputDialog.getText(self, "Please enter a new name", "", text=self._name)
+        newName, ok = QtWidgets.QInputDialog.getText(self._mainWindow, "Please enter a new name", "", text=self._name)
         if ok and newName != '':
             self._logger.info(f"Renaming {self._name} into {newName}")
             self._name = newName
-            self._nameLabel.setText(newName)
+            self._sampleInfo.setName(newName)
             self.Renamed.emit()
 
-    def _checkActivation(self) -> None:
-        if self._activeBtn.isChecked():
-            self.Activated.emit(self._name)
-
     def _configureWidgets(self) -> None:
-        self._dbWin.setSampleView(self)
-        self._dbWin.UploadFinished.connect(self._sqlUploadFinished)
+        self._sampleInfo.getChangeNameBtn().ButtonClicked.connect(self._renameSample)
 
-        self._brightnessSlider.setMinimum(-255)
-        self._brightnessSlider.setMaximum(255)
-        self._brightnessSlider.setValue(0)
-        self._brightnessSlider.setFixedHeight(150)
+        self._closeAct.triggered.connect(lambda: self.Closed.emit(self._name))
+        self._closeAct.setToolTip("Close Sample.")
 
-        contrastSteps = 100
-        self._contrastSlider.setMinimum(0)
-        self._contrastSlider.setMaximum(contrastSteps)
-        self._contrastSlider.setValue(int(round(contrastSteps / self._maxContrast)))
-        self._contrastSlider.setFixedHeight(150)
+        self._uploadAct.triggered.connect(self._uploadToSQL)
+        self._uploadAct.setToolTip("Upload Spectra to SQL Database.")
 
-        self._maxBrightnessSpinbox.setMinimum(0.0)
-        self._maxBrightnessSpinbox.setMaximum(100.0)
-        self._maxBrightnessSpinbox.setValue(1.5)
-        self._maxBrightnessSpinbox.setSingleStep(1.0)
+        self._downloadAct.triggered.connect(self._downloadFromSQL)
+        self._downloadAct.setToolTip("Download Spectra from SQL Database.")
 
-        self._maxBrightnessSpinbox.valueChanged.connect(self._initiateImageUpdate)
-        self._brightnessSlider.valueChanged.connect(self._initiateImageUpdate)
-        self._contrastSlider.valueChanged.connect(self._initiateImageUpdate)
+        self._selectBrightnessAct.triggered.connect(self._selectByBrightness)
+        self._adjustBrightnessAct.triggered.connect(self._adjustBrightness)
 
-        newFont: QtGui.QFont = QtGui.QFont()
-        newFont.setBold(True)
-        newFont.setPixelSize(18)
-        self._nameLabel.setFont(newFont)
-
-        self._editNameBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogResetButton')))
-        self._editNameBtn.released.connect(self._renameSample)
-        self._editNameBtn.setToolTip("Rename Sample.")
-
-        self._closeBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_DialogDiscardButton')))
-        self._closeBtn.released.connect(lambda: self.Closed.emit(self._name))
-        self._closeBtn.setToolTip("Close Sample.")
-
-        self._uploadBtn.setIcon(self.style().standardIcon(getattr(QtWidgets.QStyle, 'SP_ArrowUp')))
-        self._uploadBtn.released.connect(self._uploadToSQL)
-        self._uploadBtn.setToolTip("Upload Spectra to SQL Database.")
-
-        self._trainCheckBox.setChecked(True)
-        self._inferenceCheckBox.setChecked(True)
-
-        self._selectBrightBtn.released.connect(self._selectBrightPixels)
-        self._selectDarkBtn.released.connect(self._selectDarkPixels)
-        self._selectNoneBtn.released.connect(self._selectNone)
+        self._sampleInfo.setParentItem(self)
+        infoHeight: int = self._sampleInfo.boundingRect().height()
+        self._sampleInfo.setPos(-(infoHeight + 5), -50)
 
     def _establish_connections(self) -> None:
-        self._activeBtn.toggled.connect(self._checkActivation)
-        self._graphView.NewSelection.connect(self._addNewSelection)
-
-    def _initiateImageUpdate(self) -> None:
-        self._graphView.updateImage(self._maxBrightnessSpinbox.value(),
-                                    self._brightnessSlider.value(),
-                                    self._contrastSlider.value() / self._maxContrast)
-
-    def _getSaveFileName(self) -> str:
-        return os.path.join(getAppFolder(), 'saveFiles', self._name + '_savefile.pkl')
+        self._graphOverlays.NewSelection.connect(self._addNewSelection)
 
     @QtCore.pyqtSlot(str, set)
     def _addNewSelection(self, selectedClass: str,  selectedIndices: Set[int]) -> None:
@@ -624,42 +381,66 @@ class SampleView(QtWidgets.QMainWindow):
         if selectedClass.lower() == 'background':
             self.BackgroundSelectionChanged.emit()
 
-    def _selectBrightPixels(self) -> None:
+    def _selectByBrightness(self) -> None:
         """
-        If confirmed, all "bright" pixles will be assigned to the current class (as obtained by Otsu thresholding).
+        Opens the Threshold Selector to select bright or dark areas of the image.
         """
-        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all bright pixels?",
-                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                                             QtWidgets.QMessageBox.Yes)
-        if ret == QtWidgets.QMessageBox.Yes:
-            self._graphView.selectAllBrightPixels()
+        self._mainWindow.disableWidgets()
+        self._threshSelector = ThresholdSelector(self._graphOverlays.getAveragedImage())
+        self._threshSelector.ThresholdChanged.connect(self._graphOverlays.previewPixelsAccordingThreshold)
+        self._threshSelector.ThresholdSelected.connect(self._finishThresholdSelection)
+        self._threshSelector.SelectionCancelled.connect(self._cancelThresholdSelection)
+        self._threshSelector.ParticleDetectionRequired.connect(self.runParticleDetection)
 
-    def _selectDarkPixels(self) -> None:
-        """
-        If confirmed, all "dark" pixles will be assigned to the current class (as obtained by Otsu thresholding).
-        """
-        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to select all dark pixels?",
-                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                                             QtWidgets.QMessageBox.Yes)
-        if ret == QtWidgets.QMessageBox.Yes:
-            self._graphView.selectAllDarkPixels()
+        self._threshSelector.show()
 
-    def _selectNone(self) -> None:
+    def _adjustBrightness(self) -> None:
         """
-        If confirmed, all pixels are deselected
+        Shows the brightness and contrast adjust widget.
         """
-        ret = QtWidgets.QMessageBox.question(self, "Continue", "Do you want to deselect all pixels?",
-                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                                             QtWidgets.QMessageBox.Yes)
-        if ret == QtWidgets.QMessageBox.Yes:
-            self._classes2Indices = {}
-            self._graphView.deselectAll()
+        self._imgAdjustWidget.show()
+
+    @QtCore.pyqtSlot(int, bool)
+    def _finishThresholdSelection(self, thresh: int, bright: bool) -> None:
+        """
+        Called, when a threshold for image selection is defined and should be applied to the currently selected class.
+        :param thresh: Int Threshold (0...255)
+        :param bright: If True, the pixels brighter than the threshold are selected, otherwise the darker ones.
+        """
+        self._graphOverlays.selectPixelsAccordingThreshold(thresh, bright)
+        self._finishParticleDetection()
+
+    @QtCore.pyqtSlot()
+    def _cancelThresholdSelection(self) -> None:
+        """
+        Triggered when the Threshold Selector is closed or the cancel btn is pressed.
+        """
+        self._graphOverlays.hideSelections()
+        self._finishParticleDetection()
+
+    def _finishParticleDetection(self):
+        """
+        Closes and disconnects the threshold selector, re-enables widgets in main window and reset the selection
+        widget to the actual selected classes.
+        """
+        if self._threshSelector is not None:
+            self._threshSelector.ThresholdSelected.disconnect()
+            self._threshSelector.ThresholdChanged.disconnect()
+            self._threshSelector.SelectionCancelled.disconnect()
+            self._threshSelector.close()
+            self._threshSelector = None
+            
+        self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
+        self._mainWindow.enableWidgets()
 
     def _uploadToSQL(self) -> None:
         """
         Open the window for uploading sample spectra to the SQL database.
         """
         self._mainWindow.disableWidgets()
+        self._dbWin = DBUploadWin()
+        self._dbWin.setSampleView(self)
+        self._dbWin.UploadFinished.connect(self._sqlUploadFinished)
         self._dbWin.recreateLayout()
         self._dbWin.show()
 
@@ -668,59 +449,125 @@ class SampleView(QtWidgets.QMainWindow):
         Triggered when the SQL upload has finished.
         """
         self._mainWindow.enableWidgets()
-        self._dbWin.hide()
+        self._dbWin.UploadFinished.disconnect()
+        self._dbWin.close()
+        self._dbWin = None
 
-
-class VerticalLabel(QtWidgets.QLabel):
-    """
-    Vertically drawn Text Label, as adapted from:
-    https://stackoverflow.com/questions/3757246/pyqt-rotate-a-qlabel-so-that-its-positioned-diagonally-instead-of-horizontally
-    """
-    def __init__(self, text: str = ''):
-        super(VerticalLabel, self).__init__()
-        self.text: str = text
-        self._width: int = 5
-        self._height: int = 5
-        self._setWidthHeight()
-
-    def setText(self, text: str) -> None:
-        self.text = text
-        self._setWidthHeight()
-
-    def paintEvent(self, event):
-        if self.text != '':
-            painter = QtGui.QPainter(self)
-            painter.translate(0, self.height())
-            painter.rotate(-90)
-
-            x, y = self._getStartXY()
-            painter.drawText(y, x, self.text)
-            painter.end()
-
-    def _getStartXY(self) -> Tuple[int, int]:
+    def _downloadFromSQL(self) -> None:
         """
-        Gets start Coordinates for the painter.
-        :return:
+        Open the window for SQL Query to download spectra.
         """
-        xoffset = int(self._width / 2)
-        yoffset = int(self._height / 2)
-        x = int(self.width() / 2) + yoffset
-        y = int(self.height() / 2) - xoffset
-        return x, y
+        self._mainWindow.disableWidgets()
+        self._dbQueryWin = DatabaseQueryWindow()
+        self._dbQueryWin.QueryFinished.connect(self._finishSQLDownload)
+        self._dbQueryWin.AcceptResult.connect(self._acceptSQLDownload)
+        self._dbQueryWin.show()
 
-    def minimumSizeHint(self):
-        return QtCore.QSize(self._height, self._width)
+    @QtCore.pyqtSlot(np.ndarray, np.ndarray, dict)
+    def _acceptSQLDownload(self, cube: np.ndarray, wavelengths: np.ndarray, classes2ind: Dict[str, Set[int]]) -> None:
+        """
+        Receives results from SQL download and sets up the sampleview accordingly.
+        :param cube: The spectra cube
+        :param wavelengths: The wavelengths axis
+        :param classes2ind: Dictionary with spectra labels
+        """
+        self.setCube(cube, wavelengths)
+        self._classes2Indices = classes2ind
+        self._setupWidgetsFromSampleData()
+        self.WavelenghtsChanged.emit()
 
-    def sizeHint(self):
-        return QtCore.QSize(self._height, self._width)
+        self._graphOverlays.setCurrentlyPresentSelection(self._classes2Indices)
 
-    def _setWidthHeight(self, padding: int = 5) -> None:
-        painter = QtGui.QPainter(self)
-        fm = QtGui.QFontMetrics(painter.font())
-        self._width = fm.boundingRect(self.text).width() + 2*padding
-        self._height = fm.boundingRect(self.text).height() + 2*padding
+    def _finishSQLDownload(self) -> None:
+        """
+        Triggered when closing the SQL Query Window.
+        """
+        self._mainWindow.enableWidgets()
+        self._dbQueryWin.QueryFinished.disconnect()
+        self._dbQueryWin.AcceptResult.disconnect()
+        self._dbQueryWin = None
+        self._mainWindow.updateClassCreatorClasses()
 
-        self.setFixedSize(self.sizeHint())
+    @QtCore.pyqtSlot(int, bool)
+    def runParticleDetection(self, threshold: Union[int, None], selectBright: bool) -> None:
+        """
+        Takes a threshold and a brightness bool for creating a thresholded image that is used for creating a new
+        list of particles. The particle handler stores this list and the graph view creates the according gui elements.
+        :param threshold: The threshold to use (int, 0...255). If None, Otsu's method is used to determine the threshold.
+        :param selectBright: If True, the bright areas are selected, otherwise the darker ones.
+        """
+        cube: np.ndarray = self._sampleData.specObj.getCube()
+        try:
+            binImg: np.ndarray = getThresholdedImage(cube, self._imgAdjustWidget.getSelectedMaxBrightness(),
+                                                     threshold, selectBright)
+        except TypeError:
+            QtWidgets.QMessageBox.warning(self, "Error", "TypeError in getting thresholded image for particle detection.")
+
+        else:
+            particleHandler: 'ParticleHandler' = self._sampleData.particleHandler
+            particleHandler.getParticlesFromImage(binImg)
+            self._graphOverlays.setParticles(particleHandler.getParticles(), self.scene())
+        self._finishParticleDetection()
+
+    def paint(self, painter: QtGui.QPainter, option, widget) -> None:
+        if self._pixmap is not None:
+            painter.drawPixmap(0, 0, self._pixmap)
+            if self._isActive:
+                painter.setPen(QtCore.Qt.white)
+                painter.drawRect(self.boundingRect())
+
+
+class ImageAdjustWidget(QtWidgets.QWidget):
+    """
+    Widget for Image Adjustents.
+    """
+    ValuesChanged: QtCore.pyqtSignal = QtCore.pyqtSignal(float, int, float)  # (maxBrightness, Brightness, Contast)
+
+    def __init__(self):
+        super(ImageAdjustWidget, self).__init__()
+        self._brightnessSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._contrastSlider: QtWidgets.QSlider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
+        self._maxContrast: float = 5
+        self._maxBrightnessSpinbox: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
+
+        self._configureWidgets()
+        self._createLayout()
+
+    def getSelectedMaxBrightness(self) -> float:
+        return self._maxBrightnessSpinbox.value()
+
+    def _configureWidgets(self) -> None:
+        self._brightnessSlider.setMinimum(-255)
+        self._brightnessSlider.setMaximum(255)
+        self._brightnessSlider.setValue(0)
+        self._brightnessSlider.setFixedWidth(300)
+        self._brightnessSlider.valueChanged.connect(self._emitChangedValues)
+
+        contrastSteps = 100
+        self._contrastSlider.setMinimum(0)
+        self._contrastSlider.setMaximum(contrastSteps)
+        self._contrastSlider.setValue(int(round(contrastSteps / self._maxContrast)))
+        self._contrastSlider.setFixedWidth(300)
+        self._contrastSlider.valueChanged.connect(self._emitChangedValues)
+
+        self._maxBrightnessSpinbox.setMinimum(0.0)
+        self._maxBrightnessSpinbox.setMaximum(100.0)
+        self._maxBrightnessSpinbox.setValue(1.5)
+        self._maxBrightnessSpinbox.setSingleStep(1.0)
+        self._maxBrightnessSpinbox.valueChanged.connect(self._emitChangedValues)
+
+    def _createLayout(self) -> None:
+        layout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        layout.addRow("Brightness", self._brightnessSlider)
+        layout.addRow("Contrast", self._contrastSlider)
+        layout.addRow("Max Reflect.", self._maxBrightnessSpinbox)
+
+        self.setLayout(layout)
+
+    def _emitChangedValues(self):
+        self.ValuesChanged.emit(self._maxBrightnessSpinbox.value(),
+                                self._brightnessSlider.value(),
+                                self._contrastSlider.value() / self._maxContrast)
 
 
 class ActivateToggleButton(QtWidgets.QPushButton):
@@ -732,7 +579,7 @@ class ActivateToggleButton(QtWidgets.QPushButton):
         self.setCheckable(True)
         self.setChecked(True)
         self._adjustStyleAndMode()
-        self.setFixedSize(100, 30)
+        self.setFixedSize(70, 30)
         self.toggled.connect(self._adjustStyleAndMode)
 
     def _adjustStyleAndMode(self) -> None:

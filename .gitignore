@@ -6,3 +6,13 @@ gui/__pycache__/
 __pycache__/
 
 config.cfg
+/classification/labels.npy
+/classification/spectra.npy
+
+classification/logs/
+
+classification/spectra.txt
+
+classification/labels_new.npy
+
+classification/spectra_new.npy

@@ -19,9 +19,11 @@ If not, see <https://www.gnu.org/licenses/>.
 
 from typing import TYPE_CHECKING, List, Union
 import difflib
+from collections import Counter
 
 from spectraObject import SpectraObject
 from logger import getLogger
+from particles import ParticleHandler
 from gui.nodegraph.nodegraph import NodeGraph
 from gui.nodegraph.nodes import nodeTypes
 
@@ -30,7 +32,7 @@ if TYPE_CHECKING:
     from dataObjects import Sample, View
     from gui.nodegraph.nodecore import BaseNode
 
-currentSampleVersion = 1
+currentSampleVersion = 2
 currentViewVersion = 2
 
 logger: 'Logger' = getLogger("LegacyConvert")
@@ -45,6 +47,9 @@ def assertUpToDateSample(sampleData: 'Sample') -> 'Sample':
     if not hasattr(sampleData, "version"):
         sampleData = _updateSampleToVersion1(sampleData)
 
+    if sampleData.version == 1:
+        sampleData = _updateSampleToVersion2(sampleData)
+
     return sampleData
 
 
@@ -55,6 +60,9 @@ def assertUpToDateView(view: 'View') -> 'View':
         view = _updateViewToVersion1(view)
     if view.version == 1:
         view = _updateViewToVersion2(view)
+
+    for sample in view.samples:
+        sample = assertUpToDateSample(sample)
 
     return view
 
@@ -71,6 +79,17 @@ def _updateSampleToVersion1(sampleData: 'Sample') -> 'Sample':
     sampleData.specObj._wavelengths = sampleData.specObj._wavenumbers
     del sampleData.specObj._wavenumbers
     sampleData.version = 1
+    return sampleData
+
+
+def _updateSampleToVersion2(sampleData: 'Sample') -> 'Sample':
+    logger.info(f"converting sample {sampleData.name} to Version 2")
+    sampleData.batchResult = None
+    if not hasattr(sampleData, "particleHandler"):
+        sampleData.particleHandler = ParticleHandler()
+    for id, particle in sampleData.particleHandler._particles.items():
+        if type(particle._result) == Counter:
+            particle._result = None
     return sampleData
 
 

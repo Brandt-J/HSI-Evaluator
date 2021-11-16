@@ -16,11 +16,13 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
-
+from enum import Enum
+import numba
 import numpy as np
 from scipy.signal import savgol_filter
 from scipy.linalg import solveh_banded
+
+from preprocessing.numba_polyfit import fit_poly
 
 
 def als_baseline(intensities, asymmetry_param=0.05, smoothness_param=1e4, max_iters=5, conv_thresh=1e-5, verbose=False):
@@ -94,20 +96,27 @@ def mapSpecToWavenumbers(spec: np.ndarray, targetWavenumbers: np.ndarray) -> np.
     return newSpec
 
 
-def normalizeIntensities(input_data: np.ndarray) -> np.ndarray:
+@numba.njit
+def normalizeIntensities(input_data: np.ndarray, mode: 'NormMode') -> np.ndarray:
     """
     Normalizes each set of intensities
     :param input_data: (NxM) array of N spectra with M features
+    :param mode: Mode for the normalization.
     :return:
     """
-    if len(input_data.shape) == 1:
-        input_data = input_data[np.newaxis, :]
+    assert mode in [NormMode.Area, NormMode.Length, NormMode.Max]
 
     normalized: np.ndarray = np.zeros_like(input_data)
     for i in range(input_data.shape[0]):
-        data: np.ndarray = input_data[i, :]
-        normalized[i, :] = (data - data.min()) / (data.max() - data.min())
 
+        if mode == NormMode.Area:
+            divisor = np.trapz(input_data[i, :])
+        elif mode == NormMode.Length:
+            divisor = np.linalg.norm(input_data[i, :])
+        else:
+            divisor = np.max(input_data[i, :])
+
+        normalized[i, :] = input_data[i, :] / divisor
     return normalized
 
 
@@ -128,6 +137,7 @@ def autoscale(input_data: np.ndarray) -> np.ndarray:
     return scaled
 
 
+@numba.njit
 def snv(input_data: np.ndarray) -> np.ndarray:
     """
     Standard normal variate Correction. "Autoscale" of rows.
@@ -140,19 +150,7 @@ def snv(input_data: np.ndarray) -> np.ndarray:
     return output_data
 
 
-def mean_center(input_data: np.ndarray) -> np.ndarray:
-    """
-    Mean Centering, column (feature) wise. The mean of each feature along all the samples is substracted from
-    the respective features, thus converting each feature into the "difference in feature", essentially.
-    :param input_data: Shape (MxN) array of M samples with N features
-    :return: corrected data in same shape
-    """
-    output_data: np.ndarray = np.zeros_like(input_data)
-    for i in range(input_data.shape[1]):
-        output_data[:, i] = input_data[:, i] - np.mean(input_data[:, i])
-    return output_data
-
-
+@numba.njit
 def detrend(input_data: np.ndarray) -> np.ndarray:
     """
     Removes a linear baseline.
@@ -166,38 +164,35 @@ def detrend(input_data: np.ndarray) -> np.ndarray:
     return output_data
 
 
-def deriv_smooth(input_data: np.ndarray, derivative: int = 0, windowSize: int = 5) -> np.ndarray:
+def deriv_smooth(input_data: np.ndarray, polydegree: int, derivative: int = 0, windowSize: int = 5) -> np.ndarray:
     """
-    Applies Savitzky Golay smoothing to all given data, if desired with derivative.
+    Applies Savitzky-Golay smoothing to all given data, if desired with derivative.
     :param input_data: Shape (NxM) array of N samples with M features
+    :param polydegree: Polynomial degree
     :param derivative: Which derivative to calculate.
     :param windowSize: integer, the window size for smoothing.
     :return: corrected data in same shape
     """
-    output_data: np.ndarray = np.zeros_like(input_data)
-    startInd = (windowSize - 1) // 2
-    for i in range(input_data.shape[0]):
-        cumsum_vec = np.cumsum(np.insert(input_data[i, :], 0, 0))  # this cumsum version is a very fast smoother
-        ma_vec = (cumsum_vec[windowSize:] - cumsum_vec[:-windowSize]) / windowSize
-        smoothed = np.zeros(input_data.shape[1])
-        endInd = startInd + len(ma_vec)
-        smoothed[startInd:endInd] = ma_vec  # put smoothed version in the middle of the zeros array
-        smoothed[:startInd] = smoothed[startInd]  # fill up the values at the beginning
-        smoothed[endInd:] = smoothed[endInd-1]  # fill up the values at the end
+    # Checks for Savitzky-Golay bounds
+    if windowSize > input_data.shape[1]:
+        windowSize = input_data.shape[1]
+    if windowSize % 2 == 0:
+        windowSize += 1
+    if polydegree >= windowSize:
+        windowSize = polydegree + 1
 
-        if derivative == 0:
-            output_data[i, :] = smoothed
-        else:
-            output_data[i, derivative:] = np.diff(smoothed, n=derivative)
-
+    output_data = savgol_filter(input_data, windowSize, polydegree, deriv=derivative)
     return output_data
 
 
+@numba.njit
 def msc(spectra: np.ndarray):
     """
     Multiplicative Scatter Correction technique performed with mean of the sample data as the reference.
     Adapted from: https://nirpyresearch.com/two-scatter-correction-techniques-nir-spectroscopy-python/
     :param spectra: MxN array of M spectra with N wavenumbers
+    :params labels: Optional, the M labels for the spectra. If given, the spectra are grouped according their labels
+    and processed in these batches.
     :returns: corrected spectra: Scatter corrected spectra data
     """
     spectra = spectra.copy()
@@ -205,17 +200,19 @@ def msc(spectra: np.ndarray):
     for i in range(spectra.shape[0]):
         spectra[i, :] -= spectra[i, :].mean()
 
-    # Get the reference spectrum. If not given, estimate it from the mean
-    ref = np.mean(spectra, axis=0)
+    # Estimate ref spectrum as mean of input spectra
+    ref = np.zeros(spectra.shape[1])
+    for i in range(spectra.shape[1]):
+        ref[i] = np.mean(spectra[:, i])
 
     # Define a new array and populate it with the corrected data
     data_msc = np.zeros_like(spectra)
     for i in range(spectra.shape[0]):
         # Run regression
-        fit = np.polyfit(ref, spectra[i, :], 1, full=True)
+        fit = fit_poly(ref, spectra[i, :], deg=1)
         # Apply correction
-        if not fit[0][0] == 0:
-            corrected = (spectra[i, :] - fit[0][1]) / fit[0][0]
+        if not fit[0] == 0:
+            corrected = (spectra[i, :] - fit[1]) / fit[0]
         else:
             corrected = spectra[i, :]
 
@@ -223,3 +220,9 @@ def msc(spectra: np.ndarray):
 
     assert np.all(np.isfinite(data_msc))
     return data_msc
+
+
+class NormMode(Enum):
+    Area = 0
+    Length = 1
+    Max = 2

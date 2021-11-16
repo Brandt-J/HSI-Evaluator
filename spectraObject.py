@@ -18,25 +18,42 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 import numba
 import numpy as np
-from typing import List, Dict, Tuple, TYPE_CHECKING, Union, Set
-import random
+from typing import List, Dict, Tuple, TYPE_CHECKING, Union
 
-from preprocessing.preprocessors import preprocessSpectra
 from logger import getLogger
 
 if TYPE_CHECKING:
-    from multiprocessing import Queue
     from logging import Logger
-    from preprocessing.preprocessors import Preprocessor
+
+
+class WavelengthsNotSetError(BaseException):
+    pass
 
 
 class SpectraObject:
     def __init__(self):
         self._wavelengths: Union[None, np.ndarray] = None
         self._cube: Union[None, np.ndarray] = None
-        self._preprocessedCube: Union[None, np.ndarray] = None
         self._logger: 'Logger' = getLogger("SpectraObject")
-        self._backgroundIndices: Set[int] = set()
+
+    def __eq__(self, other):
+        isEqual: bool = False
+        if type(other) == type(self):
+            dict1, dict2 = self.__dict__, other.__dict__
+            if dict1.keys() == dict2.keys():
+                allElementsTrue: bool = True
+                for key in dict1.keys():
+                    if type(dict1[key]) == np.ndarray:
+                        if not np.array_equal(dict1[key], dict2[key]):
+                            allElementsTrue = False
+                            break
+                    else:
+                        if not dict1[key] == dict2[key]:
+                            allElementsTrue = False
+                            break
+                isEqual = allElementsTrue
+
+        return isEqual
 
     def setCube(self, cube: np.ndarray, wavelengths: np.ndarray = None) -> None:
         self._cube = cube
@@ -45,30 +62,22 @@ class SpectraObject:
         else:
             self._wavelengths = wavelengths
 
-    def doPreprocessing(self, preprocessors: List['Preprocessor'], backgroundIndices: Set[int]) -> None:
-        """
-        Takes a list of preprocessors, applies it to the cube and saves the result as preprocessedCube
-        :param preprocessors: List of preprocessors
-        :param backgroundIndices: Set of indices of background spectra
-        """
-        if len(backgroundIndices) > 0:
-            backgroundSpec: np.ndarray = getSpectraFromIndices(np.array(list(backgroundIndices)), self._cube)
-        else:
-            backgroundSpec = np.zeros(self._cube.shape[0])
-        preprocessedSpectra: np.ndarray = preprocessSpectra(self._cube2SpecArr(), preprocessors, backgroundSpec)
-        self._preprocessedCube = self._specArr2cube(preprocessedSpectra)
-
     def getCube(self) -> np.ndarray:
-        cube: np.ndarray = self._preprocessedCube
-        if cube is None:
-            cube = self._cube
-        return cube
-
-    def getNotPreprocessedCube(self) -> np.ndarray:
+        """
+        Returns the (LxMxN) spectra cube of MxN spectra with L wavelenghts.
+        """
         return self._cube
 
+    def getSpecArray(self) -> np.ndarray:
+        """
+        Returns an MxN spectra matrix of M spectra with N wavelengths of the cube spectra
+        :return: (MxN) spec array of M spectra of N wavelengths
+        """
+        return self._cube2SpecArr()
+
     def getWavelengths(self) -> np.ndarray:
-        assert self._wavelengths is not None, 'Wavenumbers have not yet been set! Cannot return them!'
+        if self._wavelengths is None:
+            raise WavelengthsNotSetError()
         return self._wavelengths
 
     def getSpectrumaAtXY(self, x: int, y: int) -> np.ndarray:
@@ -78,14 +87,28 @@ class SpectraObject:
         y = np.clip(y, 0, self._cube.shape[2]-1)
         return self._cube[:, x, y]
 
-    def getBackgroundIndices(self) -> Set[int]:
-        return self._backgroundIndices
-
     def getNumberOfFeatures(self) -> int:
         return self._cube.shape[0]
 
     def setWavelengths(self, wavelengths: np.ndarray) -> None:
         self._wavelengths = wavelengths
+
+    def remapToWavelenghts(self, otherWavelenghts: np.ndarray) -> None:
+        """
+        Takes a wavelength axis and remaps the cube to fit the new wavelength axis.
+        It also erases the preprocessed Cube and overwrites the cube wavelengths to the given ones.
+        """
+        if self._wavelengths is not None:
+            if not np.array_equal(self._wavelengths, otherWavelenghts):
+                newCube: np.ndarray = np.zeros((len(otherWavelenghts), self._cube.shape[1], self._cube.shape[2]))
+                for i, wavelength in enumerate(otherWavelenghts):
+                    closestIndex: int = int(np.argmin(np.abs(self._wavelengths - wavelength)))
+                    newCube[i, :, :] = self._cube[closestIndex, :, :]
+
+                self._cube = newCube
+                self._wavelengths = otherWavelenghts
+        else:
+            raise WavelengthsNotSetError
 
     def _specArr2cube(self, specArr: np.ndarray, ignoreBackground: bool = False) -> np.ndarray:
         """
@@ -110,20 +133,17 @@ class SpectraObject:
 
         return cube
 
-    def _cube2SpecArr(self, ignoreBackground: bool = False) -> np.ndarray:
+    def _cube2SpecArr(self) -> np.ndarray:
         """
         Reformats the cube into an MxN spectra matrix of M spectra with N wavelengths
-        :param ignoreBackground: If True, background spectra will be skipped
         :return: (MxN) spec array of M spectra of N wavelengths
         """
         i: int = 0
         specArr: List[np.ndarray] = []
+
         for y in range(self._cube.shape[1]):
             for x in range(self._cube.shape[2]):
-                if not ignoreBackground:
-                    specArr.append(self._cube[:, y, x])
-                elif i not in self._backgroundIndices:
-                    specArr.append(self._cube[:, y, x])
+                specArr.append(self._cube[:, y, x])
                 i += 1
 
         specArr: np.ndarray = np.array(specArr)  # NxM array of N specs with M wavelengths
@@ -135,23 +155,17 @@ class SpectraObject:
         Convenience function to get default wavelengths if None were set...
         :return:
         """
-        self._wavelengths = np.linspace(1115, 1671, cube.shape[0])
+        self._wavelengths = np.arange(cube.shape[0])
 
-    def _getSpecArray(self, indices: List[Tuple[int, int]], preprocessed: bool) -> np.ndarray:
+    def _getSpecArray(self, indices: List[Tuple[int, int]]) -> np.ndarray:
         """
         Gets the spectra at the indicated pixel coordinates
         :param indices: List of N (y, x) coordinate tuples
-        :param preprocessed: whether or not to get the preprocessed or raw spectra
         :return: Shape (N x M) array of N spectra with M wavelengths
         """
-        if preprocessed:
-            cube: np.ndarray = self.getCube()
-        else:
-            cube: np.ndarray = self._cube
-
-        specArr: np.ndarray = np.zeros((len(indices), cube.shape[0]))
+        specArr: np.ndarray = np.zeros((len(indices), self._cube.shape[0]))
         for i in range(specArr.shape[0]):
-            specArr[i, :] = cube[:, indices[i][0], indices[i][1]]
+            specArr[i, :] = self._cube[:, indices[i][0], indices[i][1]]
         return specArr
 
 
@@ -229,6 +243,8 @@ class SpectraCollection:
                 self._labels = np.array([cls]*numSpecs)
                 self._sampleNames = np.array([sampleName]*numSpecs)
             else:
+                assert self._spectra.shape[1] == specs.shape[1], f'incompatible spectra set shapes'
+
                 self._spectra = np.vstack((self._spectra, specs))
                 self._labels = np.append(self._labels, [cls]*numSpecs)
                 self._sampleNames = np.append(self._sampleNames, [sampleName]*numSpecs)

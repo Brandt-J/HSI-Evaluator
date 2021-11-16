@@ -16,28 +16,52 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-from typing import Dict, List, Union, TYPE_CHECKING
-
+import os.path
+from dataclasses import dataclass
+from typing import Optional, Union, TYPE_CHECKING
 import numpy as np
 from PyQt5 import QtWidgets
 from sklearn import svm
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.utils import to_categorical
 
 from logger import getLogger
+from classification.neuralNet import NeuralNetClf, loadModelFromFile
 
 if TYPE_CHECKING:
     from logging import Logger
 
 
-class ClassificationError(Exception):
-    """
-    Custom Error class for errors occuring during classification.
-    """
-    def __init__(self, errorText):
-        self.errorText = errorText
+@dataclass
+class SavedClassifier:
+    clf: 'BaseClassifier'
+    validReport: dict
+    preproMethod: Optional[str] = None
 
-    def __str__(self):
-        return repr(self.errorText)
+
+class BatchClassificationResult:
+    """
+    Container for storing results from a classification of a batch of spectra.
+    """
+    def __init__(self, probabilityMatrix: np.ndarray, labelEncoder: 'LabelEncoder') -> None:
+        """
+        :param probabilityMatrix: (NxM) Matrix giving the probabilities for N spectra to belong to M classes
+        :param labelEncoder: Fitted label encoder for converting indices to string class names
+        """
+        self._probabilityMatrix: np.ndarray = probabilityMatrix
+        self._labelEncoder: 'LabelEncoder' = labelEncoder
+
+    def getResults(self, cutoff: float = 0.0) -> np.ndarray:
+        """
+        Returns the classification results as an array. Results with a max. probability of less than the cutoff are
+        set to "unknown".
+        """
+        maxIndices: np.ndarray = np.argmax(self._probabilityMatrix, axis=1)
+        results: np.ndarray = self._labelEncoder.inverse_transform(maxIndices).astype('U128')  # max length of 128 chars per class name
+        maxProbs: np.ndarray = np.max(self._probabilityMatrix, axis=1)
+        results[maxProbs < cutoff] = "unknown"
+        return results
 
 
 class BaseClassifier:
@@ -48,7 +72,8 @@ class BaseClassifier:
 
     def __init__(self):
         self._logger: Logger = getLogger(f"classifier {self.title}")
-        self._uniqueLabels: Dict[str, int] = {}  # Dictionary mapping class names to their unique indices
+        self._labelEncoder: Union[None, LabelEncoder] = None
+        self._clf = None  # the actual classifier object
 
     def getControls(self) -> QtWidgets.QGroupBox:
         """
@@ -56,61 +81,12 @@ class BaseClassifier:
         """
         return QtWidgets.QGroupBox(self.title)
 
-    def makePickleable(self) -> None:
-        """
-        Can be overloaded if the classifier cannot be pickled, because it stores QWidgets, for instance.
-        We are using processes, so the classifier needs to be pickleable.
-        """
-        pass
-
-    def restoreNotPickleable(self) -> None:
-        """
-        Restores the originale version, see comment to makePickleable method
-        """
-        pass
-
-    def updateClassifierFromTrained(self, trainedClf: 'BaseClassifier') -> None:
-        """
-        Updates the classifier from training. Should copy the actual classifier object and the unique labels!
-        """
-        raise NotImplementedError
-
-    def setWavelengths(self, wavelengths: np.ndarray) -> None:
-        """
-        Overload, if the classifier needs to be configured to the wavelengths.
-        :param wavelengths: 1d array of wavelengths
-        """
-        pass
-
-    def _setUniqueLabels(self, ytest: np.ndarray, ytrain: np.ndarray) -> None:
+    def _fitLabelEncoder(self, ytest: np.ndarray, ytrain: np.ndarray) -> None:
         """
         Sets the unique labels for the current test/train set.
         """
-        self._uniqueLabels = {}
         allLabels: np.ndarray = np.hstack((ytest, ytrain))
-        for i, label in enumerate(np.unique(allLabels)):
-            self._uniqueLabels[label] = i
-
-    def _convertLabelsToNumbers(self, textlabels: np.ndarray) -> np.ndarray:
-        """
-        Takes an array of text labels and returns the corresponding array of indices, according to the unique labels.
-        """
-        return np.array([self._uniqueLabels[lbl] for lbl in textlabels])
-
-    def _convertNumbersToLabels(self, numberLabels: np.ndarray) -> np.ndarray:
-        """
-        Takes an array of text number and returns the corresponding array of text labels, according to the unique labels.
-        """
-        assert len(self._uniqueLabels) > 0
-        key_list = list(self._uniqueLabels.keys())
-        val_list = list(self._uniqueLabels.values())
-
-        textLabels: List[str] = []
-        for num in numberLabels:
-            position: int = val_list.index(num)
-            textLabels.append(key_list[position])
-
-        return np.array(textLabels)
+        self._labelEncoder = LabelEncoder().fit(allLabels)
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         """
@@ -118,13 +94,32 @@ class BaseClassifier:
         """
         raise NotImplementedError
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         """
         Predict labels for the given spectra
         :param spectra: (NxM) array of N spectra with M wavelengths.
-        :return
+        :return Batch Classification Result allowing to determine final class according to a confidence threshold-
         """
         raise NotImplementedError
+
+    def makePickleable(self, fname: str) -> None:
+        """
+        Overload to make the classifier object pickleable
+        :param fname: If of use - the fname where the classifier object will be saved to.
+        """
+        pass
+
+    def restoreNotPickleable(self) -> None:
+        """
+        Overload to restore the original, not pickleable state.
+        """
+        pass
+
+    def afterLoad(self) -> None:
+        """
+        Can be overriden if logic needs to be run after loading the classifier with pickle.
+        """
+        pass
 
 
 class KNN(BaseClassifier):
@@ -144,20 +139,6 @@ class KNN(BaseClassifier):
         optnGroup.layout().addRow("Num. Neighbors:", self._kSpinBox)
         return optnGroup
 
-    def makePickleable(self) -> None:
-        self._kSpinBox.valueChanged.disconnect()
-        self._kSpinBox = None
-
-    def restoreNotPickleable(self) -> None:
-        self._recreateSpinBox()
-
-    def updateClassifierFromTrained(self, trainedClassifier: 'KNN') -> None:
-        assert type(trainedClassifier) == KNN, f"Trained classifier is of wrong type. Expected KNN, " \
-                                               f"got {type(trainedClassifier)}"
-        self._clf = trainedClassifier._clf
-        self._uniqueLabels = trainedClassifier._uniqueLabels
-        self._logger.info("Updated classifier after training")
-
     def _recreateSpinBox(self) -> None:
         self._kSpinBox = QtWidgets.QSpinBox()
         self._kSpinBox.setMinimum(2)
@@ -167,13 +148,21 @@ class KNN(BaseClassifier):
 
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
         self._clf = KNeighborsClassifier(n_neighbors=self._k)
-        self._setUniqueLabels(y_test, y_train)
-        self._clf.fit(x_train, self._convertLabelsToNumbers(y_train))
+        self._fitLabelEncoder(y_test, y_train)
+        self._clf.fit(x_train, self._labelEncoder.transform(y_train))
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         assert self._clf is not None, "Classifier was not yet created!!"
-        labels: np.ndarray = self._clf.predict(spectra)
-        return self._convertNumbersToLabels(labels)
+        probMat: np.ndarray = self._clf.predict_proba(spectra)
+        return BatchClassificationResult(probMat, self._labelEncoder)
+
+    def makePickleable(self, fname: str) -> None:
+        self._update_k()
+        self._kSpinBox.valueChanged.disconnect()
+        self._kSpinBox = None
+
+    def restoreNotPickleable(self) -> None:
+        self._recreateSpinBox()
 
     def _update_k(self) -> None:
         self._k = self._kSpinBox.value()
@@ -197,29 +186,15 @@ class SVM(BaseClassifier):
         group.setLayout(layout)
         return group
 
-    def makePickleable(self) -> None:
-        self._kernelSelector.currentTextChanged.disconnect()
-        self._kernelSelector = None
-
-    def restoreNotPickleable(self) -> None:
-        self._recreateComboBox()
-
-    def updateClassifierFromTrained(self, trainedClassifier: 'SVM') -> None:
-        assert type(trainedClassifier) == SVM, f"Trained classifier is of wrong type. Expected SVM, " \
-                                               f"got {type(trainedClassifier)}"
-        self._clf = trainedClassifier._clf
-        self._uniqueLabels = trainedClassifier._uniqueLabels
-        self._logger.info("Updated classifier after training")
-
     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-        self._clf = svm.SVC(kernel=self._kernel)
-        self._setUniqueLabels(y_test, y_train)
-        self._clf.fit(x_train, self._convertLabelsToNumbers(y_train))
+        self._clf = svm.SVC(kernel=self._kernel, probability=True)
+        self._fitLabelEncoder(y_test, y_train)
+        self._clf.fit(x_train, self._labelEncoder.transform(y_train))
 
-    def predict(self, spectra: np.ndarray) -> np.ndarray:
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
         assert self._clf is not None, "Classifier was not yet created!!"
-        labels: np.ndarray = self._clf.predict(spectra)
-        return self._convertNumbersToLabels(labels)
+        probMat: np.ndarray = self._clf.predict_proba(spectra)
+        return BatchClassificationResult(probMat, self._labelEncoder)
 
     def _recreateComboBox(self) -> None:
         self._kernelSelector = QtWidgets.QComboBox()
@@ -230,22 +205,92 @@ class SVM(BaseClassifier):
     def _updateClassifier(self) -> None:
         self._kernel = self._kernelSelector.currentText()
 
+    def makePickleable(self, fname: str) -> None:
+        self._updateClassifier()
+        self._kernelSelector.currentTextChanged.disconnect()
+        self._kernelSelector = None
 
-# class NeuralNet(BaseClassifier):
-#     title = "Neural Net"
-#
-#     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-#         pass
-#
-#     def predict(self, spectra: np.ndarray) -> np.ndarray:
-#         return np.zeros(spectra.shape[0])
-#
-#
-# class RDF(BaseClassifier):
-#     title = "Random Decision Forest"
-#
-#     def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
-#         pass
-#
-#     def predict(self, spectra: np.ndarray) -> np.ndarray:
-#         return np.zeros(spectra.shape[0])
+    def restoreNotPickleable(self) -> None:
+        self._recreateComboBox()
+
+
+class NeuralNet(BaseClassifier):
+    title = "Neural Net"
+
+    def __init__(self):
+        super(NeuralNet, self).__init__()
+        self._clf: Union[None, NeuralNetClf] = None
+        self._spinEpochs: Union[None, QtWidgets.QSpinBox] = QtWidgets.QSpinBox()
+        self._numEpochs: int = 20
+        self._modelSavePath: Union[None, str] = None
+        self._recreateEpochsSpinbox()
+
+    def getControls(self) -> QtWidgets.QGroupBox:
+        self._recreateEpochsSpinbox()
+        optnGroup: QtWidgets.QGroupBox = QtWidgets.QGroupBox("Neural Net")
+        optnGroup.setLayout(QtWidgets.QFormLayout())
+        optnGroup.layout().addRow("Num. Epochs Training:", self._spinEpochs)
+        return optnGroup
+
+    def train(self, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray, y_test: np.ndarray) -> None:
+        self._fitLabelEncoder(y_test, y_train)
+        self._clf = NeuralNetClf(x_train.shape[1], len(self._labelEncoder.classes_))
+        y_train = to_categorical(self._labelEncoder.transform(y_train))
+        y_test = to_categorical(self._labelEncoder.transform(y_test))
+        self._clf.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=self._numEpochs)
+
+    def predict(self, spectra: np.ndarray) -> BatchClassificationResult:
+        if self._clf is None:
+            raise ClassificationError("Neural Net Classifier does not exist.")
+
+        probMat: np.ndarray = self._clf.predict(spectra)
+        return BatchClassificationResult(probMat, self._labelEncoder)
+
+    def makePickleable(self, fname: str) -> None:
+        self._numEpochs = self._spinEpochs.value()
+        self._spinEpochs.valueChanged.disconnect()
+        self._spinEpochs = None
+
+        self._saveKerasModel(fname)
+        self._clf = None
+
+    def restoreNotPickleable(self) -> None:
+        self._recreateEpochsSpinbox()
+        self._loadKerasModel()
+
+    def afterLoad(self) -> None:
+        self._loadKerasModel()
+
+    def _saveKerasModel(self, fname: str) -> None:
+        fpath, ending = fname.split(".")
+        self._modelSavePath = fpath + "_kerasmdl" + ending
+        self._clf.save(self._modelSavePath)
+
+    def _loadKerasModel(self) -> None:
+        assert self._modelSavePath is not None, "No model save path for the keras model to load."
+        assert os.path.exists(self._modelSavePath), f"No saved model found at: {self._modelSavePath}"
+        self._clf = loadModelFromFile(self._modelSavePath)
+
+    def _recreateEpochsSpinbox(self) -> None:
+        self._spinEpochs = QtWidgets.QSpinBox()
+        self._spinEpochs.setMinimum(1)
+        self._spinEpochs.setMaximum(1000)
+        self._spinEpochs.setValue(self._numEpochs)
+        self._spinEpochs.valueChanged.connect(self._numEpochsChanged)
+
+    def _numEpochsChanged(self) -> None:
+        """
+        Updates the numepochs value according to the spinbox value. Triggered by using the spinbox.
+        """
+        self._numEpochs = self._spinEpochs.value()
+
+
+class ClassificationError(Exception):
+    """
+    Custom Error class for errors occuring during classification.
+    """
+    def __init__(self, errorText):
+        self.errorText = errorText
+
+    def __str__(self):
+        return repr(self.errorText)

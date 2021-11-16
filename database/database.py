@@ -16,8 +16,6 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import json
-import os
 from io import StringIO
 from dataclasses import dataclass
 import mysql.connector
@@ -25,7 +23,6 @@ from typing import Union, TYPE_CHECKING, List, Dict
 
 import numpy as np
 from readConfig import sqlLogin
-from projectPaths import getAppFolder
 from logger import getLogger
 
 if TYPE_CHECKING:
@@ -94,6 +91,14 @@ class DBConnection:
         cursor.execute("SELECT size_class FROM size_classes")
         return [row[0] for row in cursor]
 
+    def getColors(self) -> List[str]:
+        """
+        Returns a list of colors
+        """
+        cursor = self._getCursor()
+        cursor.execute("SELECT color_name FROM colors")
+        return [row[0] for row in cursor]
+
     def getCommentOfSample(self, sampleName: str) -> str:
         """
         Returns the comment associated to the specified sample.
@@ -111,16 +116,41 @@ class DBConnection:
         assert sampleComment is not None, f"Sample {sampleName} was not found in Database."
         return sampleComment
 
+    def fetchSpectraWithStatement(self, sqlStatement: str) -> List['DownloadedSpectrum']:
+        cursor = self._getCursor()
+        try:
+            cursor.execute(sqlStatement)
+        except Exception as e:
+            self._logger.warning(f"Error on fetching with statement: {sqlStatement}:\n{e}")
+            raise e
+        else:  # only, when no exceptoin occurred
+            wavelenghts: Dict[int, np.ndarray] = self._getWavelenghtAxes()
+            spectra: List[DownloadedSpectrum] = []
+            for row in cursor:
+                intens, wavel = arrFromBytes(row[3]), wavelenghts[row[4]]
+                assert len(intens) == len(wavel), f"Length spectrum ({len(intens)}) does not match length wavelengths ({len(wavel)})"
+                spectra.append(DownloadedSpectrum(className=row[2],
+                                                  intensities=intens,
+                                                  wavelengths=wavel,
+                                                  sample=row[8],
+                                                  state=row[9],
+                                                  size=row[10],
+                                                  color=row[11]))
+            return spectra
+
     def createNewSample(self, sampleName: str, commentString: str) -> None:
         """
         Creates a new sample with the given information.
         :param sampleName: Name of the sample
         :param commentString: Comment to add to the sample in the database.
         """
-        cursor = self._getCursor()
-        cursor.execute(f"""INSERT INTO samples (sample_name, COMMENT)  VALUES ("{sampleName}", "{commentString}")""")
-        self._connection.commit()
-        self._logger.info(f"Created sample '{sampleName}' with comment '{commentString}' in SQL Database")
+        if sampleName not in self.getSampleNames():
+            cursor = self._getCursor()
+            cursor.execute(f"""INSERT INTO samples (sample_name, COMMENT)  VALUES ("{sampleName}", "{commentString}")""")
+            self._connection.commit()
+            self._logger.info(f"Created sample '{sampleName}' with comment '{commentString}' in SQL Database")
+        else:
+            self._logger.warning(f"Did not create sample name {sampleName}, as it already exist in the database!")
 
     def assertClassNameisPresent(self, className: str) -> None:
         """
@@ -141,12 +171,14 @@ class DBConnection:
         will done directly after uploading the spectrum.
         """
         cursor = self._getCursor()
-        specstring: str = specToString(wavelengths, intensities)
-        sqlcommand = f"""INSERT INTO spectra (spec_type, assignment, specdata, num_accumulations, acquisition_time, pxScale, sample, particle_state, size_class) 
+        specstring: str = arrToString(intensities)
+        wavelengthInd: int = self._getIndexOfWavelengths(wavelengths)
+        assert wavelengthInd != -1, 'Failed finding wavelengths in database!'
+        sqlcommand = f"""INSERT INTO spectra (spec_type, assignment, intensities, wavelengths, num_accumulations, acquisition_time, pxScale, sample, particle_state, size_class, color) 
                                         VALUES ("{spectraDetail.specType}", 
-                                        "{clsname}", "{specstring}", "{spectraDetail.numAcc}", "{spectraDetail.accTime}",
+                                        "{clsname}", "{specstring}", "{wavelengthInd}", "{spectraDetail.numAcc}", "{spectraDetail.accTime}",
                                         "{spectraDetail.resolution}", "{spectraDetail.sampleName}", "{spectraDetail.particleState}", 
-                                        "{spectraDetail.sizeClass}");"""
+                                        "{spectraDetail.sizeClass}", "{spectraDetail.color}");"""
         cursor.execute(sqlcommand)
         if directcommit:
             self._connection.commit()
@@ -200,6 +232,52 @@ class DBConnection:
         self._connection.commit()
         self._logger.info(f"Created material type '{typename}' in SQL Database")
 
+    def _getIndexOfWavelengths(self, wavelenghts: np.ndarray) -> int:
+        """
+        Takes a wavelength array and returns the unique index of it. If the array is not yet present in the DB, it will
+        be uploaded.
+        """
+        ind: int = self._getIndexOfWavelenghtsWithoutUpload(wavelenghts)
+        if ind == -1:  # i.e., not yet in db..
+            self._uploadWavelengths(wavelenghts)
+        ind = self._getIndexOfWavelenghtsWithoutUpload(wavelenghts)
+        assert ind != -1
+        return ind
+
+    def _getIndexOfWavelenghtsWithoutUpload(self, wavelengths: np.ndarray) -> int:
+        """
+        Returns index of the wavelength array in the db. Returns -1 if wavelengths not yet in DB.
+        """
+        index: int = -1
+        uploadedWavelengths: Dict[int, np.ndarray] = self._getWavelenghtAxes()
+        for ind, arr in uploadedWavelengths.items():
+            if np.array_equal(wavelengths, arr):
+                index = ind
+                break
+        return index
+
+    def _uploadWavelengths(self, wavelengths: np.ndarray) -> None:
+        """
+        Takes the wavelenghts array and uploads it to the DB.
+        """
+        cursor = self._getCursor()
+        wavelstr: str = arrToString(wavelengths)
+        cursor.execute(f"""INSERT into wavelengths (wavelengths) VALUES ("{wavelstr}")""")
+        self._connection.commit()
+
+    def _getWavelenghtAxes(self) -> Dict[int, np.ndarray]:
+        """
+        Returns a list dictionary all the wavelength axes present in the 'wavelengths' table of the db.
+        Key: Unique index, Value: np.ndarray of wavelenght axis.
+        """
+        cursor = self._getCursor()
+        cursor.execute("SELECT * FROM wavelengths")
+        wavelengths: Dict[int, np.ndarray] = {}
+        for row in cursor:
+            index, data = row[0], arrFromBytes(row[1])
+            wavelengths[index] = data
+        return wavelengths
+
 
 @dataclass
 class SpecDetails:
@@ -210,7 +288,62 @@ class SpecDetails:
     particleState: str = ""
     sizeClass: str = ""
     sampleName: str = ""
+    color: str = ""
 
+
+@dataclass
+class DownloadedSpectrum:
+    className: str
+    wavelengths: np.ndarray
+    intensities: np.ndarray
+    sample: str
+    state: str
+    size: str
+    color: str
+
+    def getIntensitiesForOtherWavelengths(self, otherWavelengths: np.ndarray) -> np.ndarray:
+        """
+        Takes a new wavelength axis and returns an intensities array fitting this other wavelengths.
+        """
+        if np.array_equal(otherWavelengths, self.wavelengths):
+            newIntensities: np.ndarray = self.intensities.copy()
+        else:
+            newIntensities: np.ndarray = np.zeros_like(otherWavelengths)
+            for i in range(len(otherWavelengths)):
+                closestInd: int = int(np.argmin(np.abs(self.wavelengths - otherWavelengths[i])))
+                newIntensities[i] = self.intensities[closestInd]
+
+        return newIntensities
+    
+    def groupSedimentName(self) -> None:
+        """
+        Convenience function for grouping sediment names. If the classname seems to be a sediment, then it will be
+        renamed into just "sediment".
+        """
+        if self.className.lower().find("sediment") != -1:
+            self.className = "Sediment"
+
+    def abbreviatePolymer(self) -> None:
+        """
+        Convenience function for abbreviating polymer names.
+        """
+        self.className = self.className.replace("Polyethylene", "PE")
+        self.className = self.className.replace("Polystyrene", "PS")
+        self.className = self.className.replace("Polyurethane", "PUR")
+        self.className = self.className.replace("Poly(ethylene terephthalate)", "PET")
+        self.className = self.className.replace("Poly(methyl methacrylate)", "PMMA")
+        self.className = self.className.replace("Poly(vinyl chloride)", "PVC")
+        self.className = self.className.replace("Polyamide", "PA")
+        self.className = self.className.replace("Polycarbonate", "PC")
+        self.className = self.className.replace("Acrylonitrile butadiene styrene", "ABS")
+        self.className = self.className.replace("Polypropylene", "PP")
+
+    def getConcatenatedName(self) -> str:
+        """
+        Returns a name concatenating different properties
+        """
+        return '_'.join([self.className, self.state, self.color])
+    
 
 def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, spectraDetail: 'SpecDetails',
                   dataqueue: 'Queue') -> None:
@@ -224,9 +357,9 @@ def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, s
     logger: 'Logger' = getLogger("SQL Upload")
     conn: DBConnection = DBConnection()
     spectraUploaded: int = 0
-    print(spectraDetail)
-    assert spectraDetail.particleState in conn.getParticleStates()
-    assert spectraDetail.sizeClass in conn.getParticleSizes()
+    assert spectraDetail.particleState in conn.getParticleStates(), f'{spectraDetail.particleState} was not yet uploaded to DB'
+    assert spectraDetail.sizeClass in conn.getParticleSizes(), f'{spectraDetail.sizeClass} was not yet uploaded to DB'
+
     for clsname, spectra in spectraDict.items():
         logger.info(f"Uploading {len(spectra)} spectra for class '{clsname}'")
         conn.assertClassNameisPresent(clsname)
@@ -240,14 +373,24 @@ def uploadSpectra(spectraDict: Dict[str, np.ndarray], wavelengths: np.ndarray, s
     conn.disconnect()
 
 
-def specToString(wavelengths: np.ndarray, intensities: np.ndarray) -> str:
+def arrToString(array: np.ndarray) -> str:
     """
-    Puts wavelengths and intensities into (Nx2) (N wavelengths, wavelengths in first column) array
-    and converts into a bytestring.
+    Converts an np.ndarray into a bytestring.
     """
-    assert len(wavelengths) == len(intensities)
-    spectrum: np.ndarray = np.vstack((wavelengths, intensities)).transpose()
+    arr = array[:, np.newaxis]
     fp = StringIO()
-    np.savetxt(fp, spectrum)
+    np.savetxt(fp, arr)
     fp.seek(0)
     return fp.read()
+
+
+def arrFromBytes(bytesObj: bytes) -> np.ndarray:
+    """
+    Takes a byte object as read from the SQL database and formats it into a numeric numpy array.
+    """
+    string: str = str(bytesObj)[2:]
+    values: List[str] = string.split("\\n")[:-1]
+    assert len(values) > 0, f'Invlaid conversion of bytes to value-list, please check! BytesObject is: {bytesObj}'
+    values: List[float] = [float(val) for val in values]
+    return np.array(values)
+    

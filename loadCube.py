@@ -34,6 +34,9 @@ try:
 except ImportError:
     print("Failed to load HSI Snapscan API")
     snapscanEnabled: bool = False
+except OSError:
+    print("Failed to load HSI Snapscan API")
+    snapscanEnabled: bool = False
 
 
 def loadCube(fname: str, errorPixelThreshold: float = 1000) -> Tuple[np.ndarray, np.ndarray]:
@@ -47,7 +50,6 @@ def loadCube(fname: str, errorPixelThreshold: float = 1000) -> Tuple[np.ndarray,
     if not os.path.exists(fname) and fname.endswith(".npy"):
         fname = fname.replace("npy", "hdr")
     assert os.path.exists(fname), f"File {fname} not found for loading the cube."
-
 
     if fname.endswith(".npy"):
         cube: np.ndarray = np.load(fname)

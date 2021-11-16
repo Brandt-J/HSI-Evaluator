@@ -28,8 +28,8 @@ from readConfig import sampleDirectory
 from dataObjects import View, getFilePathHash
 from loadCube import loadCube
 from legacyConvert import assertUpToDateView
-from gui.sampleview import MultiSampleView
-from gui.graphOverlays import GraphView
+from gui.multisampleview import MultiSampleView
+from gui.graphOverlays import GraphOverlays
 from gui.spectraPlots import ResultPlots
 from gui.preprocessEditor import PreprocessingSelector
 from gui.classUI import ClassCreator, ClassificationUI
@@ -38,6 +38,7 @@ from gui.classUI import ClassCreator, ClassificationUI
 if TYPE_CHECKING:
     from logging import Logger
     from preprocessing.preprocessors import Preprocessor
+    from gui.classUI import ClassInterpretationParams
     from gui.sampleview import SampleView
     from spectraObject import SpectraCollection
 
@@ -53,9 +54,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._preprocSelector: PreprocessingSelector = PreprocessingSelector(self, self._resultPlots)
         self._clsCreator: ClassCreator = ClassCreator()
         self._clfWidget: ClassificationUI = ClassificationUI(self)
-        self._clfWidget.setDisabled(True)
+
         self._saveViewAct: QtWidgets.QAction = QtWidgets.QAction("&Save View")
         self._exportSpecAct: QtWidgets.QAction = QtWidgets.QAction("&Export Spectra to ASCII")
+        self._detectParticlesAct: QtWidgets.QAction = QtWidgets.QAction("&Detect Particles")
+        self._flipVerticalAct: QtWidgets.QAction = QtWidgets.QAction("Flip vertically")
+        self._flipHorizontalAct: QtWidgets.QAction = QtWidgets.QAction("Flip horizontally")
 
         self._configureWidgets()
         self._createMenuBar()
@@ -63,11 +67,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disableWidgets()
 
     def setupConnections(self, sampleView: 'SampleView') -> None:
-        sampleView.Activated.connect(self._resultPlots.updatePlots)
-        sampleView.Renamed.connect(self._resultPlots.updatePlots)
-
-        graphView: 'GraphView' = sampleView.getGraphView()
-        graphView.SelectionChanged.connect(self._resultPlots.updatePlots)
+        graphView: 'GraphOverlays' = sampleView.getGraphOverlayObj()
         graphView.SelectionChanged.connect(self._preprocSelector.updatePreviewSpectra)
 
         self._clfWidget.ClassTransparencyUpdated.connect(graphView.updateClassImgTransp)
@@ -80,9 +80,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         return self._clsCreator.getClassVisibility(className)
 
-    def checkForRequiredClasses(self, classes: List[str]) -> None:
-        """Makes sure that the given classes are present in the class creator. Missing ones are created."""
-        self._clsCreator.checkForRequiredClasses(classes)
+    def updateClassCreatorClasses(self) -> None:
+        """
+        Makes sure that the class creator is set up to all classes in the currently loaded samples.
+        Missing classes are added, not used classes are removed
+        """
+        classes: Set[str] = self._multiSampleView.getClassNamesFromAllSamples()
+        self._clsCreator.setupToClasses(classes)
 
     def getColorOfClass(self, className: str) -> Tuple[int, int, int]:
         """
@@ -113,18 +117,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         return self._multiSampleView.getLabelledSpectraFromAllViews()
 
-    def getBackgroundOfActiveSample(self) -> np.ndarray:
-        """
-        Returns the averaged background spectrum of the currently active sample.
-        """
-        return self._multiSampleView.getBackgroundOfActiveSample()
-
-    def getBackgroundsOfAllSamples(self) -> Dict[str, np.ndarray]:
-        """
-        Returns the averaged backgounds of all samples.
-        """
-        return self._multiSampleView.getBackgroundsOfAllSamples()
-
     def getAllSamples(self) -> List['SampleView']:
         """
         Returns a list of the opened samples.
@@ -137,12 +129,19 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         return self._multiSampleView.getActiveSample()
 
-    def getPreprocessors(self) -> List['Preprocessor']:
+    def getPreprocessorsForClassification(self) -> List['Preprocessor']:
         """
         Returns the stack of Preprocessors for the current classification setup (i.e., as connected to the "Classification"
         node in the nodegraph.
         """
-        return self._preprocSelector.getPreprocessors()
+        return self._preprocSelector.getPreprocessorsForClassification()
+
+    def getPreprocessorsForSpecPreview(self):
+        """
+        Returns the stack of Preprocessors for the spectra preview (i.e., as connected to the "Spectra" node in the
+        nodegraph.
+        """
+        return self._preprocSelector.getPreprocessorsForSpecPreview()
 
     def getWavelengths(self) -> np.ndarray:
         return self._multiSampleView.getWavelengths()
@@ -152,6 +151,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def getCurrentClass(self) -> str:
         return self._clsCreator.getCurrentClass()
+
+    def getClassInterprationParams(self) -> 'ClassInterpretationParams':
+        return self._clfWidget.getClassInterpretationParams()
 
     def _promptLoadNPYSample(self) -> None:
         """Prompts for a npy file to open as sample"""
@@ -202,39 +204,56 @@ class MainWindow(QtWidgets.QMainWindow):
         :param savePath: the full path to where to save the view
         """
         viewObj: View = View()
-        viewObj.samples = [sample.getSampleDataToSave() for sample in self._multiSampleView.getSampleViews()]
+        for sample in self._multiSampleView.getSampleViews():
+            sample.saveCoordinatesToSampleData()
+            sampleData = sample.getSampleDataToSave()
+            viewObj.samples.append(sampleData)
+
         viewObj.processingGraph = self._preprocSelector.getProcessingGraph()
         viewObj.title = os.path.basename(savePath.split(".")[0])
         with open(savePath, "wb") as fp:
             pickle.dump(viewObj, fp)
+
+    def _newSampleView(self) -> None:
+        """
+        Opens a new sample view that can be used for database queries.
+        """
+        newView: 'SampleView' = self._multiSampleView.addSampleView()
+        defaultCube: np.ndarray = np.zeros((1000, 300, 300))
+        newView.setUp("", defaultCube, np.arange(defaultCube.shape[0]))  # some placeholder data
+        self.enableWidgets()
 
     def _loadView(self, fname: str) -> None:
         """
         Loads a view.
         :fname: full path to the file to load.
         """
+        assert os.path.exists(fname), f"The specified file to load: {fname} does not exist."
         with open(fname, "rb") as fp:
             loadedView: View = pickle.load(fp)
-            loadedView = assertUpToDateView(loadedView)  # TODO: map from processStack to processingGraph
+            loadedView = assertUpToDateView(loadedView)
         view: View = View()
         view.__dict__.update(loadedView.__dict__)
 
         if view.title != '':
             self.setWindowTitle(f"HSI Evaluator - {view.title}")
+        self._clsCreator.deleteAllClasses()
         self._multiSampleView.createListOfSamples(view.samples)
+        self._multiSampleView.positonSampleViewsAsSaved()
         self._preprocSelector.applyPreprocessingConfig(view.processingGraph)
         self._preprocSelector.updatePreviewSpectra()
         self.enableWidgets()
-        self._resultPlots.updatePlots()
         self.showMaximized()
 
     def _export(self) -> None:
         raise NotImplementedError
 
+    @QtCore.pyqtSlot()
     def enableWidgets(self) -> None:
         for widget in self._getUIWidgetsForSelectiveEnabling():
             widget.setDisabled(False)
 
+    @QtCore.pyqtSlot()
     def disableWidgets(self) -> None:
         for widget in self._getUIWidgetsForSelectiveEnabling():
             widget.setDisabled(True)
@@ -244,21 +263,21 @@ class MainWindow(QtWidgets.QMainWindow):
         Sets parameters to the widgets of that window and establishes connections.
         :return:
         """
-        self._multiSampleView.SampleClosed.connect(self._resultPlots.updatePlots)
-
-        self._preprocSelector.ProcessorStackUpdated.connect(self._resultPlots.updatePlots)
-
-        self._clsCreator.ClassDeleted.connect(self._resultPlots.updatePlots)
         self._clsCreator.ClassActivated.connect(self._resultPlots.switchToDescriptorSet)
-        self._clsCreator.ClassVisibilityChanged.connect(self._resultPlots.updatePlots)
         self._clsCreator.setMaximumWidth(300)
 
         self._clfWidget.setMaximumWidth(300)
+        self._clfWidget.ClassInterpretationParamsChanged.connect(self._multiSampleView.updateClassificationResults)
+
         self._resultPlots.setMainWinRef(self)
 
     def _createMenuBar(self) -> None:
         """Creates the Menu bar"""
         filemenu: QtWidgets.QMenu = QtWidgets.QMenu("&File", self)
+        newAct: QtWidgets.QAction = QtWidgets.QAction("&New Sample", self)
+        newAct.setShortcut("Ctrl+N")
+        newAct.triggered.connect(self._newSampleView)
+
         openAct: QtWidgets.QAction = QtWidgets.QAction("&Open Sample(s)", self)
         openAct.setShortcut("Ctrl+O")
         openAct.triggered.connect(self._promptLoadNPYSample)
@@ -273,28 +292,52 @@ class MainWindow(QtWidgets.QMainWindow):
         self._exportSpecAct.triggered.connect(self._multiSampleView.exportSpectra)
         self._exportSpecAct.setShortcut("Ctrl+E")
 
+        self._detectParticlesAct.triggered.connect(self._multiSampleView.runParticleDetectionInAllSamples)
+        self._flipHorizontalAct.triggered.connect(self._multiSampleView.flipSamplesHorizontally)
+        self._flipVerticalAct.triggered.connect(self._multiSampleView.flipSamplesVertically)
         closeAct: QtWidgets.QAction = QtWidgets.QAction("Close &Program", self)
         closeAct.triggered.connect(self.close)
 
+        filemenu.addAction(newAct)
         filemenu.addAction(openAct)
         filemenu.addSeparator()
         filemenu.addAction(loadViewAct)
         filemenu.addAction(self._saveViewAct)
-        filemenu.addAction(self._exportSpecAct)
         filemenu.addSeparator()
         filemenu.addAction(closeAct)
 
+        toolsmenu: QtWidgets.QMenu = QtWidgets.QMenu("&Tools", self)
+        toolsmenu.addAction(self._exportSpecAct)
+        toolsmenu.addAction(self._detectParticlesAct)
+        toolsmenu.addSeparator()
+        toolsmenu.addAction(self._flipVerticalAct)
+        toolsmenu.addAction(self._flipHorizontalAct)
+
+        visibilityMenu: QtWidgets.QMenu = QtWidgets.QMenu("&Visibility", self)
+        toggleToolBarsAct: QtWidgets.QAction = QtWidgets.QAction("Toggle Sample &Info", self)
+        toggleToolBarsAct.triggered.connect(self._multiSampleView.toggleSampleToolbars)
+        toggleToolBarsAct.setShortcut("I")
+        
+        toggleParticlesAct: QtWidgets.QAction = QtWidgets.QAction("Toggle &Particles", self)
+        toggleParticlesAct.triggered.connect(self._multiSampleView.toggleParticles)
+        toggleParticlesAct.setShortcut("P")
+
+        visibilityMenu.addAction(toggleToolBarsAct)
+        visibilityMenu.addAction(toggleParticlesAct)
+
         self.menuBar().addMenu(filemenu)
+        self.menuBar().addMenu(toolsmenu)
+        self.menuBar().addMenu(visibilityMenu)
 
     def _createLayout(self) -> None:
         """
         Creates the actual window layout.
         :return:
         """
-        clsLayout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        clsLayout.addWidget(self._clsCreator)
-        clsLayout.addStretch()
-        clsLayout.addWidget(self._clfWidget)
+        clsTabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
+        clsTabView.addTab(self._clsCreator, "Select Classes")
+        clsTabView.addTab(self._clfWidget, "Select/Apply Classifier")
+        clsTabView.setFixedWidth(max([self._clsCreator.width(), self._clfWidget.width()]))
 
         splitter1: QtWidgets.QSplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         splitter1.addWidget(self._preprocSelector)
@@ -309,7 +352,7 @@ class MainWindow(QtWidgets.QMainWindow):
         group.setLayout(layout)
         self.setCentralWidget(group)
 
-        layout.addLayout(clsLayout)
+        layout.addWidget(clsTabView)
         layout.addWidget(splitter2)
 
     def _getUIWidgetsForSelectiveEnabling(self) -> List[QtWidgets.QWidget]:
@@ -328,6 +371,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._multiSampleView.saveSamples()
             self._multiSampleView.closeAllSamples()
             a0.accept()
+        else:
+            a0.ignore()
 
 
 def main():

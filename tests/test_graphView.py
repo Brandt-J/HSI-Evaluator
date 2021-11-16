@@ -16,19 +16,18 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-
-
+import sys
 from unittest import TestCase
 from typing import Set
 from PyQt5.QtCore import QPoint
 import numpy as np
 
-from gui.graphOverlays import SelectionOverlay, getBrightOrDarkIndices
+from gui.graphOverlays import SelectionOverlay, getBrightOrDarkIndices, GraphOverlays
 
 
 class TestSelectionView(TestCase):
     def test_newSelection(self):
-        selectionOverlay: SelectionOverlay = SelectionOverlay()
+        selectionOverlay: SelectionOverlay = SelectionOverlay(GraphOverlays())
         x0, y0 = 2, 3
         endPoint: QPoint = QPoint(4, 4)
 
@@ -63,9 +62,8 @@ class TestGraphView(TestCase):
                     darkPixelsIndices.add(i)
                 i += 1
 
-        foundBrightIndices: Set[int] = getBrightOrDarkIndices(cube)
+        foundBrightIndices: Set[int] = getBrightOrDarkIndices(cube, 1.0, 128, bright=True)
         self.assertEqual(brightPixelIndices, foundBrightIndices)
 
-        foundDarkIndices: Set[int] = getBrightOrDarkIndices(cube, bright=False)
+        foundDarkIndices: Set[int] = getBrightOrDarkIndices(cube, 1.0, 128, bright=False)
         self.assertEqual(darkPixelsIndices, foundDarkIndices)
-

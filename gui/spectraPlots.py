@@ -27,6 +27,7 @@ from typing import List, Dict, TYPE_CHECKING, cast, Union
 
 from logger import getLogger
 from gui.scatterPlot import ScatterPlot
+from helperfunctions import getRandomSpectraFromArray
 # from SpectraProcessing.descriptors import DescriptorLibrary, DescriptorSet, TriangleDescriptor
 
 if TYPE_CHECKING:
@@ -58,6 +59,7 @@ class ResultPlots(QtWidgets.QWidget):
         self._scatterPlot: 'ScatterPlot' = ScatterPlot()
 
         self._tabView: QtWidgets.QTabWidget = QtWidgets.QTabWidget()
+        self.setMinimumWidth(100)
         self._configureWidgets()
         self._createLayout()
 
@@ -84,13 +86,17 @@ class ResultPlots(QtWidgets.QWidget):
 
     @QtCore.pyqtSlot(str)
     def switchToDescriptorSet(self, descSetName: str) -> None:
-        self._specPlot.switchToDescriptorSet(descSetName)
+        pass
+        # self._specPlot.switchToDescriptorSet(descSetName)
 
     @QtCore.pyqtSlot(np.ndarray)
     def updateSpecPlot(self, spectra: np.ndarray) -> None:
         self._specPlot.resetPlots()
         self._specPlot.updatePlot(spectra)
         self._specPlot.finishPlotting()
+
+    def updateCursorSpectrum(self, intensities: np.ndarray) -> None:
+        self._specPlot.updateCursorSpectrum(intensities)
 
     @QtCore.pyqtSlot(np.ndarray)
     def updateScatterPlot(self, spectra: np.ndarray) -> None:
@@ -116,24 +122,6 @@ class ResultPlots(QtWidgets.QWidget):
         """
         self._specPlot.resetPlots()
         self._scatterPlot.resetPlots()
-
-    def updatePlots(self) -> None:
-        """
-        Update the scatter and spectra plot.
-        :return:
-        """
-        print("called update plots")
-        # self._specPlot.resetPlots()
-        # self._scatterPlot.resetPlots()
-        # if self._mainWindow is not None:
-        #     if self._showAllCheckBox.isChecked():
-        #         self._plotAllSamples()
-        #     else:
-        #         background: np.ndarray = self._mainWindow.getBackgroundOfActiveSample()
-        #         self._plotSpectraDict(self._mainWindow.getLabelledSpectraFromActiveView(), background)
-        #
-        # self._specPlot.finishPlotting()
-        # self._scatterPlot.finishPlotting()
 
     # def _plotAllSamples(self) -> None:
     #     """
@@ -182,29 +170,17 @@ class ResultPlots(QtWidgets.QWidget):
     #         self._specPlot.plotSpectra(cls_specs, i, linestyle, color, legendName)
     #         self._scatterPlot.addSpectraToPCA(cls_specs, linestyle, color, legendName)
 
-    def updateCursorSpectrum(self, x: int, y: int) -> None:
-        pass  # TODO: REFACTOR to directly take spectrum as input
-        # spec: np.ndarray = self._specObj.getSpectrumaAtXY(x, y)
-        # if self._cursorSpec is None:
-        #     self._cursorSpec = self._specAx.plot(self._specObj.getWavelengths(), spec, color='gray')[0]
-        # else:
-        #     self._cursorSpec.set_ydata(spec)
-        # self._canvas.draw()
-
     def _configureWidgets(self) -> None:
         self._numSpecSpinner.setMinimum(0)
         self._numSpecSpinner.setMaximum(1000)
         self._numSpecSpinner.setValue(100)
         self._numSpecSpinner.setMaximumWidth(50)
-        self._numSpecSpinner.valueChanged.connect(self.updatePlots)
 
         self._seedSpinner.setMinimum(0)
         self._seedSpinner.setMaximum(100)
         self._seedSpinner.setValue(42)
-        self._seedSpinner.valueChanged.connect(self.updatePlots)
 
         self._showAllCheckBox.setChecked(True)
-        self._showAllCheckBox.stateChanged.connect(self.updatePlots)
 
     def _createLayout(self) -> None:
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
@@ -226,20 +202,17 @@ class ResultPlots(QtWidgets.QWidget):
         layout.addWidget(self._tabView)
         self.setLayout(layout)
 
-    def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
-        """
-        Limits number of given specSet to not exceed the value given with numSpecSpinner.
-        :param specSet: (NxM) set of N spectra with M wavelengths
-        :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavelengths
-        """
-        random.seed(self._seedSpinner.value())
-        numSpecs: int = specSet.shape[0]
-        maxSpecs: int = self._numSpecSpinner.value()
-        if numSpecs > maxSpecs:
-            specSet = specSet.copy()
-            randInd: np.ndarray = np.array(random.sample(list(np.arange(numSpecs)), maxSpecs))
-            specSet = specSet[randInd, :]
-        return specSet
+    # def _limitSpecNumber(self, specSet: np.ndarray) -> np.ndarray:
+    #     """
+    #     Limits number of given specSet to not exceed the value given with numSpecSpinner.
+    #     :param specSet: (NxM) set of N spectra with M wavelengths
+    #     :return: (N'xM) set of N' (<= numSpecSpinner.value()) spectra with M wavelengths
+    #     """
+    #     numSpecs: int = specSet.shape[0]
+    #     maxSpecs: int = self._numSpecSpinner.value()
+    #     if numSpecs > maxSpecs:
+    #         specSet = getRandomSpectraFromArray(specSet, maxSpecs, self._seedSpinner.value())
+    #     return specSet
 
 
 class SpecPlot(QtWidgets.QWidget):
@@ -252,8 +225,10 @@ class SpecPlot(QtWidgets.QWidget):
         self._mainWin: Union[None, 'MainWindow'] = None
         self._showDescCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._legendOutsideCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._showLegendCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
         self._stackSpinner: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self._avgCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
+        self._cursorCheckBox: QtWidgets.QCheckBox = QtWidgets.QCheckBox()
 
         self._specAx: plt.Axes = self._figure.add_subplot()
         # self._descAx: plt.Axes = self._specAx.twinx()
@@ -327,47 +302,55 @@ class SpecPlot(QtWidgets.QWidget):
         self._legendItems = []
         self._canvas.draw()
 
-    # def plotSpectra(self, spectra: np.ndarray, index: int, linestyle: Union[str, tuple],
-    #                  color: List[float], legendName: str) -> None:
-    #     """
-    #     Plots the spectra array.
-    #     :param spectra: (NxM) array of N spectra with M wavelengths
-    #     :param index: index of specset, used for optional offset.
-    #     :param linestyle: the linestyle code to use
-    #     :param color: The rgb color to use (or rgba)
-    #     :param legendName: The legendname of the given spec set.
-    #     """
-    #     spectra: np.ndarray = self._prepareSpecsForPlot(spectra)
-    #     self._specAx.plot(self._mainWin.getWavelengths(), spectra - index * self._stackSpinner.value(),
-    #                       linestyle=linestyle, color=color)
-    #
-    #     self._legendItems.append(legendName)
-
     def finishPlotting(self) -> None:
         """
         Called after finishing plotting a set of spectra.
         """
-        # if self._cursorSpec is not None:
-        #     cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
-        #     self._cursorSpec = self._specAx.plot(self._mainWindow.getWavelengths(), cursorSpec, color='gray')[0]
+        if self._cursorSpec is not None and self._cursorCheckBox.isChecked():
+            cursorSpec: np.ndarray = self._cursorSpec.get_ydata()
+            wavelengths: np.ndarray = self._mainWin.getWavelengths(), cursorSpec
+            if len(cursorSpec) == len(wavelengths):  # can be false when cube dimensions change (i.e., downloading spectra from database)
+                self._cursorSpec = self._specAx.plot(wavelengths, color='gray')[0]
+            else:
+                self._cursorSpec = None
 
         self._specAx.set_xlabel("Wavelength (nm)")
         self._specAx.set_ylabel("Intensity (a.u.)")
-        if self._legendOutsideCheckBox.isChecked():
-            self._specAx.legend(self._legendItems, bbox_to_anchor=(1, 1), loc="upper left")
-        else:
-            self._specAx.legend(self._legendItems)
+        if self._showLegendCheckBox.isChecked():
+            if self._legendOutsideCheckBox.isChecked():
+                self._specAx.legend(self._legendItems, bbox_to_anchor=(1, 1), loc="upper left")
+            else:
+                self._specAx.legend(self._legendItems)
         self._figure.tight_layout()
         self._plotDescriptors()
         self._canvas.draw()
 
+    def updateCursorSpectrum(self, intensities: np.ndarray) -> None:
+        """
+        Updates the spectrum under the mouse position.
+        """
+        if self._cursorCheckBox.isChecked():
+            if self._cursorSpec is None:
+                wavelengths: np.ndarray = self._mainWin.getWavelengths()
+                self._cursorSpec = self._specAx.plot(wavelengths, intensities, color='gray')[0]
+            else:
+                self._cursorSpec.set_ydata(intensities)
+
+            self._canvas.draw()
+
     def _createLayout(self) -> None:
         layout: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
-        optionsLayout: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
-        optionsLayout.addRow("Average spectra per class", self._avgCheckBox)
-        optionsLayout.addRow("Stack amount", self._stackSpinner)
-        optionsLayout.addRow("Show legend outside plot", self._legendOutsideCheckBox)
-        # optionsLayout.addRow("Show descriptors", self._showDescCheckBox)
+        optionsLayout: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
+        col1: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        col2: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
+        col1.addRow("Average spectra per class", self._avgCheckBox)
+        col1.addRow("Stack amount", self._stackSpinner)
+        col1.addRow("Show legend", self._showLegendCheckBox)
+        col2.addRow("Show legend outside plot", self._legendOutsideCheckBox)
+        col2.addRow("Show cursor spectrum", self._cursorCheckBox)
+        # col2.addRow("Show descriptors", self._showDescCheckBox)
+        optionsLayout.addLayout(col1)
+        optionsLayout.addLayout(col2)
 
         layout.addLayout(optionsLayout)
         layout.addWidget(self._canvas)
@@ -385,9 +368,12 @@ class SpecPlot(QtWidgets.QWidget):
         self._avgCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._showDescCheckBox.setChecked(True)
 
+        self._cursorCheckBox.setChecked(True)
+        self._cursorCheckBox.toggled.connect(self._onPlotSettingsChanged)
 
         self._legendOutsideCheckBox.toggled.connect(self._onPlotSettingsChanged)
-
+        self._showLegendCheckBox.setChecked(True)
+        self._showLegendCheckBox.toggled.connect(self._onPlotSettingsChanged)
         self._noClickTimer.timeout.connect(self._enableOnClick)
 
         self._canvas.mpl_connect('button_press_event', self._onClick)
@@ -460,7 +446,6 @@ class SpecPlot(QtWidgets.QWidget):
         if self._activeDescSet is not None:
             middlePos = max([10, middlePos])  # prevent getting a negative start position
             self._activeDescSet.add_descriptor(middlePos-10, middlePos, middlePos+10)
-            self.updatePlots()
 
     def _enableOnClick(self) -> None:
         self._onClickeEnabled = True

@@ -34,3 +34,12 @@ def getAppFolder() -> str:
     appFolder: str = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.AppLocalDataLocation)
     os.makedirs(appFolder, exist_ok=True)
     return appFolder
+
+
+def getClassifierSaveFolder() -> str:
+    """
+    Returs a folder location for storing trained classifiers.
+    """
+    folder: str = os.path.join(getAppFolder(), "TrainedClassifiers")
+    os.makedirs(folder, exist_ok=True)
+    return folder
