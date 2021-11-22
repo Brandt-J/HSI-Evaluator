@@ -16,3 +16,9 @@ classification/spectra.txt
 classification/labels_new.npy
 
 classification/spectra_new.npy
+
+classification/ResNetModelSaves/
+
+classification/ResNetModelSavesNoPreprocess/
+
+classification/ResNetModelSavesWithPreprocess/
