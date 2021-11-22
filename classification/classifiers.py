@@ -27,7 +27,7 @@ from sklearn.preprocessing import LabelEncoder
 from tensorflow.keras.utils import to_categorical
 
 from logger import getLogger
-from classification.neuralNet import NeuralNetClf, loadModelFromFile
+from classification.neuralNetModels.neuralNet import NeuralNetClf, loadModelFromFile
 
 if TYPE_CHECKING:
     from logging import Logger
