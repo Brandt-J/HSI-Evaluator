@@ -18,15 +18,15 @@ If not, see <https://www.gnu.org/licenses/>.
 """
 from PyQt5 import QtWidgets, QtGui, QtCore
 from typing import *
-import numpy as np
 
 if TYPE_CHECKING:
     from particles import Particle
+    from gui.classUI import ClassInterpretationParams
 
 
-def getContourItemForParticle(particle: 'Particle') -> 'ParticleContour':
+def getContourItemForParticle(particle: 'Particle', classInterpParams: 'ClassInterpretationParams') -> 'ParticleContour':
     contour: ParticleContour = ParticleContour()
-    contour.setupParticle(particle)
+    contour.setupParticle(particle, classInterpParams)
     return contour
 
 
@@ -43,8 +43,10 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         self._polygon: Union[None, QtGui.QPolygonF] = None
         self._color = QtGui.QColor(180, 255, 180, 200)
         self._alpha: float = 0.75
+        self._partilcleInfo: ParticleInfo = ParticleInfo()
+        self._partilcleInfo.setParentItem(self)
 
-    def setupParticle(self, particle: 'Particle') -> None:
+    def setupParticle(self, particle: 'Particle', classInterpParams: 'ClassInterpretationParams') -> None:
         """
         Calculates the bounding rect (needed for drawing the QGraphicsView) and converts the contourdata to a polygon.
         :return:
@@ -60,6 +62,12 @@ class ParticleContour(QtWidgets.QGraphicsObject):
             self._polygon.append(QtCore.QPointF(point[0, 0], point[0, 1]))
 
         self.brect.setCoords(x0, y0, x1, y1)
+
+        self._partilcleInfo.setPos(x0 + (x1-x0)/2, y0 + (y1-y0)/2)
+        self._partilcleInfo.setClassName(particle.getAssignment(classInterpParams))
+
+    def setAssignment(self, assignment: str) -> None:
+        self._partilcleInfo.setClassName(assignment)
 
     def boundingRect(self):
         return self.brect
@@ -78,9 +86,46 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         """
         self._color = QtGui.QColor(color[0], color[1], color[2])
 
+    def toggleParticleInfo(self) -> None:
+        """
+        Toggles visibility of the particle assignment info box.
+        """
+        self._partilcleInfo.setVisible(not self._partilcleInfo.isVisible())
+
     def paint(self, painter, option, widget):
         if self._polygon is not None:
             painter.setPen(QtCore.Qt.green)
             painter.setBrush(self._color)
             painter.setOpacity(self._alpha)
             painter.drawPolygon(self._polygon)
+
+
+class ParticleInfo(QtWidgets.QGraphicsItem):
+    """
+    Small overlay indicating the particle's class.
+    """
+    margin: int = 3
+    pixelsize: int = 7
+
+    def __init__(self):
+        super(ParticleInfo, self).__init__()
+        self._cls: str = ""
+        self._width: int = 0
+        self._height: int = 0
+        self._font: QtGui.QFont = QtGui.QFont()
+        self._font.setPixelSize(self.pixelsize)
+        self.hide()
+
+    def setClassName(self, className: str) -> None:
+        self._cls = className
+        fontMetric: QtGui.QFontMetrics = QtGui.QFontMetrics(self._font)
+        self._width = (fontMetric.boundingRect(className).width())*2 + 2*self.margin
+        self._height = fontMetric.boundingRect(className).height() + 2*self.margin
+
+    def boundingRect(self) -> QtCore.QRectF:
+        return QtCore.QRectF(-self.margin, -self.margin, self._width, self._height)
+
+    def paint(self, painter: QtGui.QPainter, option, widget) -> None:
+        if self._cls:
+            painter.setPen(QtCore.Qt.white)
+            painter.drawText(0, self.margin+self.pixelsize, self._cls)

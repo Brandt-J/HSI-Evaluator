@@ -95,6 +95,11 @@ class MultiSampleView(QtWidgets.QGraphicsView):
             sample.getGraphOverlayObj().toggleParticleVisibility()
 
     @QtCore.pyqtSlot()
+    def toggleParticleInfo(self) -> None:
+        for sample in self._sampleviews:
+            sample.getGraphOverlayObj().toggleParticleInfo()
+
+    @QtCore.pyqtSlot()
     def flipSamplesHorizontally(self) -> None:
         for sampleview in self._sampleviews:
             sampleview.setX(-1 * sampleview.pos().x())

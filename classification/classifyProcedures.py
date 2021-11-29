@@ -75,6 +75,8 @@ class TrainingResult:
     classifier: 'BaseClassifier'
     validReportString: str
     validReportDict: dict
+    y_test: np.ndarray
+    y_predicted: np.ndarray
 
 
 def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier', preprocessors: List['Preprocessor'],
@@ -116,8 +118,7 @@ def trainClassifier(trainSampleList: List['Sample'], classifier: 'BaseClassifier
     reportDict: dict = classification_report(ytest, ypredicted, output_dict=True, zero_division=0)
     reportStr: str = classification_report(ytest, ypredicted, output_dict=False, zero_division=0)
     logger.info(reportStr)
-
-    receiveTrainResultFunc(TrainingResult(classifier, reportStr, reportDict))
+    receiveTrainResultFunc(TrainingResult(classifier, reportStr, reportDict, ytest, ypredicted))
 
 
 def classifySamples(inferenceSampleList: List['SampleView'], classifier: 'BaseClassifier', mode: 'ClassifyMode',

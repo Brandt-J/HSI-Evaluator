@@ -338,8 +338,13 @@ class MainWindow(QtWidgets.QMainWindow):
         toggleParticlesAct.triggered.connect(self._multiSampleView.toggleParticles)
         toggleParticlesAct.setShortcut("P")
 
+        toggleParticleInfoAct: QtWidgets.QAction = QtWidgets.QAction("&Toggle Particle Info", self)
+        toggleParticleInfoAct.triggered.connect(self._multiSampleView.toggleParticleInfo)
+        toggleParticleInfoAct.setShortcut("H")
+
         visibilityMenu.addAction(toggleToolBarsAct)
         visibilityMenu.addAction(toggleParticlesAct)
+        visibilityMenu.addAction(toggleParticleInfoAct)
 
         self.menuBar().addMenu(filemenu)
         self.menuBar().addMenu(toolsmenu)
@@ -389,16 +394,3 @@ class MainWindow(QtWidgets.QMainWindow):
             a0.accept()
         else:
             a0.ignore()
-
-
-def main():
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("HSI Evaluator")
-    win = MainWindow()
-    win.showMaximized()
-    app.exec_()
-
-
-if __name__ == '__main__':
-    main()

@@ -96,7 +96,7 @@ class GraphOverlays(QtCore.QObject):
 
         self._particleItems = []
         for particle in particles:
-            newContour: 'ParticleContour' = getContourItemForParticle(particle)
+            newContour: 'ParticleContour' = getContourItemForParticle(particle, self._mainWin.getClassInterprationParams())
             newContour.setParentItem(self._sampleView)
             graphScene.addItem(newContour)
             self._particleItems.append(newContour)
@@ -108,6 +108,10 @@ class GraphOverlays(QtCore.QObject):
         for item in self._particleItems:
             item.setVisible(not item.isVisible())
 
+    def toggleParticleInfo(self) -> None:
+        for item in self._particleItems:
+            item.toggleParticleInfo()
+
     def updateParticleColors(self, particleHandler: 'ParticleHandler', interpretationParams: 'ClassInterpretationParams'):
         """
         Updates the colors of the particle items in the graphics scene.
@@ -116,6 +120,7 @@ class GraphOverlays(QtCore.QObject):
         """
         for particleItem in self._particleItems:
             assignment: str = particleHandler.getAssigmentOfParticleOfID(particleItem.getParticleID(), interpretationParams)
+            particleItem.setAssignment(assignment)
             color: Tuple[int, int, int] = self._mainWin.getColorOfClass(assignment)
             particleItem.setColor(color)
 

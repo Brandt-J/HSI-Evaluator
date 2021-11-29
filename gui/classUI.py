@@ -21,11 +21,12 @@ import pickle
 from dataclasses import dataclass
 
 from PyQt5 import QtWidgets, QtCore, QtGui
-from typing import List, Tuple, Dict, Union, TYPE_CHECKING, Callable, cast, Set, Optional
+from typing import List, Tuple, Dict, Union, TYPE_CHECKING, cast, Set, Optional
 import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.pyplot import rcParams
 from threading import Thread, Event
+from sklearn.metrics import ConfusionMatrixDisplay
 
 from logger import getLogger
 from gui.graphOverlays import npy2Pixmap
@@ -806,6 +807,7 @@ class TrainClfTab(QtWidgets.QWidget):
             self._trainResult = cast(cp.TrainingResult, self._trainResult)
             self._currentTrainResult = self._trainResult.validReportDict
             self.NewValidationResult.emit(self._trainResult.validReportDict)
+            ConfusionMatrixDisplay.from_predictions(self._trainResult.y_test, self._trainResult.y_predicted)
 
         self._progressBar.hide()
         self._timer.stop()
