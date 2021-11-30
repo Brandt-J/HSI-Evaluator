@@ -204,7 +204,6 @@ class DBConnection:
             cursor = self._connection.cursor(buffered=True)  #
         except mysql.connector.errors.InternalError as e:
             self._logger.critical(f"Cursor to SQL database could not be retrieved:\n{e}")
-            breakpoint()
             raise ConnectionError(f"Cursor to SQL database could not be retrieved:\n{e}")
         return cursor
 

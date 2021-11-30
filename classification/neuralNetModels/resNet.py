@@ -29,14 +29,15 @@ from tensorflow.keras.metrics import Precision, Recall
 
 class ResNet1D(Model):
     def __init__(self, numFeatures: int, numClasses: int, n_blocks: int, n_layers: int, kSize: int):
-        n_filters = 64
+        n_filters = 32
 
         input_layer = Input((numFeatures, 1))
         for i in range(n_blocks):
             if i == 0:
-                output_block = self._addResBlock(32, n_layers, kSize, input_layer)
+                output_block = self._addResBlock(n_filters, n_layers, kSize, input_layer)
             else:
                 output_block = self._addResBlock(n_filters, n_layers, kSize, output_block)
+            n_filters *= 2
 
         # FINAL
         gap_layer = GlobalAveragePooling1D()(output_block)

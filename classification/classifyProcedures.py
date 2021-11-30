@@ -222,7 +222,9 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
                 spectra = np.vstack((spectra, specArr))
 
     labels: np.ndarray = np.array(labels)
-
+    logger.info(f"Summarized spectra from samples: {Counter(labels)}, starting balancing.")
+    np.save(r"classification\spectra.npy", spectra)
+    np.save(r"classification\labels.npy", labels)
     if balanceMode == BalanceMode.UnderRandom:
         spectra, labels = imblearn.under_sampling.RandomUnderSampler().fit_resample(spectra, labels)
     elif balanceMode == BalanceMode.UnderNearMiss:
@@ -232,6 +234,7 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
     elif balanceMode == BalanceMode.OverSMOTE:
         spectra, labels = imblearn.over_sampling.SMOTE().fit_resample(spectra, labels)
 
+    logger.info(f"After balancing: {balanceMode}, {Counter(labels)}")
     return train_test_split(spectra, labels, test_size=testSize, random_state=42)
 
 
