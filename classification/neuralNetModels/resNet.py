@@ -21,23 +21,24 @@ If not, see <https://www.gnu.org/licenses/>.
 Adapted from: https://github.com/hfawaz/dl-4-tsc/blob/master/classifiers/resnet.py#L37
 """
 
-from tensorflow.keras.layers import Activation, add, Conv1D, GlobalAveragePooling1D, Dense, BatchNormalization, Input
+from tensorflow.keras.layers import Activation, add, Conv1D, GlobalAveragePooling1D, Dense, BatchNormalization, Input, SpatialDropout1D
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.metrics import Precision, Recall
+
+from classification.neuralNetModels.globalMetrics import GlobalRecall, GlobalPrecision
 
 
 class ResNet1D(Model):
-    def __init__(self, numFeatures: int, numClasses: int, n_blocks: int, n_layers: int, kSize: int):
+    def __init__(self, numFeatures: int, numClasses: int, n_blocks: int, n_layers: int, kSize: int, dropout: float):
         n_filters = 32
 
         input_layer = Input((numFeatures, 1))
         for i in range(n_blocks):
             if i == 0:
-                output_block = self._addResBlock(n_filters, n_layers, kSize, input_layer)
+                output_block = self._addResBlock(n_filters, n_layers, kSize, input_layer, dropout)
             else:
-                output_block = self._addResBlock(n_filters, n_layers, kSize, output_block)
-            n_filters *= 2
+                output_block = self._addResBlock(n_filters, n_layers, kSize, output_block, dropout)
+            # n_filters *= 2
 
         # FINAL
         gap_layer = GlobalAveragePooling1D()(output_block)
@@ -45,9 +46,9 @@ class ResNet1D(Model):
 
         super(ResNet1D, self).__init__(inputs=input_layer, outputs=output_layer)
 
-        self.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=[Precision(), Recall()])
+        self.compile(loss='categorical_crossentropy', optimizer=Adam(), metrics=[GlobalPrecision, GlobalRecall])
 
-    def _addResBlock(self, n_filters: int, kSize: int, n_layers: int, input_layer):
+    def _addResBlock(self, n_filters: int, kSize: int, n_layers: int, input_layer, dropout: float):
         for i in range(n_layers):
             if i == 0:
                 conv = Conv1D(filters=n_filters, kernel_size=kSize, padding='same')(input_layer)
@@ -55,6 +56,9 @@ class ResNet1D(Model):
                 conv = Conv1D(filters=n_filters, kernel_size=kSize, padding='same')(conv)
             conv = BatchNormalization()(conv)
             conv = Activation('relu')(conv)
+
+            if dropout > 0:
+                conv = SpatialDropout1D(dropout)(conv)
 
         # expand channels for the sum
         if input_layer.shape[2] != n_filters:

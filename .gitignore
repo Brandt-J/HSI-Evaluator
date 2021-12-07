@@ -22,3 +22,5 @@ classification/ResNetModelSaves/
 classification/ResNetModelSavesNoPreprocess/
 
 classification/ResNetModelSavesWithPreprocess/
+
+classification/logsBackup/

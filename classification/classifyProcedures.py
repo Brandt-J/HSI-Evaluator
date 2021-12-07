@@ -223,8 +223,13 @@ def getTestTrainSpectraFromSamples(sampleList: List['Sample'], maxSpecsPerClass:
 
     labels: np.ndarray = np.array(labels)
     logger.info(f"Summarized spectra from samples: {Counter(labels)}, starting balancing.")
-    np.save(r"classification\spectra.npy", spectra)
-    np.save(r"classification\labels.npy", labels)
+    try:
+        np.save(r"classification\spectra.npy", spectra)
+        np.save(r"classification\labels.npy", labels)
+    except FileNotFoundError:  # does not work when running the test suite
+        logger.warning("Spectra and labels NOT saved, FileNotFound-Error. Ignore, if running the test-suite, "
+                       "otherwise investigate!")
+
     if balanceMode == BalanceMode.UnderRandom:
         spectra, labels = imblearn.under_sampling.RandomUnderSampler().fit_resample(spectra, labels)
     elif balanceMode == BalanceMode.UnderNearMiss:

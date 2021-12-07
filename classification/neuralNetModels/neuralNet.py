@@ -16,12 +16,12 @@ You should have received a copy of the GNU General Public License
 along with this program, see COPYING.
 If not, see <https://www.gnu.org/licenses/>.
 """
-import time
 from typing import List
 
 from tensorflow.keras.layers import Dense, Dropout, InputLayer, Conv1D, MaxPool1D, Flatten, BatchNormalization
 from tensorflow.keras.models import Sequential, load_model
-from tensorflow.keras.metrics import Precision, Recall
+
+from classification.neuralNetModels.globalMetrics import GlobalRecall, GlobalPrecision
 
 
 def loadModelFromFile(fname: str) -> 'NeuralNetClf':
@@ -40,7 +40,7 @@ class NeuralNetClf(Sequential):
             self.add(Dense(numNeurons, activation="relu"))
             self.add(Dropout(dropout))
         self.add(Dense(numClasses, activation="softmax"))
-        self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision(), Recall()])
+        self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[GlobalPrecision, GlobalRecall])
         # self.summary()
 
 
@@ -66,5 +66,5 @@ class ConvNeuralNetCLF(Sequential):
         self.add(Dropout(0.3))
         self.add(Dense(50, activation="relu"))
         self.add(Dense(numClasses, activation="softmax"))
-        self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision(), Recall()])
+        self.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=[Precision, Recall])
         self.summary()
