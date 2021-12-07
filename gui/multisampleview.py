@@ -23,6 +23,7 @@ import pickle
 import os
 from typing import List, TYPE_CHECKING, Dict, Set, Union, Optional, Tuple
 import numpy as np
+from collections import Counter
 
 from gui.sampleview import SampleView
 from logger import getLogger
@@ -96,8 +97,13 @@ class MultiSampleView(QtWidgets.QGraphicsView):
 
     @QtCore.pyqtSlot()
     def toggleParticleInfo(self) -> None:
+        infosVisible: List[bool] = []
         for sample in self._sampleviews:
-            sample.getGraphOverlayObj().toggleParticleInfo()
+            infosVisible += sample.getGraphOverlayObj().getInfoVisibility()
+        count: Counter = Counter(infosVisible)
+        setVisible: bool = count[False] > count[True]
+        for sample in self._sampleviews:
+            sample.getGraphOverlayObj().setParticleInfoVisibility(setVisible)
 
     @QtCore.pyqtSlot()
     def flipSamplesHorizontally(self) -> None:
@@ -251,7 +257,7 @@ class MultiSampleView(QtWidgets.QGraphicsView):
         with open(fpath, "rb") as fp:
             loadedSampleData: 'Sample' = pickle.load(fp)
         self._createNewSampleFromSampleData(loadedSampleData)
-        
+
     def createListOfSamples(self, sampleList: List['Sample']) -> None:
         """Creates a list of given samples and replaces the currently opened with that."""
         self._logger.info("Closing all samples, opening the following new ones..")
@@ -328,7 +334,7 @@ class MultiSampleView(QtWidgets.QGraphicsView):
                 if wavelenghts is None:
                     wavelenghts = sampleWavelengths
                 else:
-                    assert np.array_equal(wavelenghts, sampleWavelengths)
+                    assert np.array_equal(wavelenghts, sampleWavelengths), 'Not identical wavelengths of present samples.'
 
         assert wavelenghts is not None
         return wavelenghts

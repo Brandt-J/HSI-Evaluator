@@ -108,9 +108,12 @@ class GraphOverlays(QtCore.QObject):
         for item in self._particleItems:
             item.setVisible(not item.isVisible())
 
-    def toggleParticleInfo(self) -> None:
+    def setParticleInfoVisibility(self, visible: bool = True):
+        """
+        Hides or unhides all the particle info items alltogether.
+        """
         for item in self._particleItems:
-            item.toggleParticleInfo()
+            item.setInfoVisibility(visible)
 
     def updateParticleColors(self, particleHandler: 'ParticleHandler', interpretationParams: 'ClassInterpretationParams'):
         """
@@ -161,6 +164,15 @@ class GraphOverlays(QtCore.QObject):
         Returns a list of graphicsItems to be displayed from this sample.
         """
         return [self._selectionOverlay, self._classOverlay] + self._particleItems
+
+    def getInfoVisibility(self) -> List[bool]:
+        """
+        Returns information about whether or not particles are visible.
+        """
+        visList: List[bool] = []
+        if len(self._particleItems) > 0:
+            visList = [particle.infoIsVisible() for particle in self._particleItems]
+        return visList
 
     def removeColor(self, rgb: Tuple[int, int, int]) -> None:
         self._selectionOverlay.removeColor(rgb)

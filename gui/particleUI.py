@@ -39,12 +39,14 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         self.setZValue(1)
         self.setPos(0, 0)
         self.brect = QtCore.QRectF(0, 0, 1, 1)
+        self.setAcceptHoverEvents(True)
         self._particleID: int = -1
         self._polygon: Union[None, QtGui.QPolygonF] = None
         self._color = QtGui.QColor(180, 255, 180, 200)
         self._alpha: float = 0.75
         self._partilcleInfo: ParticleInfo = ParticleInfo()
         self._partilcleInfo.setParentItem(self)
+        self._infoHasToBeVisible: bool = False
 
     def setupParticle(self, particle: 'Particle', classInterpParams: 'ClassInterpretationParams') -> None:
         """
@@ -66,6 +68,16 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         self._partilcleInfo.setPos(x0 + (x1-x0)/2, y0 + (y1-y0)/2)
         self._partilcleInfo.setClassName(particle.getAssignment(classInterpParams))
 
+    def hoverEnterEvent(self, event) -> None:
+        self._partilcleInfo.show()
+
+    def hoverLeaveEvent(self, event) -> None:
+        if not self._infoHasToBeVisible:
+            self._partilcleInfo.hide()
+
+    def infoIsVisible(self) -> bool:
+        return self._partilcleInfo.isVisible()
+
     def setAssignment(self, assignment: str) -> None:
         self._partilcleInfo.setClassName(assignment)
 
@@ -86,11 +98,12 @@ class ParticleContour(QtWidgets.QGraphicsObject):
         """
         self._color = QtGui.QColor(color[0], color[1], color[2])
 
-    def toggleParticleInfo(self) -> None:
+    def setInfoVisibility(self, visible: bool) -> None:
         """
-        Toggles visibility of the particle assignment info box.
+        Sets visibility of the particle info overlay.
         """
-        self._partilcleInfo.setVisible(not self._partilcleInfo.isVisible())
+        self._partilcleInfo.setVisible(visible)
+        self._infoHasToBeVisible = visible
 
     def paint(self, painter, option, widget):
         if self._polygon is not None:

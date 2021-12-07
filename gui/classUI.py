@@ -612,15 +612,25 @@ class LoadClfTab(QtWidgets.QWidget):
         Loads the classifier from the specified path.
         :param fname: Absolute path to pickled classifier.
         """
-        with open(fname, "rb") as fp:
-            savedClf: SavedClassifier = pickle.load(fp)
-        self.NewValidationResult.emit(savedClf.validReport)
+        try:
+            with open(fname, "rb") as fp:
+                savedClf: SavedClassifier = pickle.load(fp)
+        except Exception as e:
+            QtWidgets.QMessageBox.about(self, "Error", f"Error on loading {fname}:\n{e}")
+        else:
 
-        self._currentresult = savedClf.validReport
-        self._activeClf = savedClf.clf
-        self._activeClf.afterLoad()
-        clfName: str = os.path.basename(fname).split(".")[0]
-        self._clfLabel.setText(f"Loaded '{clfName}'")
+            try:
+                self._activeClf = savedClf.clf
+                self._activeClf.afterLoad()
+            except Exception as e:
+                QtWidgets.QMessageBox.about(self, "Error", f"Error on activating {fname}:\n{e}")
+                self._activeClf = None
+            else:
+
+                self.NewValidationResult.emit(savedClf.validReport)
+                self._currentresult = savedClf.validReport
+                clfName: str = os.path.basename(fname).split(".")[0]
+                self._clfLabel.setText(f"Loaded '{clfName}'")
 
 
 class TrainClfTab(QtWidgets.QWidget):
