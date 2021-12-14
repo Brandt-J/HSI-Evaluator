@@ -241,7 +241,8 @@ class SpecPlot(QtWidgets.QWidget):
         self._labels: Union[None, np.ndarray] = None
         self._sampleNames: Union[None, np.ndarray] = None
 
-        self._legendItems: List[str] = []
+        self._legendNames: List[str] = []
+        self._legendLineHandlers: List[plt.Line2D] = []
         self._descLines: List[List[plt.Line2D]] = []
         self._selectedDescIndex: int = -1
         self._selectedPoint: int = -1
@@ -256,16 +257,17 @@ class SpecPlot(QtWidgets.QWidget):
         uniqueLabels: np.ndarray = np.unique(self._labels)
         uniqueSamples: np.ndarray = np.unique(self._sampleNames)
         offsets: np.ndarray = self._getoffsetsFromLabelsAndSpectra()
-        spectra += offsets
+        spectra -= offsets  # subtract offsets, so that it goes into the same direction in the plot as the legend does.
         for uniqueLbl in uniqueLabels:
-            self._legendItems.append(uniqueLbl)
+            self._legendNames.append(uniqueLbl)
             ind: np.ndarray = np.where(self._labels == uniqueLbl)[0]
             specs: np.ndarray = spectra[ind, :]
             if self._avgCheckBox.isChecked():
                 specs = np.mean(specs, axis=0)
 
             color = [i / 255 for i in self._mainWin.getColorOfClass(uniqueLbl)]
-            self._specAx.plot(self._mainWin.getWavelengths(), specs.transpose(), color=color)
+            lines: List[plt.Line2D] = self._specAx.plot(self._mainWin.getWavelengths(), specs.transpose(), color=color)
+            self._legendLineHandlers.append(lines[0])
 
     def setMainWindow(self, mainWinRef: 'MainWindow') -> None:
         self._mainWin = mainWinRef
@@ -299,7 +301,8 @@ class SpecPlot(QtWidgets.QWidget):
         Called before starting to plot a new set of spectra.
         """
         self._specAx.clear()
-        self._legendItems = []
+        self._legendNames = []
+        self._legendLineHandlers = []
         self._canvas.draw()
 
     def finishPlotting(self) -> None:
@@ -318,9 +321,9 @@ class SpecPlot(QtWidgets.QWidget):
         self._specAx.set_ylabel("Intensity (a.u.)")
         if self._showLegendCheckBox.isChecked():
             if self._legendOutsideCheckBox.isChecked():
-                self._specAx.legend(self._legendItems, bbox_to_anchor=(1, 1), loc="upper left")
+                self._specAx.legend(self._legendLineHandlers, self._legendNames, bbox_to_anchor=(1, 1), loc="upper left")
             else:
-                self._specAx.legend(self._legendItems)
+                self._specAx.legend(self._legendLineHandlers, self._legendNames)
         self._figure.tight_layout()
         self._plotDescriptors()
         self._canvas.draw()
