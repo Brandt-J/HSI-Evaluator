@@ -1,3 +1,3 @@
 HSI Evaluator
 
-Run the HSIEvaluator.py from within the gui directory.
+Run the main.py script for starting the software.
